@@ -20,6 +20,12 @@ struct ButtonState {
 }
 
 namespace {
+HWND require_parent(const Window& parent) {
+    const auto hwnd = parent.hwnd();
+    THROW_HR_IF(HRESULT_FROM_WIN32(ERROR_INVALID_WINDOW_HANDLE), !hwnd);
+    return hwnd;
+}
+
 bool effectively_enabled(HWND hwnd) noexcept {
     if (!hwnd) { return false; }
     for (auto current = hwnd; current; current = GetParent(current)) {
@@ -110,7 +116,7 @@ void enabled_event(IRawElementProviderSimple* provider, bool oldValue, bool newV
 }
 
 Button::Button(Window& parent, std::wstring_view label)
-    : Window(parent.application(), label, 160, 44, parent.hwnd()),
+    : Window(parent.application(), label, 160, 44, require_parent(parent)),
       target_(application().compositor(), application().graphics(), hwnd()),
       text_(application().graphics().text_factory().get(), label, 15, DWRITE_FONT_WEIGHT_SEMI_BOLD),
       state_(std::make_shared<detail::ButtonState>()) {
@@ -131,10 +137,11 @@ void Button::disconnect_provider() noexcept {
     if (provider_) { LOG_IF_FAILED(UiaDisconnectProvider(provider_.get())); provider_.reset(); }
 }
 
-void Button::enabled(bool value) { EnableWindow(hwnd(), value); }
+void Button::enabled(bool value) { EnableWindow(require_hwnd(), value); }
 bool Button::enabled() const noexcept { return effectively_enabled(hwnd()); }
 
 void Button::invoke() {
+    (void)require_hwnd();
     if (!enabled()) { return; }
     if (provider_ && UiaClientsAreListening()) {
         LOG_IF_FAILED(UiaRaiseAutomationEvent(provider_.get(), UIA_Invoke_InvokedEventId));

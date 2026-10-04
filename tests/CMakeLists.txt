@@ -22,7 +22,7 @@ foreach(scenario transaction repeated-recovery failed-recovery shutdown callback
 endforeach()
 
 composia_test_target(composia-window-tests WindowTests.cpp)
-foreach(scenario secondary-close secondary-error)
+foreach(scenario secondary-close secondary-error closed-window closed-parent)
     add_test(NAME ${scenario} COMMAND composia-window-tests ${scenario})
     set_tests_properties(${scenario} PROPERTIES TIMEOUT 15 RUN_SERIAL TRUE LABELS desktop)
 endforeach()

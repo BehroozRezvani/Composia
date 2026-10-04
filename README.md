@@ -87,6 +87,11 @@ on that thread. The demo embeds a
 PerMonitorV2 manifest; consumers should embed the same DPI declaration. Layout
 uses DIPs, surfaces use physical pixels, and the root applies the DPI scale.
 
+After native window destruction, `hwnd()` returns null and `dpi()` returns zero.
+Showing, invalidating, moving, or querying client bounds on a closed window throws
+`HRESULT_FROM_WIN32(ERROR_INVALID_WINDOW_HANDLE)`. A button requires a live parent;
+changing its enabled state or invoking it after destruction throws the same error.
+
 Every owning helper exposes its native HWND, `wil::com_ptr` interfaces, or
 C++/WinRT objects. `GraphicsDevice` also exposes an offscreen D2D context; a
 Composition surface must be drawn using the context returned by its drawing

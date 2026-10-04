@@ -54,28 +54,35 @@ Window::~Window() {
     }
 }
 
-void Window::show(int command) { ShowWindow(hwnd(), command); }
-void Window::invalidate() { THROW_IF_WIN32_BOOL_FALSE(InvalidateRect(hwnd(), nullptr, FALSE)); }
+HWND Window::require_hwnd() const {
+    application_.verify_thread();
+    THROW_HR_IF(HRESULT_FROM_WIN32(ERROR_INVALID_WINDOW_HANDLE), !hwnd_);
+    return hwnd();
+}
+
+void Window::show(int command) { ShowWindow(require_hwnd(), command); }
+void Window::invalidate() { THROW_IF_WIN32_BOOL_FALSE(InvalidateRect(require_hwnd(), nullptr, FALSE)); }
 void Window::set_bounds(layout::Rect bounds) {
+    const auto handle = require_hwnd();
     const auto scale = static_cast<double>(dpi()) / 96.0;
     const auto pixel = [scale](double value) {
         const auto rounded = std::round(value * scale);
         THROW_HR_IF(E_INVALIDARG, !std::isfinite(rounded) || rounded < INT_MIN || rounded > INT_MAX);
         return static_cast<int>(rounded);
     };
-    THROW_HR_IF(E_INVALIDARG, !hwnd() || bounds.width < 0 || bounds.height < 0);
+    THROW_HR_IF(E_INVALIDARG, bounds.width < 0 || bounds.height < 0);
     const int x = pixel(bounds.x), y = pixel(bounds.y);
     const auto width = static_cast<long long>(pixel(static_cast<double>(bounds.x) + bounds.width)) - x;
     const auto height = static_cast<long long>(pixel(static_cast<double>(bounds.y) + bounds.height)) - y;
     THROW_HR_IF(E_INVALIDARG, width > INT_MAX || height > INT_MAX);
-    THROW_IF_WIN32_BOOL_FALSE(SetWindowPos(hwnd(), nullptr, x, y, static_cast<int>(width), static_cast<int>(height),
+    THROW_IF_WIN32_BOOL_FALSE(SetWindowPos(handle, nullptr, x, y, static_cast<int>(width), static_cast<int>(height),
         SWP_NOZORDER | SWP_NOACTIVATE));
 }
 UINT Window::dpi() const noexcept { return GetDpiForWindow(hwnd()); }
 
 SIZE Window::client_pixels() const {
     RECT rect{};
-    THROW_IF_WIN32_BOOL_FALSE(GetClientRect(hwnd(), &rect));
+    THROW_IF_WIN32_BOOL_FALSE(GetClientRect(require_hwnd(), &rect));
     return {rect.right - rect.left, rect.bottom - rect.top};
 }
 

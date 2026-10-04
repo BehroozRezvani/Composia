@@ -29,6 +29,7 @@ public:
     [[nodiscard]] Application& application() const noexcept { return application_; }
 
 protected:
+    [[nodiscard]] HWND require_hwnd() const;
     virtual void on_graphics_recreated() {}
     virtual void on_resize() {}
     virtual void on_paint() {}
