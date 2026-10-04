@@ -98,3 +98,7 @@ tile position/status opacity.
 
 The interop follows the Windows SDK's
 [Composition surface BeginDraw contract](https://learn.microsoft.com/en-us/windows/win32/api/windows.ui.composition.interop/nf-windows-ui-composition-interop-icompositiondrawingsurfaceinterop-begindraw).
+
+## License
+
+[MIT](LICENSE). Third-party dependencies retain their respective licenses.
