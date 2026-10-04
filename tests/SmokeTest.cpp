@@ -37,6 +37,13 @@ void SmokeTest::tick() {
     case 0: {
         require(window_.draw_count() > 0, "The initial surface was not drawn");
         require(window_.dpi() != 0, "The HWND has no DPI");
+        const auto beforeResize = window_.draw_count();
+        for (int resize = 0; resize != 32; ++resize) {
+            SendMessageW(window_.hwnd(), WM_SIZE, SIZE_RESTORED, 0);
+        }
+        require(window_.draw_count() == beforeResize, "Resize events triggered redundant immediate drawing");
+        UpdateWindow(window_.hwnd());
+        require(window_.draw_count() == beforeResize + 1, "Coalesced resize did not paint once");
         try {
             composia::ScopedSurfaceDraw draw(window_.composition_target().surface(), graphics, window_.dpi());
             throw std::runtime_error("unwind drawing scope");

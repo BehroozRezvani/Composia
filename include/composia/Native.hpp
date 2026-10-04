@@ -1,0 +1,7 @@
+#pragma once
+
+#include <windows.h>
+#include <unknwn.h>
+#include <wil/com.h>
+#include <wil/resource.h>
+#include <wil/result.h>

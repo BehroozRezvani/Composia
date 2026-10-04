@@ -1,6 +1,6 @@
 #pragma once
 
-#include <composia/Platform.hpp>
+#include <composia/Native.hpp>
 #include <exception>
 #include <optional>
 #include <string_view>

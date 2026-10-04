@@ -2,6 +2,7 @@
 
 #include <composia/Application.hpp>
 #include <composia/CompositionWindowTarget.hpp>
+#include <composia/TextLayout.hpp>
 #include <memory>
 
 class DemoWindow : public composia::Window {
@@ -15,6 +16,7 @@ public:
 protected:
     void on_resize() override;
     void on_paint() override;
+    void on_graphics_recreated() override;
     std::optional<LRESULT> on_message(UINT, WPARAM, LPARAM) override;
 
 private:
@@ -25,5 +27,7 @@ private:
     composia::composition::ContainerVisual stage_{nullptr};
     composia::composition::SpriteVisual tile_{nullptr};
     composia::composition::SpriteVisual indicator_{nullptr};
+    std::vector<composia::TextLayout> labels_;
+    wil::com_ptr<ID2D1SolidColorBrush> brush_;
     unsigned drawCount_{};
 };

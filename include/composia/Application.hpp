@@ -2,6 +2,7 @@
 
 #include <composia/GraphicsDevice.hpp>
 #include <composia/Window.hpp>
+#include <winrt/Windows.System.h>
 #include <functional>
 #include <memory>
 #include <vector>

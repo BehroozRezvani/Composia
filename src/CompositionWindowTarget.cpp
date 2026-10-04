@@ -1,4 +1,5 @@
 #include <composia/CompositionWindowTarget.hpp>
+#include <composia/GraphicsDevice.hpp>
 #include <windows.ui.composition.interop.h>
 
 namespace composia {

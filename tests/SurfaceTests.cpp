@@ -1,6 +1,7 @@
 #include <composia/Application.hpp>
 #include <composia/CompositionWindowTarget.hpp>
 #include <composia/ScopedSurfaceDraw.hpp>
+#include <composia/TextLayout.hpp>
 #include <iostream>
 #include <stdexcept>
 #include <vector>
@@ -8,7 +9,8 @@
 namespace {
 void require(bool value, const char* message) { if (!value) { throw std::runtime_error(message); } }
 
-void verify_pixels(composia::Application& app, const composia::composition::CompositionDrawingSurface& surface, UINT dpi) {
+void verify_pixels(composia::Application& app, const composia::composition::CompositionDrawingSurface& surface,
+    composia::TextLayout& text, UINT dpi) {
     composia::ScopedSurfaceDraw draw{surface, app.graphics(), dpi};
     const auto dc = draw.context().get();
     dc->Clear(D2D1::ColorF(D2D1::ColorF::Black));
@@ -16,10 +18,8 @@ void verify_pixels(composia::Application& app, const composia::composition::Comp
     THROW_IF_FAILED(dc->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Red), brush.put()));
     dc->FillRectangle({8, 8, 24, 24}, brush.get());
     brush->SetColor(D2D1::ColorF(D2D1::ColorF::White));
-    wil::com_ptr<IDWriteTextFormat> format;
-    THROW_IF_FAILED(draw.text_factory()->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
-        DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 18, L"en-US", format.put()));
-    dc->DrawTextW(L"Text", 4, format.get(), {32, 8, 110, 35}, brush.get());
+    text.resize(78, 27);
+    dc->DrawTextLayout({32, 8}, text.layout().get(), brush.get());
     THROW_IF_FAILED(dc->Flush());
 
     wil::com_ptr<ID2D1Image> image;
@@ -62,11 +62,12 @@ int main() {
         {
             composia::Window window{app, L"Surface test", 320, 240};
             composia::CompositionWindowTarget target{app.compositor(), app.graphics(), window.hwnd()};
+            composia::TextLayout text{app.graphics().text_factory().get(), L"Text", 18};
             for (UINT dpi : {96u, 120u, 144u, 168u, 192u}) {
                 target.resize({static_cast<LONG>(160 * dpi / 96), static_cast<LONG>(80 * dpi / 96)}, dpi);
-                verify_pixels(app, target.surface(), dpi);
+                verify_pixels(app, target.surface(), text, dpi);
                 app.graphics().recreate();
-                verify_pixels(app, target.surface(), dpi);
+                verify_pixels(app, target.surface(), text, dpi);
             }
         }
         app.close();

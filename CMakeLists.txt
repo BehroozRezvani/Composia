@@ -20,6 +20,7 @@ add_library(composia STATIC
     src/CompositionWindowTarget.cpp
     src/ScopedSurfaceDraw.cpp
     src/AnimationHelpers.cpp
+    src/TextLayout.cpp
 )
 add_library(Composia::UI ALIAS composia)
 target_include_directories(composia PUBLIC

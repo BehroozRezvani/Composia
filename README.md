@@ -63,6 +63,7 @@ same vcpkg toolchain/triplet. Installed targets carry their dependencies.
 | `CompositionWindowTarget` | Desktop HWND bridge, visual root, canvas surface/brush, and pixel/DIP sizing |
 | `ScopedSurfaceDraw` | Balanced surface BeginDraw/EndDraw with DPI and atlas-offset translation |
 | `AnimationHelpers` | Containers/sprites, implicit offset, vector/scalar keyframes, and expression layout |
+| `TextLayout` | Reusable DirectWrite format/layout with incremental bounds updates |
 
 `demo/main.cpp` only initializes logging and starts the application/window.
 `demo/DemoWindow.cpp` demonstrates drawing and scene assembly. The moving tile
@@ -70,6 +71,11 @@ uses vector keyframes; the status dot uses scalar opacity and implicit offset
 animations; an expression centers the tile's container. Composition runs these
 animations independently of the UI message loop. The ordinary demo has no
 rendering timer.
+
+Resize events invalidate the canvas and coalesce into paint work. Text layouts
+are retained across redraws and device replacement; drawing brushes are cached
+until the graphics-recreated notification. `Window.hpp` includes only native
+windowing support; Composition and graphics headers are separate.
 
 Create one `Application` on the UI thread and pass it to each `Window` constructor.
 `Application::run()` serves all registered windows and exits when the last HWND

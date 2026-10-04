@@ -1,6 +1,6 @@
 #pragma once
 
-#include <composia/Platform.hpp>
+#include <composia/Composition.hpp>
 #include <chrono>
 
 namespace composia::animations {

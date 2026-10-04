@@ -25,6 +25,11 @@ DemoWindow::DemoWindow(Application& app)
     target_.root().Children().InsertAtTop(indicator_);
     animations::implicit_offset(indicator_);
     animations::pulse(indicator_);
+    const auto factory = app.graphics().text_factory().get();
+    labels_.emplace_back(factory, L"COMPOSIA", 14.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD);
+    labels_.emplace_back(factory, L"A little motion. A native canvas.", 30.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD);
+    labels_.emplace_back(factory, L"Vector + text canvas", 17.0f);
+    labels_.emplace_back(factory, L"Resize the window. The scene follows.", 14.0f);
     redraw();
 }
 
@@ -41,8 +46,9 @@ void DemoWindow::redraw() {
     });
 }
 
-void DemoWindow::on_resize() { redraw(); }
+void DemoWindow::on_resize() { invalidate(); }
 void DemoWindow::on_paint() { redraw(); }
+void DemoWindow::on_graphics_recreated() { brush_.reset(); }
 
 std::optional<LRESULT> DemoWindow::on_message(UINT message, WPARAM, LPARAM lparam) {
     if (message == WM_GETMINMAXINFO) {
@@ -60,38 +66,34 @@ void DemoWindow::draw_canvas() {
     const auto size = target_.logical_size();
     dc->Clear(D2D1::ColorF(0x101923));
 
-    wil::com_ptr<ID2D1SolidColorBrush> brush;
-    THROW_IF_FAILED(dc->CreateSolidColorBrush(D2D1::ColorF(0x24333F), brush.put()));
+    if (!brush_) { THROW_IF_FAILED(dc->CreateSolidColorBrush(D2D1::ColorF(0x24333F), brush_.put())); }
+    const auto brush = brush_.get();
+    brush->SetColor(D2D1::ColorF(0x24333F));
     for (float x = 32.0f; x < size.x; x += 32.0f) {
         for (float y = 120.0f; y < size.y - 88.0f; y += 32.0f) {
-            dc->FillEllipse(D2D1::Ellipse({x, y}, 1.0f, 1.0f), brush.get());
+            dc->FillEllipse(D2D1::Ellipse({x, y}, 1.0f, 1.0f), brush);
         }
     }
 
-    const auto text = [&](std::wstring_view value, float fontSize, D2D1_RECT_F rect,
-                          UINT32 color, DWRITE_FONT_WEIGHT weight = DWRITE_FONT_WEIGHT_NORMAL) {
-        wil::com_ptr<IDWriteTextFormat> format;
-        THROW_IF_FAILED(draw.text_factory()->CreateTextFormat(L"Segoe UI", nullptr, weight,
-            DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, fontSize, L"en-US", format.put()));
+    const auto text = [&](std::size_t index, float y, float height, UINT32 color) {
+        auto& label = labels_[index];
+        label.resize(std::max(1.0f, size.x - 64.0f), height);
         brush->SetColor(D2D1::ColorF(color));
-        dc->DrawTextW(value.data(), static_cast<UINT32>(value.size()), format.get(), rect, brush.get());
+        dc->DrawTextLayout({32, y}, label.layout().get(), brush);
     };
 
-    text(L"COMPOSIA", 14.0f, {32.0f, 31.0f, size.x - 64.0f, 55.0f}, 0x6FE6C8, DWRITE_FONT_WEIGHT_SEMI_BOLD);
-    text(L"A little motion. A native canvas.", 30.0f,
-        {32.0f, 65.0f, size.x - 32.0f, 112.0f}, 0xEAF2F4, DWRITE_FONT_WEIGHT_SEMI_BOLD);
+    text(0, 31, 24, 0x6FE6C8);
+    text(1, 65, 47, 0xEAF2F4);
 
-    // DirectXTK's math helpers are also available to framework consumers.
     const DirectX::SimpleMath::Vector2 center{size.x * 0.5f, size.y * 0.5f};
     brush->SetColor(D2D1::ColorF(0x314C57));
-    dc->DrawEllipse(D2D1::Ellipse({center.x, center.y}, 142.0f, 142.0f), brush.get(), 1.0f);
-    dc->DrawEllipse(D2D1::Ellipse({center.x, center.y}, 157.0f, 157.0f), brush.get(), 0.5f);
+    dc->DrawEllipse(D2D1::Ellipse({center.x, center.y}, 142.0f, 142.0f), brush, 1.0f);
+    dc->DrawEllipse(D2D1::Ellipse({center.x, center.y}, 157.0f, 157.0f), brush, 0.5f);
 
     brush->SetColor(D2D1::ColorF(0x31404A));
-    dc->DrawLine({32.0f, size.y - 88.0f}, {size.x - 32.0f, size.y - 88.0f}, brush.get());
-    text(L"Vector + text canvas", 17.0f, {32.0f, size.y - 69.0f, size.x - 32.0f, size.y - 44.0f}, 0xEAF2F4);
-    text(L"Resize the window. The scene follows.", 14.0f,
-        {32.0f, size.y - 41.0f, size.x - 32.0f, size.y - 16.0f}, 0x93A9B5);
+    dc->DrawLine({32.0f, size.y - 88.0f}, {size.x - 32.0f, size.y - 88.0f}, brush);
+    text(2, size.y - 69, 25, 0xEAF2F4);
+    text(3, size.y - 41, 25, 0x93A9B5);
     draw.finish();
     ++drawCount_;
 }

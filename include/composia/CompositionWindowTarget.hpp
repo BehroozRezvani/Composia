@@ -1,8 +1,10 @@
 #pragma once
 
-#include <composia/GraphicsDevice.hpp>
+#include <composia/Composition.hpp>
 
 namespace composia {
+
+class GraphicsDevice;
 
 class CompositionWindowTarget {
 public:
