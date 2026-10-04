@@ -1,14 +1,13 @@
 #include <composia/GraphicsDevice.hpp>
 #include <windows.ui.composition.interop.h>
 #include <spdlog/spdlog.h>
+#include "FailureInjection.hpp"
 
 namespace composia {
 namespace abi = ABI::Windows::UI::Composition;
 
 GraphicsDevice::GraphicsDevice(const composition::Compositor& compositor, bool forceWarp)
     : compositor_(compositor), forceWarp_(forceWarp) {
-    removedEvent_.reset(CreateEventW(nullptr, TRUE, FALSE, nullptr));
-    THROW_LAST_ERROR_IF_NULL(removedEvent_);
     D2D1_FACTORY_OPTIONS options{};
     THROW_IF_FAILED(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED,
         __uuidof(ID2D1Factory7), &options, d2dFactory_.put_void()));
@@ -51,6 +50,15 @@ void GraphicsDevice::recreate() {
     wil::com_ptr<ID2D1DeviceContext6> d2dContext;
     THROW_IF_FAILED(d2dFactory_->CreateDevice(dxgi.get(), d2d.put()));
     THROW_IF_FAILED(d2d->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, d2dContext.put()));
+    detail::checkpoint(detail::FailurePoint::deviceCreated);
+
+    wil::unique_handle removedEvent{CreateEventW(nullptr, TRUE, FALSE, nullptr)};
+    THROW_LAST_ERROR_IF_NULL(removedEvent);
+    DWORD cookie{};
+    THROW_IF_FAILED(device->RegisterDeviceRemovedEvent(removedEvent.get(), &cookie));
+    auto unregisterCandidate = wil::scope_exit([&] { device->UnregisterDeviceRemoved(cookie); });
+    detail::checkpoint(detail::FailurePoint::removalRegistered);
+    detail::checkpoint(detail::FailurePoint::compositionSwitch);
 
     if (compositionDevice_) {
         THROW_IF_FAILED(compositionDevice_.as<abi::ICompositionGraphicsDeviceInterop>()->SetRenderingDevice(d2d.get()));
@@ -60,16 +68,18 @@ void GraphicsDevice::recreate() {
     }
 
     unregister_device();
-    THROW_IF_WIN32_BOOL_FALSE(ResetEvent(removedEvent_.get()));
+    unregisterCandidate.release();
+    removedEvent_ = std::move(removedEvent);
+    removedCookie_ = cookie;
     d3d_ = std::move(device);
     d3dContext_ = std::move(context);
     d2d_ = std::move(d2d);
     d2dContext_ = std::move(d2dContext);
-    THROW_IF_FAILED(d3d_->RegisterDeviceRemovedEvent(removedEvent_.get(), &removedCookie_));
     registered_ = true;
     ++generation_;
     spdlog::info("event=graphics_device_created generation={} driver={}", generation_,
         driver == D3D_DRIVER_TYPE_WARP ? "warp" : "hardware");
+    recreated_.emit(generation_);
 }
 
 bool GraphicsDevice::is_device_loss(HRESULT error) const noexcept {

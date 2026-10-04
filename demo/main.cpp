@@ -13,9 +13,14 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR commandLine, int showCommand) {
         spdlog::set_pattern("%Y-%m-%dT%H:%M:%S.%e level=%l %v");
         spdlog::flush_on(spdlog::level::info);
         composia::Application app{warp};
-        DemoWindow window{app, smoke};
-        window.show(showCommand);
-        return app.run();
+        int result{};
+        {
+            DemoWindow window{app, smoke};
+            window.show(showCommand);
+            result = app.run();
+        }
+        app.close();
+        return result;
     } catch (const winrt::hresult_error& error) {
         spdlog::critical("event=fatal hresult=0x{:08X} message={}",
             static_cast<unsigned>(error.code().value), winrt::to_string(error.message()));

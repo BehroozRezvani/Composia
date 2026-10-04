@@ -1,5 +1,4 @@
 #include <composia/ScopedSurfaceDraw.hpp>
-#include <spdlog/spdlog.h>
 
 namespace composia {
 
@@ -26,9 +25,7 @@ ScopedSurfaceDraw::~ScopedSurfaceDraw() noexcept {
     if (drawing_) {
         const auto result = interop_->EndDraw();
         context_.reset();
-        if (FAILED(result)) {
-            spdlog::error("event=surface_end_draw_failed hresult=0x{:08X}", static_cast<unsigned>(result));
-        }
+        LOG_IF_FAILED(result);
     }
 }
 

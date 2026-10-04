@@ -1,6 +1,7 @@
 #pragma once
 
 #include <composia/Platform.hpp>
+#include <composia/Signal.hpp>
 #include <cstdint>
 
 namespace composia {
@@ -13,6 +14,7 @@ public:
     GraphicsDevice& operator=(const GraphicsDevice&) = delete;
 
     void recreate();
+    Connection on_recreated(std::function<void(std::uint64_t)> callback) { return recreated_.connect(std::move(callback)); }
     [[nodiscard]] bool is_device_loss(HRESULT error) const noexcept;
     [[nodiscard]] HANDLE removed_event() const noexcept { return removedEvent_.get(); }
     [[nodiscard]] std::uint64_t generation() const noexcept { return generation_; }
@@ -40,6 +42,7 @@ private:
     bool registered_{};
     bool forceWarp_{};
     std::uint64_t generation_{};
+    Signal<std::uint64_t> recreated_;
 };
 
 }

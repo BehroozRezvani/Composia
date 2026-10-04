@@ -25,11 +25,13 @@ public:
     [[nodiscard]] SIZE client_pixels() const;
 
 protected:
+    virtual void on_graphics_recreated() {}
     virtual void on_resize() {}
     virtual void on_paint() {}
     virtual std::optional<LRESULT> on_message(UINT, WPARAM, LPARAM) { return std::nullopt; }
 
 private:
+    friend class Application;
     static LRESULT CALLBACK window_proc(HWND, UINT, WPARAM, LPARAM) noexcept;
     LRESULT dispatch(HWND, UINT, WPARAM, LPARAM);
 
