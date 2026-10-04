@@ -15,7 +15,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR commandLine, int showCommand) {
         composia::Application app{warp};
         DemoWindow window{app, smoke};
         window.show(showCommand);
-        return app.run(window, [&] { window.redraw(); });
+        return app.run();
     } catch (const winrt::hresult_error& error) {
         spdlog::critical("event=fatal hresult=0x{:08X} message={}",
             static_cast<unsigned>(error.code().value), winrt::to_string(error.message()));

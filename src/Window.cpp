@@ -1,4 +1,5 @@
 #include <composia/Window.hpp>
+#include <composia/Application.hpp>
 #include <string>
 
 namespace composia {
@@ -6,7 +7,8 @@ namespace {
 constexpr wchar_t windowClass[] = L"Composia.Window";
 }
 
-Window::Window(std::wstring_view title, int widthDip, int heightDip) {
+Window::Window(Application& application, std::wstring_view title, int widthDip, int heightDip)
+    : application_(application) {
     const auto instance = GetModuleHandleW(nullptr);
     WNDCLASSEXW wc{};
     wc.cbSize = sizeof(wc);
@@ -28,9 +30,11 @@ Window::Window(std::wstring_view title, int widthDip, int heightDip) {
     hwnd_.reset(handle);
     rethrow_callback_error();
     THROW_LAST_ERROR_IF_NULL(handle);
+    application_.attach(*this);
 }
 
 Window::~Window() {
+    application_.detach(*this);
     if (hwnd_) {
         SetWindowLongPtrW(hwnd_.get(), GWLP_USERDATA, 0);
     }
@@ -75,7 +79,7 @@ LRESULT CALLBACK Window::window_proc(HWND handle, UINT message, WPARAM wparam, L
         if (!self->callbackError_) {
             self->callbackError_ = std::current_exception();
         }
-        PostQuitMessage(1);
+        self->application_.report_error(self->callbackError_);
         return message == WM_NCCREATE ? FALSE : 0;
     }
 }
@@ -107,7 +111,6 @@ LRESULT Window::dispatch(HWND handle, UINT message, WPARAM wparam, LPARAM lparam
     case WM_ERASEBKGND:
         return 1;
     case WM_DESTROY:
-        PostQuitMessage(0);
         return 0;
     default:
         return DefWindowProcW(handle, message, wparam, lparam);

@@ -9,7 +9,7 @@
 using namespace composia;
 
 DemoWindow::DemoWindow(Application& app, bool smokeTest)
-    : Window(L"Composia", 960, 640), app_(app), target_(app.compositor(), app.graphics(), hwnd()) {
+    : Window(app, L"Composia", 960, 640), app_(app), target_(app.compositor(), app.graphics(), hwnd()) {
     stage_ = animations::container(app.compositor(), {160.0f, 160.0f});
     target_.root().Children().InsertAtTop(stage_);
     animations::center_in_parent(stage_, target_.root());

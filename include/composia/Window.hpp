@@ -7,9 +7,11 @@
 
 namespace composia {
 
+class Application;
+
 class Window {
 public:
-    Window(std::wstring_view title, int widthDip, int heightDip);
+    Window(Application&, std::wstring_view title, int widthDip, int heightDip);
     virtual ~Window();
     Window(const Window&) = delete;
     Window& operator=(const Window&) = delete;
@@ -31,6 +33,7 @@ private:
     static LRESULT CALLBACK window_proc(HWND, UINT, WPARAM, LPARAM) noexcept;
     LRESULT dispatch(HWND, UINT, WPARAM, LPARAM);
 
+    Application& application_;
     wil::unique_hwnd hwnd_;
     std::exception_ptr callbackError_;
 };

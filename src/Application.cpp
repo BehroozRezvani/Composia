@@ -1,6 +1,8 @@
 #include <composia/Application.hpp>
 #include <DispatcherQueue.h>
 #include <spdlog/spdlog.h>
+#include <algorithm>
+#include <utility>
 
 namespace composia {
 
@@ -63,9 +65,25 @@ void Application::render(const std::function<void()>& draw) {
     }
 }
 
-int Application::run(Window& window, const std::function<void()>& redraw) {
+void Application::attach(Window& window) { windows_.push_back(&window); }
+void Application::detach(Window& window) noexcept { std::erase(windows_, &window); }
+
+void Application::report_error(std::exception_ptr error) noexcept {
+    if (!callbackError_) { callbackError_ = std::move(error); }
+}
+
+void Application::rethrow_callback_error() {
+    if (callbackError_) { std::rethrow_exception(std::exchange(callbackError_, nullptr)); }
+}
+
+bool Application::has_windows() const noexcept {
+    return std::ranges::any_of(windows_, [](const Window* window) { return window->hwnd() != nullptr; });
+}
+
+int Application::run() {
     for (;;) {
-        window.rethrow_callback_error();
+        rethrow_callback_error();
+        if (!has_windows()) { return 0; }
         const HANDLE handles[]{graphics().removed_event()};
         const auto wait = MsgWaitForMultipleObjectsEx(1, handles, INFINITE, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
         THROW_LAST_ERROR_IF(wait == WAIT_FAILED);
@@ -73,17 +91,19 @@ int Application::run(Window& window, const std::function<void()>& redraw) {
             spdlog::warn("event=device_removed hresult=0x{:08X}",
                 static_cast<unsigned>(graphics().d3d_device()->GetDeviceRemovedReason()));
             graphics().recreate();
-            render(redraw);
+            for (auto window : windows_) {
+                if (window->hwnd()) { window->invalidate(); }
+            }
         }
         MSG message{};
-        while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
+        for (int dispatched = 0; dispatched != 64 && PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE); ++dispatched) {
             if (message.message == WM_QUIT) {
-                window.rethrow_callback_error();
+                rethrow_callback_error();
                 return static_cast<int>(message.wParam);
             }
             TranslateMessage(&message);
             DispatchMessageW(&message);
-            window.rethrow_callback_error();
+            rethrow_callback_error();
         }
     }
 }
