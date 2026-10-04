@@ -1,14 +1,17 @@
 cmake_minimum_required(VERSION 3.25)
-project(Composia VERSION 0.1.0 LANGUAGES CXX)
+project(Composia VERSION 0.2.0 LANGUAGES CXX)
 
 if(NOT WIN32 OR NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR NOT MSVC)
     message(FATAL_ERROR "Composia requires Windows and clang-cl in an x64 Visual Studio developer shell.")
 endif()
 
+option(COMPOSIA_BUILD_DEMO "Build the interactive demo" ${PROJECT_IS_TOP_LEVEL})
+option(COMPOSIA_BUILD_TESTS "Build Composia's tests" ${PROJECT_IS_TOP_LEVEL})
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
 find_package(wil CONFIG REQUIRED)
 find_package(cppwinrt CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
-find_package(directxtk CONFIG REQUIRED)
 
 add_library(composia STATIC
     src/Application.cpp
@@ -19,39 +22,40 @@ add_library(composia STATIC
     src/AnimationHelpers.cpp
 )
 add_library(Composia::UI ALIAS composia)
-target_include_directories(composia PUBLIC include)
+target_include_directories(composia PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+)
 target_compile_features(composia PUBLIC cxx_std_23)
-set_target_properties(composia PROPERTIES CXX_EXTENSIONS OFF)
+set_target_properties(composia PROPERTIES CXX_EXTENSIONS OFF EXPORT_NAME UI)
 target_compile_definitions(composia PUBLIC UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN _WIN32_WINNT=0x0A00)
 target_compile_options(composia PUBLIC /EHsc /utf-8 PRIVATE /W4 /WX)
-target_link_libraries(composia PUBLIC
-    WIL::WIL Microsoft::CppWinRT spdlog::spdlog Microsoft::DirectXTK
-    d3d11 dxgi d2d1 dwrite windowsapp CoreMessaging user32 gdi32 ole32
+target_link_libraries(composia
+    PUBLIC WIL::WIL Microsoft::CppWinRT
+    PRIVATE spdlog::spdlog d3d11 dxgi d2d1 dwrite windowsapp CoreMessaging user32 gdi32 ole32
 )
 
-add_executable(composia-demo WIN32 demo/main.cpp demo/DemoWindow.cpp demo/SmokeTest.cpp demo/app.manifest)
-target_link_libraries(composia-demo PRIVATE Composia::UI)
-target_compile_options(composia-demo PRIVATE /W4 /WX)
+if(COMPOSIA_BUILD_DEMO OR COMPOSIA_BUILD_TESTS)
+    find_package(directxtk CONFIG REQUIRED)
+endif()
+if(COMPOSIA_BUILD_DEMO)
+    add_executable(composia-demo WIN32 demo/main.cpp demo/DemoWindow.cpp demo/app.manifest)
+    target_link_libraries(composia-demo PRIVATE Composia::UI spdlog::spdlog Microsoft::DirectXTK)
+    target_compile_options(composia-demo PRIVATE /W4 /WX)
+endif()
 
-include(CTest)
-if(BUILD_TESTING)
-    target_compile_definitions(composia PRIVATE COMPOSIA_TESTING)
-    add_executable(composia-recovery-tests tests/RecoveryTests.cpp demo/app.manifest)
-    target_compile_definitions(composia-recovery-tests PRIVATE COMPOSIA_TESTING)
-    target_include_directories(composia-recovery-tests PRIVATE src)
-    target_link_libraries(composia-recovery-tests PRIVATE Composia::UI)
-    target_compile_options(composia-recovery-tests PRIVATE /W4 /WX)
-    foreach(scenario transaction repeated-recovery failed-recovery shutdown callback-error)
-        add_test(NAME ${scenario} COMMAND composia-recovery-tests ${scenario})
-        set_tests_properties(${scenario} PROPERTIES TIMEOUT 20 RUN_SERIAL TRUE)
-    endforeach()
-    add_executable(composia-window-tests tests/WindowTests.cpp demo/app.manifest)
-    target_link_libraries(composia-window-tests PRIVATE Composia::UI)
-    target_compile_options(composia-window-tests PRIVATE /W4 /WX)
-    add_test(NAME secondary-close COMMAND composia-window-tests secondary-close)
-    add_test(NAME secondary-error COMMAND composia-window-tests secondary-error)
-    set_tests_properties(secondary-close secondary-error PROPERTIES TIMEOUT 15 RUN_SERIAL TRUE)
-    add_test(NAME desktop-smoke COMMAND composia-demo --smoke-test)
-    add_test(NAME warp-smoke COMMAND composia-demo --smoke-test --warp)
-    set_tests_properties(desktop-smoke warp-smoke PROPERTIES TIMEOUT 30 RUN_SERIAL TRUE)
+install(TARGETS composia EXPORT ComposiaTargets ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+install(DIRECTORY include/composia DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(FILES LICENSE DESTINATION ${CMAKE_INSTALL_DATADIR}/Composia)
+install(EXPORT ComposiaTargets NAMESPACE Composia:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Composia)
+configure_package_config_file(cmake/ComposiaConfig.cmake.in ${CMAKE_CURRENT_BINARY_DIR}/ComposiaConfig.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Composia)
+write_basic_package_version_file(${CMAKE_CURRENT_BINARY_DIR}/ComposiaConfigVersion.cmake
+    COMPATIBILITY SameMinorVersion)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/ComposiaConfig.cmake ${CMAKE_CURRENT_BINARY_DIR}/ComposiaConfigVersion.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Composia)
+
+if(COMPOSIA_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
 endif()

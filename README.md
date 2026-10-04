@@ -39,6 +39,22 @@ Visual C++ runtime. The baseline matches the submodule commit.
 
 Link `Composia::UI` from CMake; public headers are in `include/composia`.
 
+The demo and tests are optional (`COMPOSIA_BUILD_DEMO` and
+`COMPOSIA_BUILD_TESTS`). Both default off when included with `add_subdirectory`.
+To install and consume the library:
+
+```powershell
+cmake --install out/build/release --prefix out/install
+```
+
+```cmake
+find_package(Composia 0.2 CONFIG REQUIRED)
+target_link_libraries(my_app PRIVATE Composia::UI)
+```
+
+Set `CMAKE_PREFIX_PATH` to the installation and configure the consumer with the
+same vcpkg toolchain/triplet. Installed targets carry their dependencies.
+
 | Module | Responsibility |
 | --- | --- |
 | `Application` | STA, dispatcher queue, compositor, message loop, and graphics recovery |
@@ -55,8 +71,10 @@ animations; an expression centers the tile's container. Composition runs these
 animations independently of the UI message loop. The ordinary demo has no
 rendering timer.
 
-Create one `Application` on the UI thread before creating its windows; destroy
-windows and Composition objects before destroying the application. All framework
+Create one `Application` on the UI thread and pass it to each `Window` constructor.
+`Application::run()` serves all registered windows and exits when the last HWND
+closes. Destroy window objects and Composition objects, then call `app.close()`
+to observe shutdown errors. All framework
 operations and surface updates belong on that thread. The demo embeds a
 PerMonitorV2 manifest; consumers should embed the same DPI declaration. Layout
 uses DIPs, surfaces use physical pixels, and the root applies the DPI scale.
@@ -69,26 +87,44 @@ context's own BeginDraw/EndDraw. Call `finish()` to observe EndDraw failures;
 the destructor balances an unfinished scope during exception unwinding. The
 draw context is valid only until `finish()`/scope destruction.
 
+`Application::post()` accepts work from other threads and propagates callback
+errors through `run()`. Shutdown cancels pending application callbacks and drains
+the raw dispatcher while graphics remain alive. Raw dispatcher callbacks are the
+consumer's responsibility. The application must outlive its window objects and
+any threads calling `post()`.
+
 Device removal is registered with D3D11 and watched alongside the Win32 message
 queue, including while idle. Recovery replaces the D3D/D2D devices through
 `SetRenderingDevice`, preserves Composition visuals/surfaces, and invokes the
-redraw callback. `Application::render` retries a drawing operation once after
+window invalidation. `Application::render` retries a drawing operation once after
 device loss; persistent or unrelated errors propagate. Recreate consumer-owned
-device-dependent caches when `GraphicsDevice::generation()` changes. Raw device
+device-dependent caches in `Window::on_graphics_recreated()` or subscribe with
+`GraphicsDevice::on_recreated()` and retain the returned `Connection`. Device
+replacement prepares the device and removal subscription before changing
+Composition; a preparation failure preserves the previous published state. Raw device
 access does not transfer ownership or extend a drawing scope's validity.
 
 ## Validation
 
-`ctest --preset debug` and `ctest --preset release` run hardware-preferred and
-forced-WARP desktop checks. They briefly show a window and require an interactive
-Windows desktop. Logs are `smoke-desktop.log` and `smoke-warp.log` in the build
-directory; normal runs write `composia.log` in the working directory.
+`ctest --preset debug` and `ctest --preset release` run the test suite, including
+hardware-preferred and forced-WARP desktop checks. Desktop checks briefly show
+windows and require a Windows desktop. CTest retains output in
+`out/build/<preset>/Testing/Temporary/LastTest.log`; `build.ps1 -Test` also writes
+JUnit results there. Normal runs write `composia.log` in the working directory.
+Smoke-test code lives in separate test executables.
+
+The Windows CI matrix builds Debug/Release and runs `-L core` (signal behavior
+and a relocated installed-package consumer). Desktop checks are a separate
+`-L desktop` group, also available through the workflow's manual `desktop` input.
 
 The checks exercise real HWND attachment, vector/text drawing, exception-unwind
 cleanup, resize, current-monitor DPI sizing, minimize/restore, native animation
 completion, and redraw after graphics replacement. Device loss is injected as
 an HRESULT and a removal-event signal; these checks do not reset the GPU or
-qualify driver/TDR recovery. Mixed-DPI monitor transitions and Windows 10 runtime
+qualify driver/TDR recovery. Pixel readback checks cover text, color, atlas offsets,
+and 96/120/144/168/192 DPI before and after recovery. Multiple-window lifetime,
+callback exceptions, failed/repeated recovery, and shutdown ordering have dedicated
+regressions. Physical mixed-DPI monitor transitions and Windows 10 runtime
 compatibility still require separate machine testing.
 
 Verified locally on Windows 11 build 26300 with clang-cl 21.1.1 and SDK

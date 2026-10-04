@@ -1,7 +1,9 @@
 param(
     [ValidateSet('debug', 'release')]
     [string]$Preset = 'debug',
-    [switch]$Test
+    [switch]$Test,
+    [ValidateSet('', 'core', 'desktop')]
+    [string]$TestLabel = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -29,8 +31,12 @@ try {
     & cmake --build --preset $Preset
     if ($LASTEXITCODE) { throw 'Build failed.' }
     if ($Test) {
-        & ctest --preset $Preset
-        if ($LASTEXITCODE) { throw 'Desktop smoke tests failed.' }
+        $testSuite = if ($TestLabel) { $TestLabel } else { 'all' }
+        $resultsPath = Join-Path $repoRoot "out/build/$Preset/test-results-$testSuite.xml"
+        $testArguments = @('--preset', $Preset, '--output-junit', $resultsPath)
+        if ($TestLabel) { $testArguments += @('-L', $TestLabel) }
+        & ctest @testArguments
+        if ($LASTEXITCODE) { throw 'Tests failed.' }
     }
 } finally {
     Pop-Location

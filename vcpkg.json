@@ -1,6 +1,6 @@
 {
   "name": "composia",
-  "version-string": "0.1.0",
+  "version-string": "0.2.0",
   "license": "MIT",
   "builtin-baseline": "19780d9cdf84d0944cf9a318666703b89ab6629c",
   "dependencies": [

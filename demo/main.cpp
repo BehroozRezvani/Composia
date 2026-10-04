@@ -5,17 +5,15 @@
 
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR commandLine, int showCommand) {
     const std::wstring_view arguments{commandLine};
-    const bool smoke = arguments.find(L"--smoke-test") != std::wstring_view::npos;
     const bool warp = arguments.find(L"--warp") != std::wstring_view::npos;
     try {
-        spdlog::set_default_logger(spdlog::basic_logger_mt("composia",
-            smoke ? (warp ? "smoke-warp.log" : "smoke-desktop.log") : "composia.log", true));
+        spdlog::set_default_logger(spdlog::basic_logger_mt("composia", "composia.log", true));
         spdlog::set_pattern("%Y-%m-%dT%H:%M:%S.%e level=%l %v");
         spdlog::flush_on(spdlog::level::info);
         composia::Application app{warp};
         int result{};
         {
-            DemoWindow window{app, smoke};
+            DemoWindow window{app};
             window.show(showCommand);
             result = app.run();
         }
@@ -29,8 +27,6 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR commandLine, int showCommand) {
     } catch (...) {
         spdlog::critical("event=fatal message=unknown_exception");
     }
-    if (!smoke) {
-        MessageBoxW(nullptr, L"Composia could not continue. See composia.log for details.", L"Composia", MB_OK | MB_ICONERROR);
-    }
+    MessageBoxW(nullptr, L"Composia could not continue. See composia.log for details.", L"Composia", MB_OK | MB_ICONERROR);
     return 1;
 }

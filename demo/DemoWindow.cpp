@@ -1,5 +1,4 @@
 #include "DemoWindow.hpp"
-#include "SmokeTest.hpp"
 #include <composia/AnimationHelpers.hpp>
 #include <composia/ScopedSurfaceDraw.hpp>
 #include <SimpleMath.h>
@@ -8,7 +7,7 @@
 
 using namespace composia;
 
-DemoWindow::DemoWindow(Application& app, bool smokeTest)
+DemoWindow::DemoWindow(Application& app)
     : Window(app, L"Composia", 960, 640), app_(app), target_(app.compositor(), app.graphics(), hwnd()) {
     stage_ = animations::container(app.compositor(), {160.0f, 160.0f});
     target_.root().Children().InsertAtTop(stage_);
@@ -27,13 +26,7 @@ DemoWindow::DemoWindow(Application& app, bool smokeTest)
     animations::implicit_offset(indicator_);
     animations::pulse(indicator_);
     redraw();
-    if (smokeTest) {
-        smoke_ = std::make_unique<SmokeTest>(*this);
-        THROW_LAST_ERROR_IF(SetTimer(hwnd(), 1, 300, nullptr) == 0);
-    }
 }
-
-DemoWindow::~DemoWindow() { KillTimer(hwnd(), 1); }
 
 void DemoWindow::redraw() {
     const auto pixels = client_pixels();
@@ -51,11 +44,7 @@ void DemoWindow::redraw() {
 void DemoWindow::on_resize() { redraw(); }
 void DemoWindow::on_paint() { redraw(); }
 
-std::optional<LRESULT> DemoWindow::on_message(UINT message, WPARAM wparam, LPARAM lparam) {
-    if (message == WM_TIMER && wparam == 1 && smoke_) {
-        smoke_->tick();
-        return 0;
-    }
+std::optional<LRESULT> DemoWindow::on_message(UINT message, WPARAM, LPARAM lparam) {
     if (message == WM_GETMINMAXINFO) {
         auto info = reinterpret_cast<MINMAXINFO*>(lparam);
         const auto windowDpi = hwnd() ? dpi() : GetDpiForSystem();

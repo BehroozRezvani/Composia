@@ -1,0 +1,46 @@
+name: Windows
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      desktop:
+        description: Also run desktop graphics and interaction checks
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        preset: [debug, release]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          submodules: recursive
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/AppData/Local/vcpkg/archives
+          key: vcpkg-windows-${{ hashFiles('vcpkg.json', 'CMakePresets.json') }}
+      - name: Build and test library consumption
+        shell: pwsh
+        run: ./scripts/build.ps1 -Preset ${{ matrix.preset }} -Test -TestLabel core
+      - name: Desktop checks
+        if: ${{ inputs.desktop == true }}
+        shell: pwsh
+        run: ./scripts/build.ps1 -Preset ${{ matrix.preset }} -Test -TestLabel desktop
+      - name: Retain test evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: test-results-${{ matrix.preset }}
+          path: |
+            out/build/${{ matrix.preset }}/test-results-*.xml
+            out/build/${{ matrix.preset }}/Testing/Temporary/*.log
