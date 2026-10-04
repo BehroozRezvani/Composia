@@ -23,7 +23,9 @@ add_library(composia STATIC
     src/TextLayout.cpp
     src/Layout.cpp
     src/Button.cpp
+    src/TextureSurface.cpp
 )
+set_source_files_properties(src/TextureSurface.cpp PROPERTIES COMPILE_DEFINITIONS NTDDI_VERSION=NTDDI_WIN10_NI)
 add_library(Composia::UI ALIAS composia)
 target_include_directories(composia PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -40,11 +42,19 @@ target_link_libraries(composia
 
 if(COMPOSIA_BUILD_DEMO OR COMPOSIA_BUILD_TESTS)
     find_package(directxtk CONFIG REQUIRED)
+    add_library(composia-media-sample STATIC
+        demo/media/GpuScene.cpp demo/media/TextureFrames.cpp demo/media/VideoSource.cpp demo/media/MediaDemoWindow.cpp)
+    target_link_libraries(composia-media-sample PUBLIC Composia::UI PRIVATE spdlog::spdlog d3dcompiler shlwapi shell32 comdlg32)
+    target_include_directories(composia-media-sample PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/demo/media)
+    target_compile_options(composia-media-sample PRIVATE /W4 /WX)
 endif()
 if(COMPOSIA_BUILD_DEMO)
     add_executable(composia-demo WIN32 demo/main.cpp demo/DemoWindow.cpp demo/app.manifest)
     target_link_libraries(composia-demo PRIVATE Composia::UI spdlog::spdlog Microsoft::DirectXTK)
     target_compile_options(composia-demo PRIVATE /W4 /WX)
+    add_executable(composia-media-demo WIN32 demo/media/main.cpp demo/app.manifest)
+    target_link_libraries(composia-media-demo PRIVATE composia-media-sample spdlog::spdlog shell32)
+    target_compile_options(composia-media-demo PRIVATE /W4 /WX)
 endif()
 
 install(TARGETS composia EXPORT ComposiaTargets ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})

@@ -8,7 +8,7 @@ application, or Windows App SDK is needed.
 ## Build and run
 
 Use Windows 10 version 1903 or newer, an x64 Visual Studio C++ toolchain with a
-recent Windows SDK, clang-cl with C++23 support, CMake 3.25+, Ninja, and Git.
+Windows SDK 10.0.26100.0 or newer, clang-cl with C++23 support, CMake 3.25+, Ninja, and Git.
 Put clang-cl, CMake, and Ninja on `PATH`. From PowerShell:
 
 ```powershell
@@ -34,6 +34,42 @@ Toolkit 11 (whose vcpkg package is `directxtk`). The application/framework compi
 with clang-cl; vcpkg builds ABI-compatible static dependencies using the MSVC
 toolchain and dynamic CRT (`x64-windows-static-md`). Release requires the x64
 Visual C++ runtime. The baseline matches the submodule commit.
+
+## Texture studio demo
+
+```powershell
+.\out\build\release\composia-media-demo.exe
+.\out\build\release\composia-media-demo.exe "C:\Videos\clip.mp4"
+```
+
+The demo starts with an animated GPU landscape. Open or drop a local video to
+play it with the landscape in picture-in-picture, beneath composed text and
+controls. **Play / pause** controls the video, or the landscape when no video is
+open. **GPU only** returns to the landscape. Videos loop; supported formats depend
+on the codecs installed on the PC. Add `--warp` to use software rendering.
+
+This demo needs a recent Windows 11 runtime and a graphics device supporting
+composition textures. It checks support at runtime and displays an explanation
+when unavailable. The ordinary demo keeps the framework's Windows 10 baseline.
+
+`TextureSurface` uses the SDK's
+[`ICompositorInterop2::CreateCompositionTexture`](https://learn.microsoft.com/en-us/windows/win32/api/windows.ui.composition.interop/nf-windows-ui-composition-interop-icompositorinterop2-createcompositiontexture)
+to wrap an `ID3D11Texture2D` as a `CompositionTexture`, then attach it to a surface
+brush and sprite visual. The landscape is rendered with a D3D11 pixel shader;
+WinRT `MediaPlayer` copies decoded video frames into another set of D3D11 textures
+with `CopyFrameToVideoSurface`. Neither rendering path reads pixels back to the
+CPU. DirectWrite text, translucent plates, rounded clips, and animated visuals
+remain separate layers.
+
+Each stream rotates three shared textures. Before writing, the demo checks
+`TextureSurface::available()`, which polls the compositor's availability fence;
+it skips a frame when all buffers are busy. Consumers must stop referencing a
+texture and observe its availability before changing its pixels. Availability
+does not synchronize other application threads writing the same resource.
+Recreate these textures after graphics-device replacement; the demo restores
+both playing and paused content. Frame production uses a 16 ms UI timer and
+stops while minimized. Shader compilation, media playback, and file-picker
+dependencies are confined to `demo/media`.
 
 ## Framework
 
@@ -62,6 +98,7 @@ same vcpkg toolchain/triplet. Installed targets carry their dependencies.
 | `GraphicsDevice` | D3D11 device5, D2D device6/context6, DirectWrite factory7, and Composition graphics device |
 | `CompositionWindowTarget` | Desktop HWND bridge, visual root, canvas surface/brush, and pixel/DIP sizing |
 | `ScopedSurfaceDraw` | Balanced surface BeginDraw/EndDraw with DPI and atlas-offset translation |
+| `TextureSurface` | Direct D3D11 texture composition, capability check, and availability fence |
 | `AnimationHelpers` | Containers/sprites, implicit offset, vector/scalar keyframes, and expression layout |
 | `TextLayout` | Reusable DirectWrite format/layout with incremental bounds updates |
 | `Button` | Composition-rendered child HWND, pointer/keyboard input, and UI Automation Invoke |
@@ -173,6 +210,14 @@ monitors and check child HWND/Composition sizing; their output records monitor
 count and observed DPIs. Physical mixed-DPI transitions need monitors with differing
 scale settings. Windows 10 runtime compatibility still requires separate machine
 testing.
+
+Texture checks run with hardware-preferred and forced-WARP devices. Media checks
+verify changing GPU and decoded video pixels, opaque alpha, pause/resume, resize,
+playing and paused device replacement, Unicode file paths, and missing-file
+recovery. The small [synthetic video fixture](tests/assets/README.md) is generated
+locally; tests need no network media. Pixel readback is test-only. The six texture
+and media checks report a CTest skip when composition textures are unsupported;
+a skipped check is not evidence of media playback on that machine.
 
 Verified locally on Windows 11 build 26300 with clang-cl 21.1.1 and SDK
 10.0.26100.0, with one 96-DPI monitor. Failure-injection checkpoints are compiled
