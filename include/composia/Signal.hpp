@@ -32,9 +32,9 @@ template<class... Args>
 class Signal {
 public:
     Connection connect(std::function<void(Args...)> callback) {
-        std::erase_if(slots_, [](const auto& slot) { return !*slot.active; });
+        std::erase_if(slots_, [](const auto& slot) { return !*slot->active; });
         auto active = std::make_shared<bool>(true);
-        slots_.push_back({active, std::move(callback)});
+        slots_.push_back(std::make_shared<Slot>(Slot{active, std::move(callback)}));
         return Connection{std::move(active)};
     }
 
@@ -42,8 +42,8 @@ public:
         const auto snapshot = slots_;
         std::exception_ptr firstError;
         for (const auto& slot : snapshot) {
-            if (*slot.active) {
-                try { slot.callback(args...); }
+            if (*slot->active) {
+                try { slot->callback(args...); }
                 catch (...) { if (!firstError) { firstError = std::current_exception(); } }
             }
         }
@@ -52,7 +52,7 @@ public:
 
 private:
     struct Slot { std::shared_ptr<bool> active; std::function<void(Args...)> callback; };
-    std::vector<Slot> slots_;
+    std::vector<std::shared_ptr<Slot>> slots_;
 };
 
 }

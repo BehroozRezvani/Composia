@@ -4,6 +4,7 @@
 #include <limits>
 #include <iostream>
 #include <stdexcept>
+#include <vector>
 
 int main() {
     try {
@@ -29,6 +30,32 @@ int main() {
         try { failureSignal.emit(); }
         catch (const std::runtime_error&) { errorPropagated = true; }
         if (!secondNotified || !errorPropagated) { throw std::runtime_error("Subscriber failure prevented remaining notifications"); }
+        composia::Signal<bool> stateful;
+        std::vector<int> counts;
+        auto counter = stateful.connect([&, count = 0](bool nested) mutable {
+            counts.push_back(++count);
+            if (nested) { stateful.emit(false); }
+        });
+        stateful.emit(true);
+        stateful.emit(false);
+        if (counts != std::vector{1, 2, 3}) {
+            throw std::runtime_error("Callback state was lost between nested or successive emissions");
+        }
+        composia::Signal<> changing;
+        composia::Connection original, replacement;
+        std::vector<int> calls;
+        original = changing.connect([&] {
+            original.disconnect();
+            replacement = changing.connect([&, count = 0]() mutable { calls.push_back(++count); });
+            calls.push_back(0);
+        });
+        changing.emit();
+        if (calls != std::vector{0}) { throw std::runtime_error("A new callback ran in the emission that connected it"); }
+        changing.emit();
+        changing.emit();
+        if (calls != std::vector{0, 1, 2}) {
+            throw std::runtime_error("Replacing a callback during emission lost its state or lifetime");
+        }
         const auto rows = composia::layout::stack({10, 20, 100, 90}, std::array{40.0f, 60.0f}, 10);
         if (rows.size() != 2 || rows[1].y != 70 || rows[1].height != 40 || rows[1].width != 100) {
             throw std::runtime_error("Vertical layout failed to respect available space");
