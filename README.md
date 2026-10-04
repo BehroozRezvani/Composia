@@ -2,8 +2,8 @@
 
 A small C++23 UI framework for desktop HWNDs, using Windows Composition,
 Direct2D, DirectWrite, and Direct3D 11. The demo renders a text/vector canvas with
-an animated visual tree. No custom IDL, XAML, UWP application, or Windows App SDK
-is needed.
+an animated visual tree and accessible buttons. No custom IDL, XAML, UWP
+application, or Windows App SDK is needed.
 
 ## Build and run
 
@@ -64,6 +64,8 @@ same vcpkg toolchain/triplet. Installed targets carry their dependencies.
 | `ScopedSurfaceDraw` | Balanced surface BeginDraw/EndDraw with DPI and atlas-offset translation |
 | `AnimationHelpers` | Containers/sprites, implicit offset, vector/scalar keyframes, and expression layout |
 | `TextLayout` | Reusable DirectWrite format/layout with incremental bounds updates |
+| `Button` | Composition-rendered child HWND, pointer/keyboard input, and UI Automation Invoke |
+| `Layout` | DIP rectangles, hit testing, and horizontal/vertical stack placement |
 
 `demo/main.cpp` only initializes logging and starts the application/window.
 `demo/DemoWindow.cpp` demonstrates drawing and scene assembly. The moving tile
@@ -78,10 +80,10 @@ until the graphics-recreated notification. `Window.hpp` includes only native
 windowing support; Composition and graphics headers are separate.
 
 Create one `Application` on the UI thread and pass it to each `Window` constructor.
-`Application::run()` serves all registered windows and exits when the last HWND
+`Application::run()` serves all registered windows and exits when the last top-level HWND
 closes. Destroy window objects and Composition objects, then call `app.close()`
-to observe shutdown errors. All framework
-operations and surface updates belong on that thread. The demo embeds a
+to observe shutdown errors. All framework operations and surface updates belong
+on that thread. The demo embeds a
 PerMonitorV2 manifest; consumers should embed the same DPI declaration. Layout
 uses DIPs, surfaces use physical pixels, and the root applies the DPI scale.
 
@@ -101,8 +103,8 @@ any threads calling `post()`.
 
 Device removal is registered with D3D11 and watched alongside the Win32 message
 queue, including while idle. Recovery replaces the D3D/D2D devices through
-`SetRenderingDevice`, preserves Composition visuals/surfaces, and invokes the
-window invalidation. `Application::render` retries a drawing operation once after
+`SetRenderingDevice`, preserves Composition visuals/surfaces, and invalidates all
+windows. `Application::render` retries a drawing operation once after
 device loss; persistent or unrelated errors propagate. Recreate consumer-owned
 device-dependent caches in `Window::on_graphics_recreated()` or subscribe with
 `GraphicsDevice::on_recreated()` and retain the returned `Connection`. Device
@@ -110,18 +112,47 @@ replacement prepares the device and removal subscription before changing
 Composition; a preparation failure preserves the previous published state. Raw device
 access does not transfer ownership or extend a drawing scope's validity.
 
+## Controls
+
+```cpp
+composia::Application app;
+{
+    composia::Window window{app, L"Example", 640, 480};
+    composia::Button close{window, L"Close"};
+    close.set_bounds({24, 24, 160, 44});
+    auto clicked = close.on_click([&] {
+        PostMessageW(window.hwnd(), WM_CLOSE, 0, 0);
+    });
+    window.show();
+    app.run();
+}
+app.close();
+```
+
+Include `composia/Application.hpp` and `composia/Button.hpp`. Keep the returned
+connection alive for as long as the handler should run. Buttons support pointer
+capture/cancellation, Space/Enter activation, Tab/Shift+Tab focus, disabled state,
+and a visible focus outline. Each button hosts an SDK UI Automation provider with
+name, button role, focus/enabled properties, Invoke, and focus/invocation events.
+UI Automation invocation is marshaled to the application queue; retained providers
+reject calls after the control is destroyed. The demo's buttons change and reset
+the tile's motion.
+
 ## Validation
 
 `ctest --preset debug` and `ctest --preset release` run the test suite, including
 hardware-preferred and forced-WARP desktop checks. Desktop checks briefly show
 windows and require a Windows desktop. CTest retains output in
 `out/build/<preset>/Testing/Temporary/LastTest.log`; `build.ps1 -Test` also writes
-JUnit results there. Normal runs write `composia.log` in the working directory.
+JUnit results in `out/build/<preset>/test-results-*.xml`. Normal runs write
+`composia.log` in the working directory.
 Smoke-test code lives in separate test executables.
 
-The Windows CI matrix builds Debug/Release and runs `-L core` (signal behavior
+The Windows CI matrix builds Debug/Release and runs `-L core` (signals, layout,
 and a relocated installed-package consumer). Desktop checks are a separate
 `-L desktop` group, also available through the workflow's manual `desktop` input.
+Use `./scripts/build.ps1 -Preset debug -Test -TestLabel core` to build and run
+only checks that do not open desktop windows.
 
 The checks exercise real HWND attachment, vector/text drawing, exception-unwind
 cleanup, resize, current-monitor DPI sizing, minimize/restore, native animation
@@ -130,13 +161,18 @@ an HRESULT and a removal-event signal; these checks do not reset the GPU or
 qualify driver/TDR recovery. Pixel readback checks cover text, color, atlas offsets,
 and 96/120/144/168/192 DPI before and after recovery. Multiple-window lifetime,
 callback exceptions, failed/repeated recovery, and shutdown ordering have dedicated
-regressions. Physical mixed-DPI monitor transitions and Windows 10 runtime
-compatibility still require separate machine testing.
+regressions. Input tests cover capture, cancellation, keyboard activation, disabled
+ancestors, tab navigation, and stale providers. A separate MTA UI Automation client
+discovers and invokes the button. Monitor tests move a window across all attached
+monitors and check child HWND/Composition sizing; their output records monitor
+count and observed DPIs. Physical mixed-DPI transitions need monitors with differing
+scale settings. Windows 10 runtime compatibility still requires separate machine
+testing.
 
 Verified locally on Windows 11 build 26300 with clang-cl 21.1.1 and SDK
-10.0.26100.0: Debug and Release builds passed both smoke tests at 96 DPI.
-Two captures of the ordinary demo also confirmed the rendered canvas and changing
-tile position/status opacity.
+10.0.26100.0, with one 96-DPI monitor. Failure-injection checkpoints are compiled
+out when `COMPOSIA_BUILD_TESTS=OFF`; automatic device-removal recovery remains
+enabled.
 
 The interop follows the Windows SDK's
 [Composition surface BeginDraw contract](https://learn.microsoft.com/en-us/windows/win32/api/windows.ui.composition.interop/nf-windows-ui-composition-interop-icompositiondrawingsurfaceinterop-begindraw).

@@ -131,17 +131,21 @@ void Application::rethrow_callback_error() {
 }
 
 bool Application::has_windows() const noexcept {
-    return std::ranges::any_of(windows_, [](const Window* window) { return window->hwnd() != nullptr; });
+    return std::ranges::any_of(windows_, [](const Window* window) { return window->top_level() && window->hwnd(); });
 }
 
 void Application::notify_graphics_recreated() {
     const auto snapshot = windows_;
+    std::exception_ptr firstError;
     for (auto window : snapshot) {
         if (std::ranges::find(windows_, window) != windows_.end() && window->hwnd()) {
-            window->on_graphics_recreated();
-            if (std::ranges::find(windows_, window) != windows_.end() && window->hwnd()) { window->invalidate(); }
+            try {
+                window->on_graphics_recreated();
+                if (std::ranges::find(windows_, window) != windows_.end() && window->hwnd()) { window->invalidate(); }
+            } catch (...) { if (!firstError) { firstError = std::current_exception(); } }
         }
     }
+    if (firstError) { std::rethrow_exception(firstError); }
 }
 
 int Application::run() {
@@ -164,8 +168,15 @@ int Application::run() {
                 rethrow_callback_error();
                 return static_cast<int>(message.wParam);
             }
-            TranslateMessage(&message);
-            DispatchMessageW(&message);
+            bool handled{};
+            for (const auto window : windows_) {
+                const auto root = window->hwnd();
+                if (window->top_level() && root && (message.hwnd == root || IsChild(root, message.hwnd))) {
+                    handled = IsDialogMessageW(root, &message) != FALSE;
+                    break;
+                }
+            }
+            if (!handled) { TranslateMessage(&message); DispatchMessageW(&message); }
             rethrow_callback_error();
         }
     }

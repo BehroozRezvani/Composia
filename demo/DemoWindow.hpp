@@ -3,6 +3,7 @@
 #include <composia/Application.hpp>
 #include <composia/CompositionWindowTarget.hpp>
 #include <composia/TextLayout.hpp>
+#include <composia/Button.hpp>
 #include <memory>
 
 class DemoWindow : public composia::Window {
@@ -24,10 +25,16 @@ private:
 
     composia::Application& app_;
     composia::CompositionWindowTarget target_;
+    composia::composition::ContainerVisual scene_{nullptr};
     composia::composition::ContainerVisual stage_{nullptr};
     composia::composition::SpriteVisual tile_{nullptr};
     composia::composition::SpriteVisual indicator_{nullptr};
     std::vector<composia::TextLayout> labels_;
     wil::com_ptr<ID2D1SolidColorBrush> brush_;
+    composia::Button motionButton_;
+    composia::Button resetButton_;
+    composia::Connection motionClick_;
+    composia::Connection resetClick_;
+    bool largeMotion_{};
     unsigned drawCount_{};
 };

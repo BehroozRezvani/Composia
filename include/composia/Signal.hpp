@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <exception>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -39,9 +40,14 @@ public:
 
     void emit(Args... args) {
         const auto snapshot = slots_;
+        std::exception_ptr firstError;
         for (const auto& slot : snapshot) {
-            if (*slot.active) { slot.callback(args...); }
+            if (*slot.active) {
+                try { slot.callback(args...); }
+                catch (...) { if (!firstError) { firstError = std::current_exception(); } }
+            }
         }
+        if (firstError) { std::rethrow_exception(firstError); }
     }
 
 private:

@@ -3,15 +3,20 @@
 #include <composia/ScopedSurfaceDraw.hpp>
 #include <SimpleMath.h>
 #include <algorithm>
+#include <array>
 #include <string_view>
 
 using namespace composia;
 
 DemoWindow::DemoWindow(Application& app)
-    : Window(app, L"Composia", 960, 640), app_(app), target_(app.compositor(), app.graphics(), hwnd()) {
+    : Window(app, L"Composia", 960, 640), app_(app), target_(app.compositor(), app.graphics(), hwnd()),
+      motionButton_(*this, L"Change motion"), resetButton_(*this, L"Reset") {
+    scene_ = animations::container(app.compositor(), {960, 370});
+    scene_.Offset({0, 166, 0});
+    target_.root().Children().InsertAtTop(scene_);
     stage_ = animations::container(app.compositor(), {160.0f, 160.0f});
-    target_.root().Children().InsertAtTop(stage_);
-    animations::center_in_parent(stage_, target_.root());
+    scene_.Children().InsertAtTop(stage_);
+    animations::center_in_parent(stage_, scene_);
 
     tile_ = animations::sprite(app.compositor(), {128.0f, 128.0f}, {255, 111, 230, 200});
     auto rounded = app.compositor().CreateRoundedRectangleGeometry();
@@ -30,6 +35,14 @@ DemoWindow::DemoWindow(Application& app)
     labels_.emplace_back(factory, L"A little motion. A native canvas.", 30.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD);
     labels_.emplace_back(factory, L"Vector + text canvas", 17.0f);
     labels_.emplace_back(factory, L"Resize the window. The scene follows.", 14.0f);
+    motionClick_ = motionButton_.on_click([this] {
+        largeMotion_ = !largeMotion_;
+        animations::bob(tile_, {16, 24, 0}, largeMotion_ ? 50.0f : 22.0f);
+    });
+    resetClick_ = resetButton_.on_click([this] {
+        largeMotion_ = false;
+        animations::bob(tile_, {16, 24, 0}, 22);
+    });
     redraw();
 }
 
@@ -41,6 +54,11 @@ void DemoWindow::redraw() {
     app_.render([&] {
         target_.resize(pixels, dpi());
         const auto size = target_.logical_size();
+        scene_.Size({size.x, std::max(1.0f, size.y - 270)});
+        const auto buttons = layout::stack({32, 116, std::max(0.0f, size.x - 64), 44},
+            std::array{160.0f, 100.0f}, 12, layout::Axis::horizontal);
+        motionButton_.set_bounds(buttons[0]);
+        resetButton_.set_bounds(buttons[1]);
         indicator_.Offset({size.x - 42.0f, 42.0f, 0.0f});
         draw_canvas();
     });
@@ -54,7 +72,7 @@ std::optional<LRESULT> DemoWindow::on_message(UINT message, WPARAM, LPARAM lpara
     if (message == WM_GETMINMAXINFO) {
         auto info = reinterpret_cast<MINMAXINFO*>(lparam);
         const auto windowDpi = hwnd() ? dpi() : GetDpiForSystem();
-        info->ptMinTrackSize = {MulDiv(580, windowDpi, 96), MulDiv(460, windowDpi, 96)};
+        info->ptMinTrackSize = {MulDiv(580, windowDpi, 96), MulDiv(540, windowDpi, 96)};
         return 0;
     }
     return std::nullopt;
@@ -85,10 +103,11 @@ void DemoWindow::draw_canvas() {
     text(0, 31, 24, 0x6FE6C8);
     text(1, 65, 47, 0xEAF2F4);
 
-    const DirectX::SimpleMath::Vector2 center{size.x * 0.5f, size.y * 0.5f};
+    const DirectX::SimpleMath::Vector2 center{size.x * 0.5f, 166 + scene_.Size().y * 0.5f};
+    const auto radius = std::clamp(scene_.Size().y * 0.5f - 20.0f, 60.0f, 142.0f);
     brush->SetColor(D2D1::ColorF(0x314C57));
-    dc->DrawEllipse(D2D1::Ellipse({center.x, center.y}, 142.0f, 142.0f), brush, 1.0f);
-    dc->DrawEllipse(D2D1::Ellipse({center.x, center.y}, 157.0f, 157.0f), brush, 0.5f);
+    dc->DrawEllipse(D2D1::Ellipse({center.x, center.y}, radius, radius), brush, 1.0f);
+    dc->DrawEllipse(D2D1::Ellipse({center.x, center.y}, radius + 15, radius + 15), brush, 0.5f);
 
     brush->SetColor(D2D1::ColorF(0x31404A));
     dc->DrawLine({32.0f, size.y - 88.0f}, {size.x - 32.0f, size.y - 88.0f}, brush);

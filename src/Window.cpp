@@ -1,14 +1,17 @@
 #include <composia/Window.hpp>
 #include <composia/Application.hpp>
 #include <string>
+#include <cmath>
+#include <limits>
 
 namespace composia {
 namespace {
 constexpr wchar_t windowClass[] = L"Composia.Window";
 }
 
-Window::Window(Application& application, std::wstring_view title, int widthDip, int heightDip)
-    : application_(application) {
+Window::Window(Application& application, std::wstring_view title, int widthDip, int heightDip, HWND parent)
+    : application_(application), topLevel_(parent == nullptr) {
+    application_.verify_thread();
     const auto instance = GetModuleHandleW(nullptr);
     WNDCLASSEXW wc{};
     wc.cbSize = sizeof(wc);
@@ -20,16 +23,27 @@ Window::Window(Application& application, std::wstring_view title, int widthDip, 
         THROW_LAST_ERROR_IF(GetLastError() != ERROR_CLASS_ALREADY_EXISTS);
     }
 
-    const auto initialDpi = GetDpiForSystem();
+    const auto initialDpi = parent ? GetDpiForWindow(parent) : GetDpiForSystem();
+    const DWORD style = parent ? WS_CHILD | WS_TABSTOP | WS_CLIPSIBLINGS | WS_VISIBLE
+                               : WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN;
+    const DWORD extendedStyle = parent ? 0 : WS_EX_CONTROLPARENT;
     RECT bounds{0, 0, MulDiv(widthDip, initialDpi, 96), MulDiv(heightDip, initialDpi, 96)};
-    THROW_IF_WIN32_BOOL_FALSE(AdjustWindowRectExForDpi(&bounds, WS_OVERLAPPEDWINDOW, FALSE, 0, initialDpi));
+    THROW_IF_WIN32_BOOL_FALSE(AdjustWindowRectExForDpi(&bounds, style, FALSE, extendedStyle, initialDpi));
     const std::wstring ownedTitle{title};
-    auto handle = CreateWindowExW(0, windowClass, ownedTitle.c_str(), WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT, bounds.right - bounds.left, bounds.bottom - bounds.top,
-        nullptr, nullptr, instance, this);
+    auto handle = CreateWindowExW(extendedStyle, windowClass, ownedTitle.c_str(), style,
+        parent ? 0 : CW_USEDEFAULT, parent ? 0 : CW_USEDEFAULT, bounds.right - bounds.left, bounds.bottom - bounds.top,
+        parent, nullptr, instance, this);
     hwnd_.reset(handle);
     rethrow_callback_error();
     THROW_LAST_ERROR_IF_NULL(handle);
+    const auto actualDpi = GetDpiForWindow(handle);
+    if (actualDpi != initialDpi && actualDpi != 0) {
+        bounds = {0, 0, MulDiv(widthDip, actualDpi, 96), MulDiv(heightDip, actualDpi, 96)};
+        THROW_IF_WIN32_BOOL_FALSE(AdjustWindowRectExForDpi(&bounds, style, FALSE, extendedStyle, actualDpi));
+        THROW_IF_WIN32_BOOL_FALSE(SetWindowPos(handle, nullptr, 0, 0, bounds.right - bounds.left, bounds.bottom - bounds.top,
+            SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE));
+        rethrow_callback_error();
+    }
     application_.attach(*this);
 }
 
@@ -42,6 +56,21 @@ Window::~Window() {
 
 void Window::show(int command) { ShowWindow(hwnd(), command); }
 void Window::invalidate() { THROW_IF_WIN32_BOOL_FALSE(InvalidateRect(hwnd(), nullptr, FALSE)); }
+void Window::set_bounds(layout::Rect bounds) {
+    const auto scale = static_cast<double>(dpi()) / 96.0;
+    const auto pixel = [scale](double value) {
+        const auto rounded = std::round(value * scale);
+        THROW_HR_IF(E_INVALIDARG, !std::isfinite(rounded) || rounded < INT_MIN || rounded > INT_MAX);
+        return static_cast<int>(rounded);
+    };
+    THROW_HR_IF(E_INVALIDARG, !hwnd() || bounds.width < 0 || bounds.height < 0);
+    const int x = pixel(bounds.x), y = pixel(bounds.y);
+    const auto width = static_cast<long long>(pixel(static_cast<double>(bounds.x) + bounds.width)) - x;
+    const auto height = static_cast<long long>(pixel(static_cast<double>(bounds.y) + bounds.height)) - y;
+    THROW_HR_IF(E_INVALIDARG, width > INT_MAX || height > INT_MAX);
+    THROW_IF_WIN32_BOOL_FALSE(SetWindowPos(hwnd(), nullptr, x, y, static_cast<int>(width), static_cast<int>(height),
+        SWP_NOZORDER | SWP_NOACTIVATE));
+}
 UINT Window::dpi() const noexcept { return GetDpiForWindow(hwnd()); }
 
 SIZE Window::client_pixels() const {
@@ -101,6 +130,9 @@ LRESULT Window::dispatch(HWND handle, UINT message, WPARAM wparam, LPARAM lparam
         on_resize();
         return 0;
     }
+    case WM_DPICHANGED_AFTERPARENT:
+        on_resize();
+        return 0;
     case WM_PAINT: {
         PAINTSTRUCT paint{};
         BeginPaint(handle, &paint);

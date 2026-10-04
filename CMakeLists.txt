@@ -21,6 +21,8 @@ add_library(composia STATIC
     src/ScopedSurfaceDraw.cpp
     src/AnimationHelpers.cpp
     src/TextLayout.cpp
+    src/Layout.cpp
+    src/Button.cpp
 )
 add_library(Composia::UI ALIAS composia)
 target_include_directories(composia PUBLIC
@@ -33,7 +35,7 @@ target_compile_definitions(composia PUBLIC UNICODE _UNICODE NOMINMAX WIN32_LEAN_
 target_compile_options(composia PUBLIC /EHsc /utf-8 PRIVATE /W4 /WX)
 target_link_libraries(composia
     PUBLIC WIL::WIL Microsoft::CppWinRT
-    PRIVATE spdlog::spdlog d3d11 dxgi d2d1 dwrite windowsapp CoreMessaging user32 gdi32 ole32
+    PRIVATE spdlog::spdlog d3d11 dxgi d2d1 dwrite windowsapp CoreMessaging user32 gdi32 ole32 oleaut32 uiautomationcore
 )
 
 if(COMPOSIA_BUILD_DEMO OR COMPOSIA_BUILD_TESTS)
