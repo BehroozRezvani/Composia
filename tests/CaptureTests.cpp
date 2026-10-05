@@ -138,6 +138,12 @@ private:
             ++stage_;
             break;
         case 2: {
+            if (!monitor_ && resizeSteps_ < 8) {
+                source_->set_bounds({20, 20, resizeSteps_ % 2 == 0 ? 320.0f : 510.0f, resizeSteps_ % 2 == 0 ? 230.0f : 340.0f});
+                ++resizeSteps_;
+                baseline_ = capture_frames();
+                return;
+            }
             const auto desc = description();
             if (capture_frames() < baseline_ + 4 || !matches(true)) { return; }
             if (!monitor_ && (desc.Width <= beforeResize_.Width || desc.Height <= beforeResize_.Height)) { return; }
@@ -188,7 +194,7 @@ private:
     D3D11_TEXTURE2D_DESC beforeResize_{};
     POINT monitorOrigin_{};
     std::uint64_t generation_{};
-    unsigned stage_{}, baseline_{};
+    unsigned stage_{}, baseline_{}, resizeSteps_{};
     bool monitor_{}, checking_{};
 };
 }

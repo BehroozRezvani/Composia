@@ -63,7 +63,8 @@ capture::Direct3D11CaptureFrame ScreenCapture::next_frame() {
     if (!latest) { return nullptr; }
     const auto size = latest.ContentSize();
     if (size.Width <= 0 || size.Height <= 0) { return nullptr; }
-    if (size.Width != size_.Width || size.Height != size_.Height) {
+    const auto surface = latest.Surface().Description();
+    if (size.Width != size_.Width || size.Height != size_.Height || size.Width > surface.Width || size.Height > surface.Height) {
         latest.Close();
         latest = nullptr;
         pool_.Recreate(device_, format, buffers, size);

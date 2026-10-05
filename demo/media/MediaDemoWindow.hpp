@@ -31,6 +31,7 @@ protected:
 
 private:
     void initialize_graphics();
+    void update_controls();
     void tick();
     void arrange();
     void draw_overlay();
@@ -65,5 +66,5 @@ private:
     float seconds_{};
     HRESULT mediaError_{S_OK};
     unsigned captureFrames_{};
-    bool supported_{}, initialized_{}, scenePaused_{}, showingContent_{}, ticking_{}, captureNeedsDevice_{};
+    bool supported_{}, initialized_{}, scenePaused_{}, showingContent_{}, ticking_{}, captureNeedsDevice_{}, closeAfterPick_{};
 };

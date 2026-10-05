@@ -47,7 +47,8 @@ picker to select a window or display for live Windows Graphics Capture (WGC).
 The captured content appears beneath composed text, with the GPU landscape in
 picture-in-picture. **Stop capture** ends the session and returns to the landscape;
 closing the captured window also ends capture. Windows' capture indicator stays
-enabled. Canceling the picker keeps the current content.
+enabled. Canceling the picker keeps the current content. If you close the demo
+while the system picker is open, dismiss the picker to finish exiting.
 
 You can also open or drop a local video. **Play / pause** controls the video, or
 the landscape when no video is open; it is disabled during screen capture.
@@ -93,7 +94,9 @@ Call `start`, `next_frame`, `recreate`, and `close` on the UI thread. Close ever
 returned frame before polling again, recreating, or stopping capture. Native item,
 frame-pool, and session accessors remain available. Target-closed callbacks only
 update shared atomic state; they never access a window. The demo also polls picker
-completion on the UI thread and cancels pending selection on shutdown.
+completion on the UI thread. Normal window closure waits for the picker to finish
+and discards its result, since canceling the async operation does not reliably
+dismiss the Windows picker UI.
 
 Capture is an SDR BGRA preview: it does not record files, capture audio, or tone-map
 HDR displays. Screen-capture controls are disabled when WGC is unsupported.

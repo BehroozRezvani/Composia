@@ -94,11 +94,7 @@ void MediaDemoWindow::caption(std::wstring_view title, std::wstring_view message
 void MediaDemoWindow::initialize_graphics() {
     auto& app = application();
     supported_ = TextureSurface::supported(app.compositor(), app.graphics().d3d_device().get());
-    openButton_.enabled(supported_);
-    captureButton_.enabled(supported_ && ScreenCapture::supported() && !pickOperation_);
-    stopButton_.enabled(capture_.active());
-    pauseButton_.enabled(supported_ && !capture_.active());
-    resetButton_.enabled(supported_);
+    update_controls();
     if (supported_) {
         app.graphics().d3d_device().query<ID3D11Multithread>()->SetMultithreadProtected(TRUE);
         scene_ = std::make_unique<GpuScene>(app.graphics());
@@ -108,6 +104,15 @@ void MediaDemoWindow::initialize_graphics() {
         caption(L"Composition textures unavailable", L"This demo needs a Windows build and graphics driver that support composition textures.");
     }
     initialized_ = true;
+}
+
+void MediaDemoWindow::update_controls() {
+    const bool enabled = supported_ && !pickOperation_ && !closeAfterPick_;
+    openButton_.enabled(enabled);
+    captureButton_.enabled(enabled && ScreenCapture::supported());
+    stopButton_.enabled(enabled && capture_.active());
+    pauseButton_.enabled(enabled && !capture_.active());
+    resetButton_.enabled(enabled);
 }
 
 void MediaDemoWindow::tick() {
@@ -183,7 +188,7 @@ void MediaDemoWindow::tick() {
 }
 
 bool MediaDemoWindow::load_video(const std::filesystem::path& path) {
-    if (!supported_) { return false; }
+    if (!supported_ || pickOperation_ || closeAfterPick_) { return false; }
     try {
         reset_media();
         video_.open(path);
@@ -205,7 +210,7 @@ bool MediaDemoWindow::load_video(const std::filesystem::path& path) {
 }
 
 bool MediaDemoWindow::start_capture(const capture::GraphicsCaptureItem& item) {
-    if (!item || !supported_) { return false; }
+    if (!item || !supported_ || pickOperation_ || closeAfterPick_) { return false; }
     try {
         reset_media();
         capture_.start(item, application().graphics().d3d_device().get());
@@ -213,8 +218,7 @@ bool MediaDemoWindow::start_capture(const capture::GraphicsCaptureItem& item) {
         captureFrames_ = 0;
         mediaError_ = S_OK;
         contentName_ = item.DisplayName();
-        stopButton_.enabled(true);
-        pauseButton_.enabled(false);
+        update_controls();
         caption(L"Starting capture…", L"The selected window or display will appear here.");
         return true;
     } catch (const winrt::hresult_error& error) { capture_failed(error.code()); }
@@ -228,7 +232,7 @@ void MediaDemoWindow::choose_capture() {
         picker_ = capture::GraphicsCapturePicker{};
         THROW_IF_FAILED(picker_.as<IInitializeWithWindow>()->Initialize(hwnd()));
         pickOperation_ = picker_.PickSingleItemAsync();
-        captureButton_.enabled(false);
+        update_controls();
     } catch (const winrt::hresult_error& error) { capture_failed(error.code()); }
     catch (const wil::ResultException& error) { capture_failed(error.GetErrorCode()); }
 }
@@ -238,9 +242,10 @@ void MediaDemoWindow::poll_picker() {
     if (!pickOperation_ || pickOperation_.Status() == AsyncStatus::Started) { return; }
     auto operation = std::exchange(pickOperation_, nullptr);
     picker_ = nullptr;
-    captureButton_.enabled(supported_ && ScreenCapture::supported());
+    update_controls();
     try {
         const auto finish = wil::scope_exit([&] { operation.Close(); });
+        if (closeAfterPick_) { PostMessageW(hwnd(), WM_CLOSE, 0, 0); return; }
         if (operation.Status() != AsyncStatus::Canceled) {
             if (const auto item = operation.GetResults()) { start_capture(item); }
         }
@@ -307,7 +312,6 @@ void MediaDemoWindow::choose_video() {
 }
 
 void MediaDemoWindow::reset_media() {
-    cancel_picker();
     capture_.close();
     video_.close();
     contentBrush_.Surface(nullptr);
@@ -315,9 +319,7 @@ void MediaDemoWindow::reset_media() {
     showingContent_ = false;
     scenePaused_ = false;
     progress_.Size({0, 3});
-    stopButton_.enabled(false);
-    pauseButton_.enabled(supported_);
-    captureButton_.enabled(supported_ && ScreenCapture::supported());
+    update_controls();
     caption(L"Aurora field", L"An animated landscape, drawn entirely on the GPU.");
     arrange();
 }
@@ -399,6 +401,14 @@ void MediaDemoWindow::on_graphics_recreated() {
 
 std::optional<LRESULT> MediaDemoWindow::on_message(UINT message, WPARAM wparam, LPARAM lparam) {
     if (message == WM_TIMER && wparam == frameTimer) { tick(); return 0; }
+    if (message == WM_CLOSE && pickOperation_) {
+        closeAfterPick_ = true;
+        capture_.close();
+        video_.close();
+        update_controls();
+        caption(L"Close the capture picker", L"Choose Cancel in the picker to finish closing this window.");
+        return 0;
+    }
     if (message == WM_DROPFILES) {
         const auto drop = reinterpret_cast<HDROP>(wparam);
         const auto cleanup = wil::scope_exit([&] { DragFinish(drop); });
