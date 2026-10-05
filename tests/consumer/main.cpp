@@ -4,12 +4,14 @@
 #include <composia/AnimationHelpers.hpp>
 #include <composia/Button.hpp>
 #include <composia/TextureSurface.hpp>
+#include <composia/ScreenCapture.hpp>
 
 int main(int argc, char**) {
     // Keep a runtime-dependent call so Release also checks transitive static linking.
     if (argc > 1) {
         composia::Application app{true};
         (void)composia::TextureSurface::supported(app.compositor(), app.graphics().d3d_device().get());
+        (void)composia::ScreenCapture::supported();
         {
             composia::Window window{app, L"Consumer", 320, 240};
             composia::Button button{window, L"Action"};

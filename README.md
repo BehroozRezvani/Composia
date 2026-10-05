@@ -42,11 +42,18 @@ Visual C++ runtime. The baseline matches the submodule commit.
 .\out\build\release\composia-media-demo.exe "C:\Videos\clip.mp4"
 ```
 
-The demo starts with an animated GPU landscape. Open or drop a local video to
-play it with the landscape in picture-in-picture, beneath composed text and
-controls. **Play / pause** controls the video, or the landscape when no video is
-open. **GPU only** returns to the landscape. Videos loop; supported formats depend
-on the codecs installed on the PC. Add `--warp` to use software rendering.
+The demo starts with an animated GPU landscape. **Capture…** opens the Windows
+picker to select a window or display for live Windows Graphics Capture (WGC).
+The captured content appears beneath composed text, with the GPU landscape in
+picture-in-picture. **Stop capture** ends the session and returns to the landscape;
+closing the captured window also ends capture. Windows' capture indicator stays
+enabled. Canceling the picker keeps the current content.
+
+You can also open or drop a local video. **Play / pause** controls the video, or
+the landscape when no video is open; it is disabled during screen capture.
+**GPU only** stops either source and returns to the landscape. Videos loop;
+supported formats depend on the codecs installed on the PC. Add `--warp` to use
+software rendering.
 
 This demo needs a recent Windows 11 runtime and a graphics device supporting
 composition textures. It checks support at runtime and displays an explanation
@@ -67,9 +74,29 @@ it skips a frame when all buffers are busy. Consumers must stop referencing a
 texture and observe its availability before changing its pixels. Availability
 does not synchronize other application threads writing the same resource.
 Recreate these textures after graphics-device replacement; the demo restores
-both playing and paused content. Frame production uses a 16 ms UI timer and
-stops while minimized. Shader compilation, media playback, and file-picker
+both playing and paused content. Preview updates use a 16 ms UI timer and
+pause while minimized; an active WGC session continues until stopped.
+Shader compilation, media playback, and file-picker
 dependencies are confined to `demo/media`.
+
+`ScreenCapture` wraps the SDK's
+[`Windows.Graphics.Capture`](https://learn.microsoft.com/en-us/windows/apps/develop/media-authoring-processing/screen-capture)
+frame pool and session. It accepts a `GraphicsCaptureItem` from the system picker
+or desktop interop, polls a free-threaded frame pool, and adapts its buffers when
+the target resizes. The demo copies each acquired frame on the GPU into a shared
+composition texture before returning the capture buffer to WGC. This copy keeps
+WGC's buffer lifetime independent of the compositor's availability fence; captured
+textures are not held after their frame is closed. Device replacement rebuilds
+capture resources for the selected target.
+
+Call `start`, `next_frame`, `recreate`, and `close` on the UI thread. Close every
+returned frame before polling again, recreating, or stopping capture. Native item,
+frame-pool, and session accessors remain available. Target-closed callbacks only
+update shared atomic state; they never access a window. The demo also polls picker
+completion on the UI thread and cancels pending selection on shutdown.
+
+Capture is an SDR BGRA preview: it does not record files, capture audio, or tone-map
+HDR displays. Screen-capture controls are disabled when WGC is unsupported.
 
 ## Framework
 
@@ -99,6 +126,7 @@ same vcpkg toolchain/triplet. Installed targets carry their dependencies.
 | `CompositionWindowTarget` | Desktop HWND bridge, visual root, canvas surface/brush, and pixel/DIP sizing |
 | `ScopedSurfaceDraw` | Balanced surface BeginDraw/EndDraw with DPI and atlas-offset translation |
 | `TextureSurface` | Direct D3D11 texture composition, capability check, and availability fence |
+| `ScreenCapture` | WGC session, captured-frame polling, target resize, and device replacement |
 | `AnimationHelpers` | Containers/sprites, implicit offset, vector/scalar keyframes, and expression layout |
 | `TextLayout` | Reusable DirectWrite format/layout with incremental bounds updates |
 | `Button` | Composition-rendered child HWND, pointer/keyboard input, and UI Automation Invoke |
@@ -218,6 +246,15 @@ recovery. The small [synthetic video fixture](tests/assets/README.md) is generat
 locally; tests need no network media. Pixel readback is test-only. The six texture
 and media checks report a CTest skip when composition textures are unsupported;
 a skipped check is not evidence of media playback on that machine.
+
+Four WGC checks capture an owned test window and its monitor using hardware-preferred
+and forced-WARP devices. They verify known changing pixels in the texture submitted
+to the compositor, target resize, device replacement, stop/restart, target closure, and closing
+the preview during active capture. Monitor checks read back only a pixel inside the
+owned test window; captured desktop images are not saved. These checks skip only
+when WGC or composition textures report unsupported. The system picker requires
+interactive verification; automated capture tests select their owned target through
+the SDK's desktop interop.
 
 Verified locally on Windows 11 build 26300 with clang-cl 21.1.1 and SDK
 10.0.26100.0, with one 96-DPI monitor. Failure-injection checkpoints are compiled

@@ -24,6 +24,7 @@ add_library(composia STATIC
     src/Layout.cpp
     src/Button.cpp
     src/TextureSurface.cpp
+    src/ScreenCapture.cpp
 )
 set_source_files_properties(src/TextureSurface.cpp PROPERTIES COMPILE_DEFINITIONS NTDDI_VERSION=NTDDI_WIN10_NI)
 add_library(Composia::UI ALIAS composia)
