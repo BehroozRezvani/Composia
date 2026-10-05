@@ -8,6 +8,7 @@ namespace composia {
 class ScopedSurfaceDraw {
 public:
     ScopedSurfaceDraw(const composition::CompositionDrawingSurface&, const GraphicsDevice&, UINT dpi);
+    ScopedSurfaceDraw(const composition::CompositionDrawingSurface&, const GraphicsDevice&, UINT dpi, const RECT& update);
     ~ScopedSurfaceDraw() noexcept;
     ScopedSurfaceDraw(const ScopedSurfaceDraw&) = delete;
     ScopedSurfaceDraw& operator=(const ScopedSurfaceDraw&) = delete;
@@ -19,6 +20,7 @@ public:
     [[nodiscard]] POINT update_offset() const noexcept { return offset_; }
 
 private:
+    ScopedSurfaceDraw(const composition::CompositionDrawingSurface&, const GraphicsDevice&, UINT dpi, const RECT* update);
     wil::com_ptr<ABI::Windows::UI::Composition::ICompositionDrawingSurfaceInterop> interop_;
     wil::com_ptr<ID2D1DeviceContext6> context_;
     wil::com_ptr<IDWriteFactory7> textFactory_;

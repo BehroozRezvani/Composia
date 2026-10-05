@@ -101,6 +101,65 @@ dismiss the Windows picker UI.
 Capture is an SDR BGRA preview: it does not record files, capture audio, or tone-map
 HDR displays. Screen-capture controls are disabled when WGC is unsupported.
 
+## Virtual atlas demo
+
+```powershell
+.\out\build\release\composia-virtual-demo.exe
+```
+
+A scrollable, procedural map on a **1,048,576 × 1,048,576** pixel
+[`CompositionVirtualDrawingSurface`](https://learn.microsoft.com/en-us/uwp/api/windows.ui.composition.compositionvirtualdrawingsurface).
+An ordinary BGRA bitmap of that size would require 4 TiB. The demo draws only
+512-pixel tiles covering the viewport plus one tile of overscan, then calls
+`Trim` with the region to retain. Scrolling away releases the old regions;
+returning redraws them. No document-sized texture or CPU bitmap is created.
+The status bar reports cached tiles and retained pixel bytes; this is an estimate
+of BGRA content, **not a measurement of GPU memory**, which includes driver
+allocation granularity and compositor overhead.
+
+Drag to pan, use either native scrollbar, or scroll with the mouse wheel
+(Shift for horizontal). Ctrl+wheel zooms around the pointer; the zoom buttons
+use the viewport center. Home/End jump to opposite corners, arrow keys move by
+a line, and Page Up/Down move by a viewport. Click the map to give it keyboard
+focus. Add `--warp` for software rendering. The demo keeps the Windows 10 baseline.
+
+`VirtualSurface` supplies the reusable cache for maps, document pages, and image
+editors. Its painter receives a tile-local, 96-DPI drawing context and the tile's
+rectangle in document pixels. Fetch/decode or generate only the relevant content
+inside the callback; the sample generates map tiles without external data.
+
+```cpp
+composia::VirtualSurface document{app.graphics(), {1000000, 1000000}};
+document.update({0, 0, 1200, 800}, [](composia::ScopedSurfaceDraw& draw, const RECT& tile) {
+    // Draw this document region at local (0, 0); the helper clears it first.
+    draw.context()->Clear(D2D1::ColorF(0xFFFFFF));
+});
+auto brush = app.compositor().CreateSurfaceBrush(document.surface());
+```
+
+The size and viewport use document pixels, independent of window DPI. Use a
+surface brush with `Stretch(None)`, zero alignment ratios, scale for zoom, and
+negative viewport-origin offset, as in `demo/virtual`. `invalidate(rect)` dirties
+intersecting tiles; the next `update` repaints them. `clear()` trims all backing
+regions. `resize()` clears content and changes the logical dimensions. Device
+generation changes invalidate the cache automatically on the next update.
+Keep the graphics device alive, and call the helper on the UI thread inside
+`Application::render`. Do not reenter it or alter its surface from the painter.
+If directly drawing through the native surface accessor, invalidate affected
+cached tiles before returning to managed updates.
+
+Dimensions must be positive and at most 2²⁴ pixels. Tile size is configurable
+from 64 to 2048 pixels; the default cache budget is 256 tiles. Oversized viewports
+are rejected before changing the retained region, rather than allocating an
+unbounded number of tiles. The demo limits zoom-out to fit this budget. It scales
+the cached raster when zooming; a production map viewer or document reader can
+add resolution levels and asynchronous loading for its own content.
+
+`ScopedSurfaceDraw` also accepts an update `RECT` in physical surface pixels.
+Its ordinary context uses whole-surface DIPs, with the update origin and atlas
+offset included in the transform. `VirtualSurface` deliberately changes that
+transform to tile-local pixels to preserve precision at distant coordinates.
+
 ## Framework
 
 Link `Composia::UI` from CMake; public headers are in `include/composia`.
@@ -128,6 +187,7 @@ same vcpkg toolchain/triplet. Installed targets carry their dependencies.
 | `GraphicsDevice` | D3D11 device5, D2D device6/context6, DirectWrite factory7, and Composition graphics device |
 | `CompositionWindowTarget` | Desktop HWND bridge, visual root, canvas surface/brush, and pixel/DIP sizing |
 | `ScopedSurfaceDraw` | Balanced surface BeginDraw/EndDraw with DPI and atlas-offset translation |
+| `VirtualSurface` | Sparse drawing surface, bounded viewport tile cache, trimming, dirty regions, and recovery |
 | `TextureSurface` | Direct D3D11 texture composition, capability check, and availability fence |
 | `ScreenCapture` | WGC session, captured-frame polling, target resize, and device replacement |
 | `AnimationHelpers` | Containers/sprites, implicit offset, vector/scalar keyframes, and expression layout |
@@ -258,6 +318,13 @@ owned test window; captured desktop images are not saved. These checks skip only
 when WGC or composition textures report unsupported. The system picker requires
 interactive verification; automated capture tests select their owned target through
 the SDK's desktop interop.
+
+Virtual-surface checks verify sparse-cache bounds across 80 distant viewports,
+pixel contents after trimming, tile reuse and dirty-region redraw, callback
+failure recovery, resize, and graphics replacement on hardware and WARP.
+They also check the maximum logical extent, partial-update offsets at five
+DPIs, and the demo's scrolling, zoom, panning, resize, and recovery. These tests
+verify the retained region and rendering; they do not measure driver VRAM usage.
 
 Verified locally on Windows 11 build 26300 with clang-cl 21.1.1 and SDK
 10.0.26100.0, with one 96-DPI monitor. Failure-injection checkpoints are compiled

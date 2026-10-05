@@ -19,6 +19,7 @@ add_library(composia STATIC
     src/GraphicsDevice.cpp
     src/CompositionWindowTarget.cpp
     src/ScopedSurfaceDraw.cpp
+    src/VirtualSurface.cpp
     src/AnimationHelpers.cpp
     src/TextLayout.cpp
     src/Layout.cpp
@@ -42,6 +43,10 @@ target_link_libraries(composia
 )
 
 if(COMPOSIA_BUILD_DEMO OR COMPOSIA_BUILD_TESTS)
+    add_library(composia-virtual-sample STATIC demo/virtual/VirtualDemoWindow.cpp)
+    target_link_libraries(composia-virtual-sample PUBLIC Composia::UI)
+    target_include_directories(composia-virtual-sample PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/demo/virtual)
+    target_compile_options(composia-virtual-sample PRIVATE /W4 /WX)
     find_package(directxtk CONFIG REQUIRED)
     add_library(composia-media-sample STATIC
         demo/media/GpuScene.cpp demo/media/TextureFrames.cpp demo/media/VideoSource.cpp demo/media/MediaDemoWindow.cpp)
@@ -50,6 +55,9 @@ if(COMPOSIA_BUILD_DEMO OR COMPOSIA_BUILD_TESTS)
     target_compile_options(composia-media-sample PRIVATE /W4 /WX)
 endif()
 if(COMPOSIA_BUILD_DEMO)
+    add_executable(composia-virtual-demo WIN32 demo/virtual/main.cpp demo/app.manifest)
+    target_link_libraries(composia-virtual-demo PRIVATE composia-virtual-sample spdlog::spdlog)
+    target_compile_options(composia-virtual-demo PRIVATE /W4 /WX)
     add_executable(composia-demo WIN32 demo/main.cpp demo/DemoWindow.cpp demo/app.manifest)
     target_link_libraries(composia-demo PRIVATE Composia::UI spdlog::spdlog Microsoft::DirectXTK)
     target_compile_options(composia-demo PRIVATE /W4 /WX)
