@@ -32,8 +32,10 @@ ctest --preset debug
 vcpkg supplies WIL, generated C++/WinRT SDK projections, spdlog, and DirectX
 Toolkit 11 (whose vcpkg package is `directxtk`). The application/framework compile
 with clang-cl; vcpkg builds ABI-compatible static dependencies using the MSVC
-toolchain and dynamic CRT (`x64-windows-static-md`). Release requires the x64
-Visual C++ runtime. The baseline matches the submodule commit.
+toolchain and the static CRT (`x64-windows-static`), and the project sets
+`CMAKE_MSVC_RUNTIME_LIBRARY` to match. The executables import only Windows system
+DLLs; no Visual C++ redistributable is needed. The baseline matches the submodule
+commit.
 
 ## Texture studio demo
 
@@ -160,6 +162,46 @@ Its ordinary context uses whole-surface DIPs, with the update origin and atlas
 offset included in the transform. `VirtualSurface` deliberately changes that
 transform to tile-local pixels to preserve precision at distant coordinates.
 
+## Mail client demo
+
+```powershell
+.\out\build\release\composia-mail-demo.exe
+```
+
+A three-pane mail client built only from the framework's primitives: folders,
+a message list, a reading pane, and a compose form, over an in-memory mailbox of
+fictional messages. **It is a UI exercise.** There is no account, sign-in,
+storage, or network code; sending a message only appends it to the Sent folder
+for the lifetime of the process, and attachments are labels.
+
+The list scrolls with the wheel, Page Up/Down, or the keyboard. Clicking a row
+opens it and marks it read; stars toggle from the row or the header; **Archive**
+and **Delete** move messages and offer **Undo** in the status bar; deleting from
+Trash is permanent. Search filters the current folder as you type. **Compose**,
+**Reply**, and **Forward** open an editable form; **Send** files the message under
+Sent, **Save draft** keeps it under Drafts, and Escape saves a non-empty draft.
+Open a draft with Enter or a click to continue editing it. With the list focused:
+C composes, R replies, F forwards, E archives, S stars, U marks unread, Delete
+trashes, Up/Down and Home/End move, Ctrl+F focuses search, and Ctrl+Z undoes.
+Add `--warp` for software rendering. The demo keeps the Windows 10 baseline.
+
+The chrome, folders, rows, header, and status bar are drawn into the window's
+canvas surface on each paint; each paint also records the DIP rectangles of the
+clickable regions, which pointer messages hit-test against. Buttons are the
+framework's accessible `Button` controls. `demo/mail/TextField` is sample code
+for a composition-rendered, editable text box: a child HWND that draws its text
+into its own surface and positions a blinking caret visual with a composition
+animation, so blinking never redraws text. It supports typing, Backspace/Delete
+(with Ctrl for words), arrows, Home/End, Enter, Ctrl+V paste, wheel scrolling of
+multiline content, and pointer caret placement, and it hands Tab to the parent's
+dialog navigation. It has no selection, IME composition, or UI Automation
+provider; the audit message in the sample inbox lists what a product version
+would need. `demo/mail/MailModel` holds the mailbox and formatting helpers and
+has no UI dependencies. The demo deliberately avoids `std::format` and the CRT's
+time and locale formatting, and keeps its sample text as UTF-8 constant data; those
+three choices keep the statically linked release executable near 720 KB, about a
+quarter smaller than the first version.
+
 ## Framework
 
 Link `Composia::UI` from CMake; public headers are in `include/composia`.
@@ -178,7 +220,9 @@ target_link_libraries(my_app PRIVATE Composia::UI)
 ```
 
 Set `CMAKE_PREFIX_PATH` to the installation and configure the consumer with the
-same vcpkg toolchain/triplet. Installed targets carry their dependencies.
+same vcpkg toolchain/triplet and the same static runtime library, as
+`tests/consumer` does; the linker rejects a consumer built with the dynamic CRT.
+Installed targets carry their dependencies.
 
 | Module | Responsibility |
 | --- | --- |
@@ -279,7 +323,11 @@ windows and require a Windows desktop. CTest retains output in
 `out/build/<preset>/Testing/Temporary/LastTest.log`; `build.ps1 -Test` also writes
 JUnit results in `out/build/<preset>/test-results-*.xml`. Normal runs write
 `composia.log` in the working directory.
-Smoke-test code lives in separate test executables.
+Smoke-test code lives in separate test executables. `mail-model` (core) checks the
+in-memory mailbox and its formatting helpers without windows; `mail-client` and
+`mail-client-warp` (desktop) drive the mail demo through pointer, keyboard, and
+button input: selection, stars, trash and undo, folders, search, scrolling, compose,
+send, reply, forward, drafts, Escape handling, resize, and device replacement.
 
 The Windows CI matrix builds Debug/Release and runs `-L core` (signals, layout,
 and a relocated installed-package consumer). Desktop checks are a separate
