@@ -1,9 +1,12 @@
 #include <composia/Accessible.hpp>
 #include <composia/Application.hpp>
 #include <composia/CompositionWindowTarget.hpp>
+#include <composia/NativeControl.hpp>
 #include <composia/ScopedSurfaceDraw.hpp>
+#include <commctrl.h>
 #include <UIAutomation.h>
 #include <cmath>
+#include <functional>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -14,6 +17,7 @@
 // focus, enabled state, and the one-call rendering helper.
 namespace {
 void require(bool value, const char* message) { if (!value) { throw std::runtime_error(message); } }
+constexpr UINT checkMessage = WM_APP + 77;
 
 class Probe final : public composia::Window {
 public:
@@ -21,6 +25,7 @@ public:
     std::vector<std::string> events;
     composia::layout::Point lastPointer{};
     unsigned paints{};
+    std::function<void()> check;
 
 private:
     void on_hover(bool value) override { events.push_back(value ? "hover" : "leave"); }
@@ -28,6 +33,7 @@ private:
     void on_capture_lost() override { events.push_back("capture-lost"); }
     void on_enabled(bool value) override { events.push_back(value ? "enabled" : "disabled"); }
     std::optional<LRESULT> on_message(UINT message, WPARAM, LPARAM lparam) override {
+        if (message == checkMessage && check) { check(); return LRESULT{}; }
         if (message == WM_MOUSEMOVE) { lastPointer = pointer_position(lparam); }
         if (message == WM_PAINT) { ++paints; }
         return std::nullopt;
@@ -290,6 +296,107 @@ void accessible(bool warp) {
     app.close();
 }
 
+void native(bool warp) {
+    composia::Application app{warp};
+    {
+        Probe host{app, L"Native host"};
+        composia::NativeControl edit{host, L"EDIT", WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL};
+        composia::NativeControl check{host, L"BUTTON", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX, L"Option"};
+        unsigned changed{};
+        unsigned clicks{};
+        const auto changes = edit.on_command([&](UINT code) { if (code == EN_CHANGE) { ++changed; } });
+        const auto clickCount = check.on_command([&](UINT code) { if (code == BN_CLICKED) { ++clicks; } });
+        edit.set_bounds({10, 10, 200, 28});
+        check.set_bounds({10, 50, 120, 24});
+        host.show();
+        require(app.post([&] {
+            // Native window identity and placement in pixels.
+            wchar_t className[32]{};
+            GetClassNameW(edit.hwnd(), className, 32);
+            require(_wcsicmp(className, L"Edit") == 0 && GetParent(edit.hwnd()) == host.hwnd(), "The EDIT was not created under the host");
+            RECT rect{};
+            GetWindowRect(edit.hwnd(), &rect);
+            POINT origin{rect.left, rect.top};
+            MapWindowPoints(nullptr, host.hwnd(), &origin, 1);
+            const auto scale = host.scale();
+            const auto close = [](float actual, float expected) { return std::abs(actual - expected) <= 1.0f; };
+            require(close(static_cast<float>(origin.x), 10 * scale) && close(static_cast<float>(origin.y), 10 * scale)
+                && close(static_cast<float>(rect.right - rect.left), 200 * scale) && close(static_cast<float>(rect.bottom - rect.top), 28 * scale),
+                "The EDIT was not placed at the DIP bounds times the scale");
+
+            // Text, and EN_CHANGE for both programmatic and typed changes.
+            edit.set_text(L"abc");
+            require(edit.text() == L"abc" && edit.send(WM_GETTEXTLENGTH) == 3, "Text was not set or not reported");
+            edit.focus();
+            require(edit.focused() && GetFocus() == edit.hwnd(), "The EDIT did not take focus");
+            edit.send(EM_SETSEL, 3, 3);  // SetWindowText leaves the caret at the start.
+            SendMessageW(edit.hwnd(), WM_CHAR, L'x', 0);
+            require(edit.text() == L"abcx" && changed >= 1, "Typing did not update the text or raise EN_CHANGE");
+
+            // Fonts: the default is Segoe UI 9pt at the parent's DPI, and set_font replaces it.
+            const auto dpi = static_cast<int>(host.dpi());
+            const auto font = reinterpret_cast<HFONT>(edit.send(WM_GETFONT));
+            require(font != nullptr, "The EDIT has no font");
+            LOGFONTW logical{};
+            GetObjectW(font, sizeof(logical), &logical);
+            require(logical.lfHeight == -MulDiv(9, dpi, 72) && _wcsicmp(logical.lfFaceName, L"Segoe UI") == 0, "The default font is not Segoe UI 9pt");
+            edit.set_font(L"Consolas", 12, FW_BOLD);
+            const auto consolas = reinterpret_cast<HFONT>(edit.send(WM_GETFONT));
+            require(consolas != nullptr, "set_font left the EDIT without a font");
+            LOGFONTW updated{};
+            GetObjectW(consolas, sizeof(updated), &updated);
+            require(updated.lfHeight == -MulDiv(12, dpi, 72) && _wcsicmp(updated.lfFaceName, L"Consolas") == 0 && updated.lfWeight == FW_BOLD,
+                "set_font did not apply the requested font");
+
+            // Colors through the parent's WM_CTLCOLOREDIT handling.
+            edit.set_colors(RGB(10, 20, 30), RGB(40, 50, 60));
+            HDC dc = GetDC(host.hwnd());
+            require(dc != nullptr, "GetDC failed");
+            auto release = wil::scope_exit([&] { ReleaseDC(host.hwnd(), dc); });
+            const auto brush = reinterpret_cast<HBRUSH>(SendMessageW(host.hwnd(), WM_CTLCOLOREDIT, reinterpret_cast<WPARAM>(dc), reinterpret_cast<LPARAM>(edit.hwnd())));
+            require(brush != nullptr, "The parent did not supply a brush for the EDIT");
+            LOGBRUSH detail{};
+            GetObjectW(brush, sizeof(detail), &detail);
+            require(detail.lbColor == RGB(40, 50, 60) && GetTextColor(dc) == RGB(10, 20, 30), "The EDIT colors were not applied to the device context");
+            edit.clear_colors();
+            const auto defaultBrush = reinterpret_cast<HBRUSH>(SendMessageW(host.hwnd(), WM_CTLCOLOREDIT, reinterpret_cast<WPARAM>(dc), reinterpret_cast<LPARAM>(edit.hwnd())));
+            require(defaultBrush != brush, "clear_colors did not return the EDIT to the default brush");
+
+            // A native checkbox: BM_CLICK notifies the parent and changes the check state.
+            check.send(BM_CLICK);
+            require(clicks == 1 && check.send(BM_GETCHECK) == BST_CHECKED && check.text() == L"Option", "The native checkbox did not click, check, or report its text");
+
+            // Enabled and visible state follow the control and its parent.
+            check.set_enabled(false);
+            require(!check.enabled() && IsWindowEnabled(check.hwnd()) == FALSE, "set_enabled(false) did not disable the checkbox");
+            check.set_enabled(true);
+            host.set_enabled(false);
+            require(!check.enabled(), "A disabled parent did not disable the checkbox");
+            host.set_enabled(true);
+            require(check.enabled(), "Re-enabling the parent did not enable the checkbox");
+            check.show(false);
+            require(!check.visible() && !IsWindowVisible(check.hwnd()), "show(false) did not hide the checkbox");
+            check.show(true);
+            require(check.visible(), "show(true) did not show the checkbox");
+
+            // Tab goes through the application's dialog loop; the check runs after the focus move.
+            edit.focus();
+            host.check = [&] {
+                require(GetFocus() == check.hwnd(), "Tab did not move focus to the next native control");
+                THROW_IF_WIN32_BOOL_FALSE(DestroyWindow(host.hwnd()));
+                require(edit.hwnd() == nullptr && check.hwnd() == nullptr, "Destroying the parent did not clear the native controls");
+                bool rejected{};
+                try { edit.set_text(L"x"); } catch (const wil::ResultException& error) { rejected = error.GetErrorCode() == HRESULT_FROM_WIN32(ERROR_INVALID_WINDOW_HANDLE); }
+                require(rejected, "A destroyed native control accepted text");
+            };
+            PostMessageW(edit.hwnd(), WM_KEYDOWN, VK_TAB, 0);
+            PostMessageW(host.hwnd(), checkMessage, 0, 0);
+        }), "Could not schedule native checks");
+        require(app.run() == 0, "Native loop failed");
+    }
+    app.close();
+}
+
 int main(int argc, char** argv) {
     try {
         require(argc >= 2, "Expected a test name");
@@ -299,6 +406,7 @@ int main(int argc, char** argv) {
         else if (name == "focus") { focus(warp); }
         else if (name == "render") { render(warp); }
         else if (name == "accessible") { accessible(warp); }
+        else if (name == "native") { native(warp); }
         else { throw std::runtime_error("Unknown test"); }
         return 0;
     } catch (const winrt::hresult_error& error) { std::cerr << winrt::to_string(error.message()) << '\n'; }

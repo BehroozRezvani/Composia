@@ -27,6 +27,7 @@ add_library(composia STATIC
     src/Layout.cpp
     src/Button.cpp
     src/Accessible.cpp
+    src/NativeControl.cpp
     src/TextureSurface.cpp
     src/ScreenCapture.cpp
 )
@@ -42,7 +43,7 @@ target_compile_definitions(composia PUBLIC UNICODE _UNICODE NOMINMAX WIN32_LEAN_
 target_compile_options(composia PUBLIC /EHsc /utf-8 PRIVATE /W4 /WX)
 target_link_libraries(composia
     PUBLIC WIL::WIL Microsoft::CppWinRT
-    PRIVATE spdlog::spdlog d3d11 dxgi d2d1 dwrite windowsapp CoreMessaging user32 gdi32 ole32 oleaut32 uiautomationcore
+    PRIVATE spdlog::spdlog d3d11 dxgi d2d1 dwrite windowsapp CoreMessaging user32 gdi32 ole32 oleaut32 uiautomationcore comctl32
 )
 
 if(COMPOSIA_BUILD_DEMO OR COMPOSIA_BUILD_TESTS)
@@ -75,6 +76,10 @@ if(COMPOSIA_BUILD_DEMO)
     add_executable(composia-mail-demo WIN32 demo/mail/main.cpp demo/app.manifest)
     target_link_libraries(composia-mail-demo PRIVATE composia-mail-sample spdlog::spdlog)
     target_compile_options(composia-mail-demo PRIVATE /W4 /WX)
+    # A standalone example that uses only the public headers and Composia::UI.
+    add_executable(composia-inputs-example WIN32 examples/inputs/main.cpp demo/app.manifest)
+    target_link_libraries(composia-inputs-example PRIVATE Composia::UI)
+    target_compile_options(composia-inputs-example PRIVATE /W4 /WX)
 endif()
 
 install(TARGETS composia EXPORT ComposiaTargets ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})

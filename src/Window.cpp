@@ -1,6 +1,7 @@
 #include <composia/Window.hpp>
 #include <composia/Accessible.hpp>
 #include <composia/Application.hpp>
+#include <composia/NativeControl.hpp>
 #include <UIAutomation.h>
 #include <string>
 #include <cmath>
@@ -256,6 +257,29 @@ LRESULT Window::dispatch(HWND handle, UINT message, WPARAM wparam, LPARAM lparam
     case WM_GETOBJECT:
         if (accessible_ && static_cast<LONG>(lparam) == UiaRootObjectId) {
             return accessible_->root_provider(wparam, lparam);
+        }
+        return DefWindowProcW(handle, message, wparam, lparam);
+    // Hosted native controls receive their notifications and color requests through the parent.
+    case WM_COMMAND:
+        if (const auto control = NativeControl::from(reinterpret_cast<HWND>(lparam))) {
+            control->command(HIWORD(wparam));
+            return 0;
+        }
+        return DefWindowProcW(handle, message, wparam, lparam);
+    case WM_NOTIFY:
+        if (const auto header = reinterpret_cast<const NMHDR*>(lparam)) {
+            if (const auto control = NativeControl::from(header->hwndFrom)) {
+                control->notify(*header);
+                return 0;
+            }
+        }
+        return DefWindowProcW(handle, message, wparam, lparam);
+    case WM_CTLCOLOREDIT:
+    case WM_CTLCOLORSTATIC:
+    case WM_CTLCOLORBTN:
+    case WM_CTLCOLORLISTBOX:
+        if (const auto control = NativeControl::from(reinterpret_cast<HWND>(lparam))) {
+            if (const auto result = control->control_color(reinterpret_cast<HDC>(wparam))) { return *result; }
         }
         return DefWindowProcW(handle, message, wparam, lparam);
     case WM_DESTROY:

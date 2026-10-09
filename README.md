@@ -237,6 +237,7 @@ Installed targets carry their dependencies.
 | `AnimationHelpers` | Containers/sprites, implicit offset, vector/scalar keyframes, and expression layout |
 | `TextLayout` | Reusable DirectWrite format/layout with incremental bounds updates |
 | `Accessible` | UI Automation provider for any window: name, control type, focus and enabled state, Invoke and Value patterns, cross-thread marshalling |
+| `NativeControl` | Hosts standard Win32 controls (EDIT, BUTTON, ...) with DIP bounds, DPI-aware fonts, colors, and routed notifications |
 | `Button` | Composition-rendered child HWND, pointer/keyboard input, and UI Automation Invoke, built only on the mechanisms above |
 | `Layout` | DIP points and rectangles, hit testing, and horizontal/vertical stack placement |
 
@@ -326,6 +327,51 @@ replacement prepares the device and removal subscription before changing
 Composition; a preparation failure preserves the previous published state. Raw device
 access does not transfer ownership or extend a drawing scope's validity.
 
+## Text input and native controls
+
+Two paths exist for text input. The recommended one reuses the system's EDIT
+control through `NativeControl`, which gets IME composition, selection, the
+clipboard, keyboard conventions, and UI Automation from Windows:
+
+```cpp
+composia::NativeControl name{window, L"EDIT", WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL};
+name.set_bounds({120, 96, 400, 32});
+name.set_colors(RGB(234, 242, 244), RGB(14, 22, 31));
+auto changed = name.on_command([&](UINT code) { if (code == EN_CHANGE) { /* name.text() */ } });
+```
+
+`NativeControl` creates any standard control class as a child of a `Window`,
+places it in DIPs, applies a font sized in points for the window's monitor
+(Segoe UI 9pt by default, refreshed on `WM_DPICHANGED_AFTERPARENT`), and routes
+`WM_COMMAND` notification codes and `WM_NOTIFY` headers from the parent to
+`on_command` and `on_notify`. `set_colors` answers the control's
+`WM_CTLCOLOR*` request with the given text and background colors so a control
+can match a composition-drawn surface; `clear_colors` restores the system
+defaults. `text`, `set_text`, `show`, `set_enabled`, `focus`, and `send` cover
+the common operations, and `hwnd()` remains available for everything else, such
+as `EM_SETCUEBANNER` or `BM_GETCHECK`. The control is destroyed with its
+wrapper or with the parent window, after which calls throw
+`ERROR_INVALID_WINDOW_HANDLE`. Child HWNDs always draw above the parent's
+composition content, so hosted controls sit on top of a `CompositionWindowTarget`
+canvas. Embed a common-controls v6 manifest dependency, as `demo/app.manifest`
+does, to get the themed look.
+
+The other path is a composition-rendered field such as `demo/mail/TextField`,
+for when rendering must be custom. It is sample code: it handles typing,
+editing keys, paste, scrolling, and caret placement, but has no selection, IME
+composition, or UI Automation provider; `Accessible` with the Value pattern
+supplies the last of these.
+
+`examples/inputs/main.cpp` is a standalone program using only the public
+headers: a composition canvas, two hosted EDIT controls and a native checkbox
+with matching colors, a framework `Button`, and a slider painted into the window
+that uses `pointer_position`, `capture_pointer`, `on_capture_lost`, hover, and
+focus without a child HWND.
+
+```powershell
+.\out\build\release\composia-inputs-example.exe
+```
+
 ## Controls
 
 ```cpp
@@ -386,7 +432,12 @@ properties, focus and enabled reporting, renaming, `WM_GETOBJECT` routing, the
 host provider, pattern availability, Invoke and Value actions marshalled to the UI
 thread, rejection while disabled or under a disabled parent, duplicate
 attachment, and unavailability after destruction. The separate MTA client in
-`accessibility` still discovers and invokes a `Button` through the system. Device loss is injected as
+`accessibility` still discovers and invokes a `Button` through the system.
+`foundation-native` hosts an EDIT and a native checkbox: class and placement in
+pixels, text, typed `EN_CHANGE` routing, the default and replaced fonts, colors
+answered through `WM_CTLCOLOREDIT` and cleared again, `BN_CLICKED` and check
+state, enabled and visible state including a disabled parent, Tab navigation
+through the application's dialog loop, and destruction with the parent. Device loss is injected as
 an HRESULT and a removal-event signal; these checks do not reset the GPU or
 qualify driver/TDR recovery. Pixel readback checks cover text, color, atlas offsets,
 and 96/120/144/168/192 DPI before and after recovery. Multiple-window lifetime,
