@@ -1,10 +1,18 @@
+# A test executable linking Composia::UI, or the library named by a third argument.
 function(composia_test_target target source)
-    add_executable(${target} ${source} ${PROJECT_SOURCE_DIR}/resources/composia.manifest)
-    target_link_libraries(${target} PRIVATE Composia::UI)
-    target_compile_options(${target} PRIVATE /W4 /WX)
+    set(library Composia::UI)
+    if(ARGC GREATER 2)
+        set(library ${ARGV2})
+    endif()
+    add_executable(${target} ${source} ${COMPOSIA_MANIFEST})
+    target_link_libraries(${target} PRIVATE ${library})
+    target_compile_options(${target} PRIVATE /W4 $<$<BOOL:${COMPOSIA_WARNINGS_AS_ERRORS}>:/WX>)
 endfunction()
 
-target_compile_definitions(composia PRIVATE COMPOSIA_TESTING)
+# The library with failure injection compiled in, for the recovery checks only.
+composia_add_library(composia-testing)
+target_compile_definitions(composia-testing PRIVATE COMPOSIA_TESTING)
+
 composia_test_target(composia-virtual-tests VirtualSurfaceTests.cpp)
 foreach(scenario sparse-cache partial-updates)
     add_test(NAME virtual-${scenario} COMMAND composia-virtual-tests ${scenario})
@@ -37,7 +45,7 @@ foreach(scenario input accessibility)
     add_test(NAME ${scenario} COMMAND composia-interaction-tests ${scenario})
     set_tests_properties(${scenario} PROPERTIES TIMEOUT 30 RUN_SERIAL TRUE LABELS desktop)
 endforeach()
-composia_test_target(composia-recovery-tests RecoveryTests.cpp)
+composia_test_target(composia-recovery-tests RecoveryTests.cpp composia-testing)
 target_compile_definitions(composia-recovery-tests PRIVATE COMPOSIA_TESTING)
 target_include_directories(composia-recovery-tests PRIVATE ${PROJECT_SOURCE_DIR}/src)
 foreach(scenario transaction repeated-recovery failed-recovery shutdown callback-error)
@@ -68,5 +76,13 @@ add_test(NAME package-consumer COMMAND ${CMAKE_COMMAND}
     -DBINARY_DIR=${PROJECT_BINARY_DIR} -DSOURCE_DIR=${PROJECT_SOURCE_DIR}
     -DCONFIG=$<CONFIG> -DCOMPILER=${CMAKE_CXX_COMPILER}
     -DTOOLCHAIN=${CMAKE_TOOLCHAIN_FILE} -DVCPKG_INSTALLED_DIR=${VCPKG_INSTALLED_DIR}
-    -DTRIPLET=${VCPKG_TARGET_TRIPLET} -P ${CMAKE_CURRENT_SOURCE_DIR}/PackageTest.cmake)
+    -DTRIPLET=${VCPKG_TARGET_TRIPLET} -DRUNTIME=${CMAKE_MSVC_RUNTIME_LIBRARY}
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/PackageTest.cmake)
 set_tests_properties(package-consumer PROPERTIES TIMEOUT 120 LABELS core RUN_SERIAL TRUE)
+
+add_test(NAME subproject-consumer COMMAND ${CMAKE_COMMAND}
+    -DBINARY_DIR=${PROJECT_BINARY_DIR} -DSOURCE_DIR=${PROJECT_SOURCE_DIR}
+    -DCONFIG=$<CONFIG> -DCOMPILER=${CMAKE_CXX_COMPILER}
+    -DTOOLCHAIN=${CMAKE_TOOLCHAIN_FILE} -DVCPKG_INSTALLED_DIR=${VCPKG_INSTALLED_DIR}
+    -DTRIPLET=${VCPKG_TARGET_TRIPLET} -P ${CMAKE_CURRENT_SOURCE_DIR}/SubprojectTest.cmake)
+set_tests_properties(subproject-consumer PROPERTIES TIMEOUT 300 LABELS core RUN_SERIAL TRUE)

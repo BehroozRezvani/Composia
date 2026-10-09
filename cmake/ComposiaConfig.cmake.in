@@ -3,4 +3,6 @@ include(CMakeFindDependencyMacro)
 find_dependency(wil CONFIG)
 find_dependency(cppwinrt CONFIG)
 include("${CMAKE_CURRENT_LIST_DIR}/ComposiaTargets.cmake")
+# The manifest applications embed for per-monitor DPI awareness and themed common controls.
+set_and_check(COMPOSIA_MANIFEST "@PACKAGE_COMPOSIA_MANIFEST_INSTALL@")
 check_required_components(Composia)

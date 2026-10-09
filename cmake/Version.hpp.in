@@ -1,0 +1,9 @@
+#pragma once
+
+// The version of these Composia headers, generated from the project version in CMakeLists.txt.
+#define COMPOSIA_VERSION_MAJOR @PROJECT_VERSION_MAJOR@
+#define COMPOSIA_VERSION_MINOR @PROJECT_VERSION_MINOR@
+#define COMPOSIA_VERSION_PATCH @PROJECT_VERSION_PATCH@
+#define COMPOSIA_VERSION_STRING "@PROJECT_VERSION@"
+// One number for comparisons: major * 10000 + minor * 100 + patch.
+#define COMPOSIA_VERSION (COMPOSIA_VERSION_MAJOR * 10000 + COMPOSIA_VERSION_MINOR * 100 + COMPOSIA_VERSION_PATCH)

@@ -1,7 +1,10 @@
 {
   "name": "composia",
-  "version-string": "0.3.0",
+  "version": "0.3.0",
+  "description": "A small C++23 foundation for native Windows applications on Windows Composition",
+  "homepage": "https://github.com/BehroozRezvani/Composia",
   "license": "MIT",
+  "supports": "windows & !uwp",
   "builtin-baseline": "19780d9cdf84d0944cf9a318666703b89ab6629c",
   "dependencies": [
     "wil",

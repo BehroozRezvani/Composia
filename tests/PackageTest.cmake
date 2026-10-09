@@ -13,6 +13,9 @@ execute_process(COMMAND "${CMAKE_COMMAND}" -S "${SOURCE_DIR}/tests/consumer" -B 
     "-DCMAKE_BUILD_TYPE=${CONFIG}" "-DCMAKE_CXX_COMPILER=${COMPILER}"
     "-DCMAKE_TOOLCHAIN_FILE=${TOOLCHAIN}" "-DVCPKG_INSTALLED_DIR=${VCPKG_INSTALLED_DIR}"
     "-DVCPKG_TARGET_TRIPLET=${TRIPLET}" "-DCMAKE_PREFIX_PATH=${stage}/relocated"
+    "-DCMAKE_MSVC_RUNTIME_LIBRARY=${RUNTIME}"
     COMMAND_ERROR_IS_FATAL ANY)
 execute_process(COMMAND "${CMAKE_COMMAND}" --build "${stage}/consumer" COMMAND_ERROR_IS_FATAL ANY)
 execute_process(COMMAND "${stage}/consumer/consumer.exe" COMMAND_ERROR_IS_FATAL ANY)
+# A failure above stops the script and leaves the staging directory for inspection.
+file(REMOVE_RECURSE "${stage}")

@@ -1,73 +1,106 @@
 cmake_minimum_required(VERSION 3.25)
-project(Composia VERSION 0.3.0 LANGUAGES CXX)
+project(Composia VERSION 0.3.0
+    DESCRIPTION "A small C++23 foundation for native Windows applications on Windows Composition"
+    HOMEPAGE_URL "https://github.com/BehroozRezvani/Composia"
+    LANGUAGES CXX)
 
 if(NOT WIN32 OR NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR NOT MSVC)
     message(FATAL_ERROR "Composia requires Windows and clang-cl in an x64 Visual Studio developer shell.")
 endif()
 
-# Static CRT: executables depend only on Windows system DLLs. Consumers must match this setting.
-set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 option(COMPOSIA_BUILD_EXAMPLES "Build the examples" ${PROJECT_IS_TOP_LEVEL})
 option(COMPOSIA_BUILD_TESTS "Build Composia's tests" ${PROJECT_IS_TOP_LEVEL})
+option(COMPOSIA_INSTALL "Generate Composia's install rules" ${PROJECT_IS_TOP_LEVEL})
+option(COMPOSIA_WARNINGS_AS_ERRORS "Treat warnings in Composia's own code as errors" ${PROJECT_IS_TOP_LEVEL})
+
+# A top-level build uses the static CRT, so its executables depend only on Windows system DLLs.
+# Inside another project, Composia uses that project's runtime library.
+if(PROJECT_IS_TOP_LEVEL AND NOT DEFINED CMAKE_MSVC_RUNTIME_LIBRARY)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
+# vcpkg.json carries the same version for the package manager; the two must not drift apart.
+file(READ ${PROJECT_SOURCE_DIR}/vcpkg.json manifest)
+string(JSON manifestVersion GET "${manifest}" version)
+if(NOT manifestVersion STREQUAL PROJECT_VERSION)
+    message(FATAL_ERROR "vcpkg.json declares version ${manifestVersion}, but CMakeLists.txt declares ${PROJECT_VERSION}.")
+endif()
+
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 find_package(wil CONFIG REQUIRED)
 find_package(cppwinrt CONFIG REQUIRED)
 
-add_library(composia STATIC
-    src/Application.cpp
-    src/Log.cpp
-    src/Window.cpp
-    src/GraphicsDevice.cpp
-    src/CompositionWindowTarget.cpp
-    src/ScopedSurfaceDraw.cpp
-    src/VirtualSurface.cpp
-    src/AnimationHelpers.cpp
-    src/TextLayout.cpp
-    src/Layout.cpp
-    src/Button.cpp
-    src/Accessible.cpp
-    src/NativeControl.cpp
-    src/TextureSurface.cpp
-    src/SwapChainSurface.cpp
-    src/ScreenCapture.cpp
+configure_file(cmake/Version.hpp.in ${PROJECT_BINARY_DIR}/include/composia/Version.hpp @ONLY)
+# The manifest applications embed for per-monitor DPI awareness and themed common controls.
+set(COMPOSIA_MANIFEST ${PROJECT_SOURCE_DIR}/resources/composia.manifest CACHE INTERNAL "Composia's application manifest")
+
+set(COMPOSIA_SOURCES
+    Accessible.cpp
+    AnimationHelpers.cpp
+    Application.cpp
+    Button.cpp
+    CompositionWindowTarget.cpp
+    GraphicsDevice.cpp
+    Layout.cpp
+    Log.cpp
+    NativeControl.cpp
+    ScopedSurfaceDraw.cpp
+    ScreenCapture.cpp
+    SwapChainSurface.cpp
+    TextLayout.cpp
+    TextureSurface.cpp
+    VirtualSurface.cpp
+    Window.cpp
 )
-set_source_files_properties(src/TextureSurface.cpp PROPERTIES COMPILE_DEFINITIONS NTDDI_VERSION=NTDDI_WIN10_NI)
+list(TRANSFORM COMPOSIA_SOURCES PREPEND ${PROJECT_SOURCE_DIR}/src/)
+
+# Defines a Composia library target. The tests define a second one with failure injection
+# compiled in, so the library that is installed never carries test hooks.
+function(composia_add_library target)
+    add_library(${target} STATIC ${COMPOSIA_SOURCES})
+    set_source_files_properties(${PROJECT_SOURCE_DIR}/src/TextureSurface.cpp TARGET_DIRECTORY ${target}
+        PROPERTIES COMPILE_DEFINITIONS NTDDI_VERSION=NTDDI_WIN10_NI)
+    target_include_directories(${target} PUBLIC
+        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    )
+    target_compile_features(${target} PUBLIC cxx_std_23)
+    # Debug information goes into the library itself: a static library has no PDB of its own to install.
+    set_target_properties(${target} PROPERTIES
+        CXX_EXTENSIONS OFF
+        DEBUG_POSTFIX d
+        MSVC_DEBUG_INFORMATION_FORMAT "$<$<CONFIG:Debug,RelWithDebInfo>:Embedded>")
+    target_compile_definitions(${target} PUBLIC UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN _WIN32_WINNT=0x0A00)
+    target_compile_options(${target} PUBLIC /EHsc /utf-8 PRIVATE /W4 $<$<BOOL:${COMPOSIA_WARNINGS_AS_ERRORS}>:/WX>)
+    target_link_libraries(${target}
+        PUBLIC WIL::WIL Microsoft::CppWinRT
+        PRIVATE d3d11 dxgi d2d1 dwrite windowsapp CoreMessaging user32 gdi32 ole32 oleaut32 uiautomationcore comctl32 uxtheme
+    )
+endfunction()
+
+composia_add_library(composia)
+set_target_properties(composia PROPERTIES EXPORT_NAME UI)
 add_library(Composia::UI ALIAS composia)
-target_include_directories(composia PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-)
-target_compile_features(composia PUBLIC cxx_std_23)
-set_target_properties(composia PROPERTIES CXX_EXTENSIONS OFF EXPORT_NAME UI)
-target_compile_definitions(composia PUBLIC UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN _WIN32_WINNT=0x0A00)
-target_compile_options(composia PUBLIC /EHsc /utf-8 PRIVATE /W4 /WX)
-target_link_libraries(composia
-    PUBLIC WIL::WIL Microsoft::CppWinRT
-    PRIVATE d3d11 dxgi d2d1 dwrite windowsapp CoreMessaging user32 gdi32 ole32 oleaut32 uiautomationcore comctl32 uxtheme
-)
 
 if(COMPOSIA_BUILD_EXAMPLES)
-    # A standalone example that uses only the public headers and Composia::UI.
-    add_executable(composia-inputs-example WIN32 examples/inputs/main.cpp resources/composia.manifest)
-    target_link_libraries(composia-inputs-example PRIVATE Composia::UI)
-    target_compile_options(composia-inputs-example PRIVATE /W4 /WX)
-    # Direct3D 11 content in a swap chain surface, presented only when it changes.
-    add_executable(composia-gpu-example WIN32 examples/gpu/main.cpp resources/composia.manifest)
-    target_link_libraries(composia-gpu-example PRIVATE Composia::UI d3dcompiler)
-    target_compile_options(composia-gpu-example PRIVATE /W4 /WX)
+    add_subdirectory(examples)
 endif()
 
-install(TARGETS composia EXPORT ComposiaTargets ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
-install(DIRECTORY include/composia DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-install(FILES LICENSE DESTINATION ${CMAKE_INSTALL_DATADIR}/Composia)
-install(EXPORT ComposiaTargets NAMESPACE Composia:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Composia)
-configure_package_config_file(cmake/ComposiaConfig.cmake.in ${CMAKE_CURRENT_BINARY_DIR}/ComposiaConfig.cmake
-    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Composia)
-write_basic_package_version_file(${CMAKE_CURRENT_BINARY_DIR}/ComposiaConfigVersion.cmake
-    COMPATIBILITY SameMinorVersion)
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/ComposiaConfig.cmake ${CMAKE_CURRENT_BINARY_DIR}/ComposiaConfigVersion.cmake
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Composia)
+if(COMPOSIA_INSTALL)
+    set(configDestination ${CMAKE_INSTALL_LIBDIR}/cmake/Composia)
+    set(COMPOSIA_MANIFEST_INSTALL ${CMAKE_INSTALL_DATADIR}/Composia/composia.manifest)
+    install(TARGETS composia EXPORT ComposiaTargets ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+    install(DIRECTORY include/composia ${PROJECT_BINARY_DIR}/include/composia DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+    install(FILES LICENSE resources/composia.manifest DESTINATION ${CMAKE_INSTALL_DATADIR}/Composia)
+    install(EXPORT ComposiaTargets NAMESPACE Composia:: DESTINATION ${configDestination})
+    configure_package_config_file(cmake/ComposiaConfig.cmake.in ${PROJECT_BINARY_DIR}/ComposiaConfig.cmake
+        INSTALL_DESTINATION ${configDestination} PATH_VARS COMPOSIA_MANIFEST_INSTALL)
+    write_basic_package_version_file(${PROJECT_BINARY_DIR}/ComposiaConfigVersion.cmake COMPATIBILITY SameMinorVersion)
+    install(FILES ${PROJECT_BINARY_DIR}/ComposiaConfig.cmake ${PROJECT_BINARY_DIR}/ComposiaConfigVersion.cmake
+        DESTINATION ${configDestination})
+endif()
 
 if(COMPOSIA_BUILD_TESTS)
     enable_testing()

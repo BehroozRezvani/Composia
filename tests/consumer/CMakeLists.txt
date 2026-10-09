@@ -1,7 +1,10 @@
 cmake_minimum_required(VERSION 3.25)
 project(ComposiaConsumer LANGUAGES CXX)
-# Composia is built with the static CRT; the consumer must use the same runtime library.
-set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+# The consumer must use the runtime library the package was built with; PackageTest passes it.
+if(NOT DEFINED CMAKE_MSVC_RUNTIME_LIBRARY)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
 find_package(Composia 0.3 CONFIG REQUIRED)
-add_executable(consumer main.cpp)
+add_executable(consumer main.cpp ${COMPOSIA_MANIFEST})
 target_link_libraries(consumer PRIVATE Composia::UI)
+target_compile_definitions(consumer PRIVATE COMPOSIA_PACKAGE_VERSION="${Composia_VERSION}")
