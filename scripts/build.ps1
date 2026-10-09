@@ -26,6 +26,13 @@ try {
         & .\external\vcpkg\bootstrap-vcpkg.bat -disableMetrics
         if ($LASTEXITCODE) { throw 'vcpkg bootstrap failed.' }
     }
+    # vcpkg reads package versions from the baseline commit, and a shallow submodule checkout,
+    # as CI makes, contains only the submodule's own commit; the two must be the same.
+    $baseline = (Get-Content vcpkg.json -Raw | ConvertFrom-Json).'builtin-baseline'
+    $submodule = (& git -C external/vcpkg rev-parse HEAD).Trim()
+    if ($baseline -ne $submodule) {
+        throw "vcpkg.json's builtin-baseline ($baseline) is not the external/vcpkg submodule's commit ($submodule). Set it to the submodule's commit whenever the submodule moves."
+    }
     & cmake --preset $Preset
     if ($LASTEXITCODE) { throw 'CMake configure failed.' }
     & cmake --build --preset $Preset
