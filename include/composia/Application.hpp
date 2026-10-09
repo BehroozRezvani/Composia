@@ -9,16 +9,33 @@
 
 namespace composia {
 
+// The UI thread's application object: a single-threaded apartment, a dispatcher queue, the
+// compositor, the graphics device, and the message loop that serves every Window. Create one on
+// the UI thread before any window; every other Composia call belongs on that thread too, except
+// post(). Application and Window operations called from another thread throw std::logic_error.
 class Application {
 public:
+    // forceWarp selects the WARP software device instead of hardware; without it, a machine
+    // without a usable hardware device falls back to WARP.
     explicit Application(bool forceWarp = false);
+    // Closes the application if close() was not called; errors are then only logged.
     ~Application();
     Application(const Application&) = delete;
     Application& operator=(const Application&) = delete;
 
+    // Runs the message loop until the last top-level window is destroyed, or until WM_QUIT, whose
+    // exit code it returns. It recovers from graphics device removal, also while idle, and
+    // rethrows the first exception that escaped a window's message handler or a posted callback.
     int run();
+    // Runs a drawing operation; if it fails with device loss, replaces the graphics device and
+    // runs it once more. Other failures, and a second device loss, propagate.
     void render(const std::function<void()>& draw);
+    // Queues a callback on the UI thread from any thread. Returns false once the application is
+    // closing. An exception from the callback is rethrown by run() or close().
     bool post(std::function<void()> callback);
+    // Shuts down: drops callbacks not yet run, drains the dispatcher queue, then releases the
+    // compositor and graphics device, and rethrows a callback error not yet reported. Destroy
+    // every Window first. Calling it again does nothing.
     void close();
     [[nodiscard]] GraphicsDevice& graphics() const;
     [[nodiscard]] const composition::Compositor& compositor() const noexcept { return compositor_; }

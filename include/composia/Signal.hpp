@@ -9,6 +9,8 @@
 
 namespace composia {
 
+// Keeps one Signal callback connected; destroying or reassigning it disconnects. Movable, not
+// copyable. A default-constructed Connection is connected to nothing.
 class Connection {
 public:
     Connection() = default;
@@ -27,10 +29,11 @@ private:
     std::shared_ptr<bool> active_;
 };
 
-// Connections and notifications belong to the owning UI thread.
+// A list of callbacks to notify. Connections and notifications belong to the owning UI thread.
 template<class... Args>
 class Signal {
 public:
+    // Adds a callback that runs on every later emit for as long as the Connection lives.
     Connection connect(std::function<void(Args...)> callback) {
         std::erase_if(slots_, [](const auto& slot) { return !*slot->active; });
         auto active = std::make_shared<bool>(true);
@@ -38,6 +41,9 @@ public:
         return Connection{std::move(active)};
     }
 
+    // Calls the callbacks connected when it starts, skipping any disconnected meanwhile; callbacks
+    // connected during the call first run on the next one. Every callback runs even if one
+    // throws, and the first exception is rethrown afterwards.
     void emit(Args... args) {
         const auto snapshot = slots_;
         std::exception_ptr firstError;

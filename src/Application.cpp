@@ -36,7 +36,7 @@ void Application::shutdown() noexcept {
     try {
         close();
     } catch (...) {
-        OutputDebugStringW(L"Composia shutdown failed; use Application::close() to observe errors.\n");
+        detail::log(LogLevel::warning, "event=application_shutdown_failed detail=call_close_to_observe_errors");
     }
 }
 

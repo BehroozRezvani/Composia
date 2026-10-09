@@ -6,6 +6,7 @@
 #include <composia/TextLayout.hpp>
 #include <d3dcompiler.h>
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <string>
@@ -29,6 +30,17 @@ Pixel vs(Vertex input) {
 }
 float4 ps(Pixel input) : SV_TARGET { return float4(input.color, 1); }
 )";
+
+// Fades the visual's opacity in and out forever. Composition runs it without presenting frames.
+void pulse(const composition::Visual& visual) {
+    auto animation = visual.Compositor().CreateScalarKeyFrameAnimation();
+    animation.InsertKeyFrame(0.0f, 0.45f);
+    animation.InsertKeyFrame(0.5f, 1.0f);
+    animation.InsertKeyFrame(1.0f, 0.45f);
+    animation.Duration(std::chrono::milliseconds{1800});
+    animation.IterationBehavior(composition::AnimationIterationBehavior::Forever);
+    visual.StartAnimation(L"Opacity", animation);
+}
 
 wil::com_ptr<ID3DBlob> compile(const char* entry, const char* profile) {
     wil::com_ptr<ID3DBlob> code, errors;
@@ -125,7 +137,7 @@ public:
         dot.Size({12, 12});
         dot.CornerRadius({6, 6});
         live_.Clip(compositor.CreateGeometricClip(dot));
-        animations::pulse(live_);
+        pulse(live_);
         target_.root().Children().InsertAtTop(live_);
         arrange();
     }

@@ -155,7 +155,7 @@ Installed targets carry their dependencies.
 | `TextureSurface` | Direct D3D11 texture composition, capability check, and availability fence (Windows 11) |
 | `SwapChainSurface` | A swap chain for Composition: Direct3D 11 frames in the visual tree on Windows 10 and later, presented on demand and rebuilt after device replacement |
 | `ScreenCapture` | WGC session, captured-frame polling, target resize, and device replacement |
-| `AnimationHelpers` | Containers/sprites, implicit offset, vector/scalar keyframes, and expression layout |
+| `AnimationHelpers` | Container and sprite visuals, implicit offset animation, and centering through an expression |
 | `TextLayout` | Reusable DirectWrite format/layout with a chosen family and locale, incremental bounds updates, and measurement |
 | `Accessible` | UI Automation provider for any window, built on the window's public signals: name, control type, automation ID, focus and enabled state, Invoke and Value patterns, cross-thread marshalling |
 | `NativeControl` | Hosts standard Win32 controls (EDIT, BUTTON, COMBOBOX, ...) with DIP bounds, DPI-aware fonts, colors, and notifications, built on the public notification route |
@@ -575,6 +575,13 @@ members, and require `find_package(Composia 0.3)`. Behavior changes:
   type, and the installed package never required it. Applications that want it
   add `directxtk` to their own manifest and use it with Composia's device.
 - `SwapChainSurface` is new: Direct3D 11 content in the visual tree on Windows 10.
+- `Button` no longer has `enabled(bool)`, `enabled()`, or `accessibility_provider()`;
+  use `Window::set_enabled`, `Window::enabled`, and `Window::automation_provider`,
+  which it inherits. `Window::native_window()` is gone; use `hwnd()`. The
+  `animations::bob` and `animations::pulse` presets are gone; write the keyframe
+  animation directly, as `examples/gpu` does for its pulse.
+- Diagnostic events from a failed shutdown or capture close now go through the log
+  handler (`event=application_shutdown_failed`, `event=capture_close_failed`).
 - The demos are no longer on `main`; they live on the `demo` branch.
   `COMPOSIA_BUILD_DEMO` is now `COMPOSIA_BUILD_EXAMPLES`, which builds the two
   examples, and the application manifest moved to `resources/composia.manifest`.

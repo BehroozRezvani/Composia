@@ -7,20 +7,30 @@
 
 namespace composia {
 
+// One BeginDraw/EndDraw on a Composition drawing surface, balanced even when drawing throws. The
+// Direct2D context draws in DIPs at the given DPI, starting at the surface's top-left corner;
+// the offset of the surface's place in its atlas is already applied. Do not nest scopes on one
+// graphics device, and do not call the context's own BeginDraw or EndDraw.
 class ScopedSurfaceDraw {
 public:
+    // Updates the whole surface.
     ScopedSurfaceDraw(const composition::CompositionDrawingSurface&, const GraphicsDevice&, UINT dpi);
     // Updates only the given rectangle of surface pixels. Drawing is clipped to it, and the
     // surface keeps its content outside it.
     ScopedSurfaceDraw(const composition::CompositionDrawingSurface&, const GraphicsDevice&, UINT dpi, const RECT& update);
+    // Ends an unfinished update; its errors are only logged.
     ~ScopedSurfaceDraw() noexcept;
     ScopedSurfaceDraw(const ScopedSurfaceDraw&) = delete;
     ScopedSurfaceDraw& operator=(const ScopedSurfaceDraw&) = delete;
 
+    // Ends the update and throws its error, such as a device loss. Later calls do nothing, and
+    // context() is null afterwards.
     void finish();
+    // Valid until finish() or the end of the scope.
     [[nodiscard]] const wil::com_ptr<ID2D1DeviceContext6>& context() const noexcept { return context_; }
     [[nodiscard]] const wil::com_ptr<IDWriteFactory7>& text_factory() const noexcept { return textFactory_; }
     [[nodiscard]] const wil::com_ptr<ABI::Windows::UI::Composition::ICompositionDrawingSurfaceInterop>& interop() const noexcept { return interop_; }
+    // Where BeginDraw placed the update in the surface's atlas, in pixels, as Composition reports it.
     [[nodiscard]] POINT update_offset() const noexcept { return offset_; }
     // The area being updated, in the context's initial coordinates (surface DIPs): the update
     // rectangle, or the whole surface. Painters can skip anything outside it.

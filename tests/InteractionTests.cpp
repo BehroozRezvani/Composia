@@ -32,7 +32,7 @@ void input() {
         second.set_bounds(rectangles[1]);
         unsigned clicks{};
         auto listener = first.on_click([&] { ++clicks; });
-        auto provider = first.accessibility_provider();
+        wil::com_ptr<IRawElementProviderSimple> provider{first.automation_provider()};
         auto invoke = provider.query<IInvokeProvider>();
         host.show();
         require(app.post([&] {
@@ -62,12 +62,12 @@ void input() {
             SetFocus(second.hwnd());
             SendMessageW(first.hwnd(), WM_KEYUP, VK_SPACE, 0);
             require(clicks == 3, "Focus loss did not cancel keyboard activation");
-            first.enabled(false);
+            first.set_enabled(false);
             require(invoke->Invoke() == static_cast<HRESULT>(UIA_E_ELEMENTNOTENABLED), "Disabled UIA Invoke was accepted");
             SendMessageW(first.hwnd(), WM_LBUTTONDOWN, MK_LBUTTON, inside);
             SendMessageW(first.hwnd(), WM_LBUTTONUP, 0, inside);
             require(clicks == 3, "Disabled pointer activation was accepted");
-            first.enabled(true);
+            first.set_enabled(true);
             EnableWindow(host.hwnd(), FALSE);
             require(invoke->Invoke() == static_cast<HRESULT>(UIA_E_ELEMENTNOTENABLED), "Disabled parent did not prevent UIA invocation");
             EnableWindow(host.hwnd(), TRUE);

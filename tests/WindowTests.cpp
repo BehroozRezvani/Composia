@@ -67,7 +67,7 @@ void closed_parent() {
         THROW_IF_WIN32_BOOL_FALSE(DestroyWindow(parent.hwnd()));
         require(!parent.hwnd() && !button.hwnd() && !button.enabled(), "Parent destruction left a live child");
         require_invalid_handle([&] { button.invalidate(); }, "Destroyed child accepted invalidation");
-        require_invalid_handle([&] { button.enabled(true); }, "Destroyed child accepted an enabled-state change");
+        require_invalid_handle([&] { button.set_enabled(true); }, "Destroyed child accepted an enabled-state change");
         require_invalid_handle([&] { button.invoke(); }, "Destroyed child accepted invocation");
         require_invalid_handle([&] { composia::Button orphan{parent, L"Orphan"}; }, "Button accepted a destroyed parent");
         require(app.run() == 0, "Rejected child creation left a top-level window");

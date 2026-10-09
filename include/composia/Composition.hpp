@@ -1,5 +1,6 @@
 #pragma once
 
+// The C++/WinRT Composition headers, and the composia::composition and composia::numerics aliases.
 #include <composia/Native.hpp>
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Foundation.Collections.h>

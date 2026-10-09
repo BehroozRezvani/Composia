@@ -25,9 +25,6 @@ Button::Button(Window& parent, std::wstring_view label)
 
 Button::~Button() = default;
 
-void Button::enabled(bool value) { set_enabled(value); }
-bool Button::enabled() const noexcept { return Window::enabled(); }
-
 void Button::invoke() {
     (void)require_hwnd();
     if (!enabled()) { return; }

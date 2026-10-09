@@ -11,16 +11,20 @@ namespace composia {
 
 // A composition-rendered push button, built only on the public window, drawing, and
 // accessibility mechanisms: pointer and keyboard activation, focus ring, enabled state, and a
-// UI Automation Invoke provider.
+// UI Automation Invoke provider. It is a child window and a tab stop: place it with set_bounds,
+// disable it with set_enabled, and reach its provider through automation_provider().
 class Button final : public Window {
 public:
+    // The label is drawn centered and is the button's UI Automation name. The parent window must
+    // still have its HWND.
     Button(Window& parent, std::wstring_view label);
     ~Button() override;
-    void enabled(bool value);
-    [[nodiscard]] bool enabled() const noexcept;
+    // Activates the button as a click, Space, Enter, or UI Automation Invoke does: raises the
+    // Invoke event and then on_click. Does nothing while the button is disabled.
     void invoke();
+    // Runs after each activation. Keep the Connection for as long as the callback should run.
     Connection on_click(std::function<void()> callback) { return clicked_.connect(std::move(callback)); }
-    [[nodiscard]] const wil::com_ptr<IRawElementProviderSimple>& accessibility_provider() const noexcept { return accessible_.provider(); }
+    // The target the button paints into.
     [[nodiscard]] CompositionWindowTarget& composition_target() noexcept { return target_; }
 
 private:

@@ -5,6 +5,7 @@
 
 namespace composia {
 
+// info: normal events such as device creation; warning: failures Composia recovered from.
 enum class LogLevel { info, warning };
 
 // Receives Composia's diagnostic events, such as graphics device creation, loss, and recovery,

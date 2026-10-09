@@ -47,7 +47,6 @@ public:
     void set_bounds(layout::Rect);
     void rethrow_callback_error();
     [[nodiscard]] HWND hwnd() const noexcept { return hwnd_.get(); }
-    [[nodiscard]] const wil::unique_hwnd& native_window() const noexcept { return hwnd_; }
     [[nodiscard]] UINT dpi() const noexcept;
     [[nodiscard]] SIZE client_pixels() const;
     [[nodiscard]] bool top_level() const noexcept { return topLevel_; }

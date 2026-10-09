@@ -1,4 +1,5 @@
 #include <composia/ScreenCapture.hpp>
+#include "Logging.hpp"
 #include <d3d11_4.h>
 #include <windows.graphics.directx.direct3d11.interop.h>
 #include <utility>
@@ -79,9 +80,9 @@ void ScreenCapture::close() noexcept {
     auto session = std::exchange(session_, nullptr);
     auto pool = std::exchange(pool_, nullptr);
     try { if (session) { session.Close(); } }
-    catch (...) { OutputDebugStringW(L"Composia capture session shutdown failed.\n"); }
+    catch (...) { detail::log(LogLevel::warning, "event=capture_close_failed part=session"); }
     try { if (pool) { pool.Close(); } }
-    catch (...) { OutputDebugStringW(L"Composia capture frame pool shutdown failed.\n"); }
+    catch (...) { detail::log(LogLevel::warning, "event=capture_close_failed part=frame_pool"); }
     item_ = nullptr;
     device_ = nullptr;
     closed_.reset();

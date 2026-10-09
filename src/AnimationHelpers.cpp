@@ -1,7 +1,6 @@
 #include <composia/AnimationHelpers.hpp>
 
 namespace composia::animations {
-using namespace std::chrono_literals;
 
 composition::ContainerVisual container(const composition::Compositor& compositor, numerics::float2 size) {
     auto visual = compositor.CreateContainerVisual();
@@ -26,26 +25,6 @@ void implicit_offset(const composition::Visual& visual, std::chrono::millisecond
     auto implicit = compositor.CreateImplicitAnimationCollection();
     implicit.Insert(L"Offset", animation);
     visual.ImplicitAnimations(implicit);
-}
-
-void bob(const composition::Visual& visual, numerics::float3 origin, float distance) {
-    auto animation = visual.Compositor().CreateVector3KeyFrameAnimation();
-    animation.InsertKeyFrame(0.0f, origin);
-    animation.InsertKeyFrame(0.5f, {origin.x, origin.y - distance, origin.z});
-    animation.InsertKeyFrame(1.0f, origin);
-    animation.Duration(2400ms);
-    animation.IterationBehavior(composition::AnimationIterationBehavior::Forever);
-    visual.StartAnimation(L"Offset", animation);
-}
-
-void pulse(const composition::Visual& visual) {
-    auto animation = visual.Compositor().CreateScalarKeyFrameAnimation();
-    animation.InsertKeyFrame(0.0f, 0.45f);
-    animation.InsertKeyFrame(0.5f, 1.0f);
-    animation.InsertKeyFrame(1.0f, 0.45f);
-    animation.Duration(1800ms);
-    animation.IterationBehavior(composition::AnimationIterationBehavior::Forever);
-    visual.StartAnimation(L"Opacity", animation);
 }
 
 void center_in_parent(const composition::Visual& visual, const composition::Visual& parent) {
