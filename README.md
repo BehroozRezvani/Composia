@@ -236,7 +236,8 @@ Installed targets carry their dependencies.
 | `ScreenCapture` | WGC session, captured-frame polling, target resize, and device replacement |
 | `AnimationHelpers` | Containers/sprites, implicit offset, vector/scalar keyframes, and expression layout |
 | `TextLayout` | Reusable DirectWrite format/layout with incremental bounds updates |
-| `Button` | Composition-rendered child HWND, pointer/keyboard input, and UI Automation Invoke |
+| `Accessible` | UI Automation provider for any window: name, control type, focus and enabled state, Invoke and Value patterns, cross-thread marshalling |
+| `Button` | Composition-rendered child HWND, pointer/keyboard input, and UI Automation Invoke, built only on the mechanisms above |
 | `Layout` | DIP points and rectangles, hit testing, and horizontal/vertical stack placement |
 
 `demo/main.cpp` only initializes logging and starts the application/window.
@@ -272,6 +273,20 @@ the logical size to the callback, skipping minimized or empty windows.
 `ScopedSurfaceDraw::solid_brush` hands out brushes owned by the scope, created
 once per color and released when it finishes. `Button` and the demo are built on
 these public mechanisms only.
+
+`Accessible` gives any window a UI Automation presence. Construct one with the
+window, a name, a control type, and optionally an `invoke` callback (the Invoke
+pattern) and `value` with an optional `setValue` callback (the Value pattern,
+read-only without the callback). The window answers `WM_GETOBJECT` with it,
+reports focus and enabled changes, including disabled ancestors, and
+disconnects it when the HWND is destroyed, after which the provider reports the
+element as unavailable. Properties are answered from state kept under a lock
+because UI Automation calls arrive on other threads; actions are posted to the
+UI thread through the Application and dropped if the control is gone by then.
+Call `set_name`, `set_value`, and `raise_invoked` to keep clients informed. One
+provider per window; a second attachment throws. Elements painted inside a
+single HWND are not individually exposed; that needs a fragment provider, which
+the framework does not supply.
 
 Create one `Application` on the UI thread and pass it to each `Window` constructor.
 `Application::run()` serves all registered windows and exits when the last top-level HWND
@@ -365,7 +380,13 @@ window mechanisms: DIP conversion of pointer and screen coordinates, hover entry
 and leave, capture released explicitly, taken by another window, or cancelled,
 focus and enabled notifications including disabled ancestors, the rendering
 helper's sizing, minimized skip, device replacement, and injected device-loss
-retry, scope-owned brushes, and rejection of destroyed windows. Device loss is injected as
+retry, scope-owned brushes, and rejection of destroyed windows.
+`foundation-accessible` checks an `Accessible` on a plain window in-process:
+properties, focus and enabled reporting, renaming, `WM_GETOBJECT` routing, the
+host provider, pattern availability, Invoke and Value actions marshalled to the UI
+thread, rejection while disabled or under a disabled parent, duplicate
+attachment, and unavailability after destruction. The separate MTA client in
+`accessibility` still discovers and invokes a `Button` through the system. Device loss is injected as
 an HRESULT and a removal-event signal; these checks do not reset the GPU or
 qualify driver/TDR recovery. Pixel readback checks cover text, color, atlas offsets,
 and 96/120/144/168/192 DPI before and after recovery. Multiple-window lifetime,

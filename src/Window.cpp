@@ -1,5 +1,7 @@
 #include <composia/Window.hpp>
+#include <composia/Accessible.hpp>
 #include <composia/Application.hpp>
+#include <UIAutomation.h>
 #include <string>
 #include <cmath>
 #include <limits>
@@ -186,9 +188,11 @@ void Window::track(UINT message, WPARAM wparam, LPARAM lparam) {
         if (hovered_) { hovered_ = false; on_hover(false); }
         break;
     case WM_SETFOCUS:
+        if (accessible_) { accessible_->focus_changed(true); }
         on_focus(true);
         break;
     case WM_KILLFOCUS:
+        if (accessible_) { accessible_->focus_changed(false); }
         on_focus(false);
         break;
     case WM_CAPTURECHANGED:
@@ -205,6 +209,7 @@ void Window::track(UINT message, WPARAM wparam, LPARAM lparam) {
         }
         break;
     case WM_ENABLE:
+        if (accessible_) { accessible_->enabled_changed(wparam != 0); }
         on_enabled(wparam != 0);
         break;
     case WM_DESTROY:
@@ -213,6 +218,7 @@ void Window::track(UINT message, WPARAM wparam, LPARAM lparam) {
             captured_ = false;
             ReleaseCapture();
         }
+        if (accessible_) { accessible_->disconnect(); }
         break;
     }
 }
@@ -247,6 +253,11 @@ LRESULT Window::dispatch(HWND handle, UINT message, WPARAM wparam, LPARAM lparam
     }
     case WM_ERASEBKGND:
         return 1;
+    case WM_GETOBJECT:
+        if (accessible_ && static_cast<LONG>(lparam) == UiaRootObjectId) {
+            return accessible_->root_provider(wparam, lparam);
+        }
+        return DefWindowProcW(handle, message, wparam, lparam);
     case WM_DESTROY:
         return 0;
     default:

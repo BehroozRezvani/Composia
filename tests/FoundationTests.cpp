@@ -1,6 +1,8 @@
+#include <composia/Accessible.hpp>
 #include <composia/Application.hpp>
 #include <composia/CompositionWindowTarget.hpp>
 #include <composia/ScopedSurfaceDraw.hpp>
+#include <UIAutomation.h>
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
@@ -30,6 +32,20 @@ private:
         if (message == WM_PAINT) { ++paints; }
         return std::nullopt;
     }
+};
+
+// A painted control exposing a name, the Invoke pattern, and a writable Value pattern.
+class Knob final : public composia::Window {
+public:
+    Knob(composia::Application& app, HWND parent)
+        : Window(app, L"Knob", 200, 40, parent),
+          accessible_(*this, {.name = L"Volume", .controlType = UIA_SliderControlTypeId, .invoke = [this] { ++invoked; }, .value = true,
+              .setValue = [this](std::wstring text) { value = text; accessible_.set_value(text); }}) {}
+    unsigned invoked{};
+    std::wstring value;
+
+private:
+    composia::Accessible accessible_;
 };
 
 bool has(const std::vector<std::string>& events, std::string_view name) {
@@ -196,6 +212,84 @@ void render(bool warp) {
 }
 }
 
+void accessible(bool warp) {
+    composia::Application app{warp};
+    {
+        Probe host{app, L"Accessible host"};
+        Knob knob{app, host.hwnd()};
+        knob.set_bounds({10, 10, 200, 40});
+        host.show();
+        require(host.accessible() == nullptr && knob.accessible() != nullptr, "Windows did not report their providers");
+        auto& access = *knob.accessible();
+        const auto provider = access.provider();
+        require(static_cast<bool>(provider), "The provider is missing");
+        const auto property = [&](PROPERTYID id) {
+            wil::unique_variant result;
+            THROW_IF_FAILED(provider->GetPropertyValue(id, result.addressof()));
+            return result;
+        };
+        const auto text = [](const wil::unique_variant& value) { return value.vt == VT_BSTR ? std::wstring{value.bstrVal, SysStringLen(value.bstrVal)} : std::wstring{}; };
+        require(text(property(UIA_NamePropertyId)) == L"Volume" && access.name() == L"Volume", "The name was not reported");
+        require(property(UIA_ControlTypePropertyId).lVal == UIA_SliderControlTypeId, "The control type was not reported");
+        require(property(UIA_IsEnabledPropertyId).boolVal == VARIANT_TRUE && property(UIA_HasKeyboardFocusPropertyId).boolVal == VARIANT_FALSE, "Initial state is wrong");
+        require(property(UIA_IsKeyboardFocusablePropertyId).boolVal == VARIANT_TRUE && property(UIA_IsControlElementPropertyId).boolVal == VARIANT_TRUE, "Element flags are wrong");
+        knob.focus();
+        require(property(UIA_HasKeyboardFocusPropertyId).boolVal == VARIANT_TRUE, "Focus was not reported");
+        host.focus();
+        require(property(UIA_HasKeyboardFocusPropertyId).boolVal == VARIANT_FALSE, "Losing focus was not reported");
+        access.set_name(L"Loudness");
+        require(text(property(UIA_NamePropertyId)) == L"Loudness", "Renaming was not reported");
+        require(SendMessageW(knob.hwnd(), WM_GETOBJECT, 0, UiaRootObjectId) != 0 && SendMessageW(host.hwnd(), WM_GETOBJECT, 0, UiaRootObjectId) == 0,
+            "WM_GETOBJECT was not answered for the right windows");
+        wil::com_ptr<IRawElementProviderSimple> host_provider;
+        THROW_IF_FAILED(provider->get_HostRawElementProvider(host_provider.put()));
+        require(host_provider != nullptr, "The HWND host provider was not supplied");
+
+        wil::com_ptr<IUnknown> invokeUnknown, valueUnknown, toggleUnknown;
+        THROW_IF_FAILED(provider->GetPatternProvider(UIA_InvokePatternId, invokeUnknown.put()));
+        THROW_IF_FAILED(provider->GetPatternProvider(UIA_ValuePatternId, valueUnknown.put()));
+        THROW_IF_FAILED(provider->GetPatternProvider(UIA_TogglePatternId, toggleUnknown.put()));
+        require(invokeUnknown && valueUnknown && !toggleUnknown, "Pattern availability is wrong");
+        const auto invoke = invokeUnknown.query<IInvokeProvider>();
+        const auto valuePattern = valueUnknown.query<IValueProvider>();
+        BOOL readOnly{};
+        THROW_IF_FAILED(valuePattern->get_IsReadOnly(&readOnly));
+        wil::unique_bstr initial;
+        THROW_IF_FAILED(valuePattern->get_Value(initial.put()));
+        require(readOnly == FALSE && SysStringLen(initial.get()) == 0, "Initial value state is wrong");
+
+        require(app.post([&] {
+            THROW_IF_FAILED(invoke->Invoke());
+            THROW_IF_FAILED(valuePattern->SetValue(L"42"));
+            require(knob.invoked == 0 && knob.value.empty(), "Actions ran synchronously instead of through the application queue");
+            require(app.post([&] {
+                require(knob.invoked == 1 && knob.value == L"42" && access.value() == L"42", "Posted actions did not run on the UI thread");
+                wil::unique_bstr now;
+                THROW_IF_FAILED(valuePattern->get_Value(now.put()));
+                require(std::wstring_view{now.get(), SysStringLen(now.get())} == L"42", "The Value pattern did not report the new value");
+                knob.set_enabled(false);
+                require(property(UIA_IsEnabledPropertyId).boolVal == VARIANT_FALSE, "The disabled state was not reported");
+                require(invoke->Invoke() == static_cast<HRESULT>(UIA_E_ELEMENTNOTENABLED) && valuePattern->SetValue(L"1") == static_cast<HRESULT>(UIA_E_ELEMENTNOTENABLED),
+                    "A disabled element accepted actions");
+                knob.set_enabled(true);
+                host.set_enabled(false);
+                require(invoke->Invoke() == static_cast<HRESULT>(UIA_E_ELEMENTNOTENABLED), "A disabled parent did not block invocation");
+                host.set_enabled(true);
+                bool duplicate{};
+                try { composia::Accessible second{knob, {.name = L"Twice"}}; } catch (const std::logic_error&) { duplicate = true; }
+                require(duplicate && knob.accessible() == &access, "A second provider was attached to the same window");
+                THROW_IF_WIN32_BOOL_FALSE(DestroyWindow(knob.hwnd()));
+                require(invoke->Invoke() == static_cast<HRESULT>(UIA_E_ELEMENTNOTAVAILABLE), "A destroyed window's provider invoked");
+                wil::unique_variant gone;
+                require(provider->GetPropertyValue(UIA_NamePropertyId, gone.addressof()) == static_cast<HRESULT>(UIA_E_ELEMENTNOTAVAILABLE), "A destroyed window's provider answered");
+                PostMessageW(host.hwnd(), WM_CLOSE, 0, 0);
+            }), "Could not schedule the follow-up checks");
+        }), "Could not schedule the accessibility checks");
+        require(app.run() == 0, "Accessible loop failed");
+    }
+    app.close();
+}
+
 int main(int argc, char** argv) {
     try {
         require(argc >= 2, "Expected a test name");
@@ -204,6 +298,7 @@ int main(int argc, char** argv) {
         if (name == "pointer") { pointer(warp); }
         else if (name == "focus") { focus(warp); }
         else if (name == "render") { render(warp); }
+        else if (name == "accessible") { accessible(warp); }
         else { throw std::runtime_error("Unknown test"); }
         return 0;
     } catch (const winrt::hresult_error& error) { std::cerr << winrt::to_string(error.message()) << '\n'; }

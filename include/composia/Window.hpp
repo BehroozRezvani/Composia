@@ -8,11 +8,13 @@
 
 namespace composia {
 
+class Accessible;
 class Application;
 
 // An owning HWND with exception-safe message dispatch. The base tracks pointer hover, pointer
 // capture, keyboard focus, and the enabled state, so controls and application windows do not
-// repeat that plumbing; raw messages stay available through on_message.
+// repeat that plumbing; raw messages stay available through on_message. An attached Accessible
+// answers UI Automation requests for the window.
 class Window {
 public:
     Window(Application&, std::wstring_view title, int widthDip, int heightDip, HWND parent = nullptr);
@@ -50,6 +52,7 @@ public:
     [[nodiscard]] layout::Point pointer_position(LPARAM) const noexcept;       // Client-relative mouse messages.
     [[nodiscard]] layout::Point pointer_position_from_screen(LPARAM) const;    // WM_MOUSEWHEEL and other screen-relative messages.
     [[nodiscard]] layout::Rect client_bounds() const;
+    [[nodiscard]] Accessible* accessible() const noexcept { return accessible_; }
 
 protected:
     [[nodiscard]] HWND require_hwnd() const;
@@ -63,6 +66,7 @@ protected:
     virtual std::optional<LRESULT> on_message(UINT, WPARAM, LPARAM) { return std::nullopt; }
 
 private:
+    friend class Accessible;
     friend class Application;
     static LRESULT CALLBACK window_proc(HWND, UINT, WPARAM, LPARAM) noexcept;
     LRESULT dispatch(HWND, UINT, WPARAM, LPARAM);
@@ -72,6 +76,7 @@ private:
     bool topLevel_{};
     wil::unique_hwnd hwnd_;
     std::exception_ptr callbackError_;
+    Accessible* accessible_{};
     bool hovered_{}, tracking_{}, captured_{};
 };
 

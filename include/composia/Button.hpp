@@ -1,15 +1,16 @@
 #pragma once
 
+#include <composia/Accessible.hpp>
 #include <composia/Window.hpp>
 #include <composia/CompositionWindowTarget.hpp>
 #include <composia/Signal.hpp>
 #include <composia/TextLayout.hpp>
-#include <uiautomationcore.h>
-#include <d2d1_1.h>
 
 namespace composia {
-namespace detail { struct ButtonState; }
 
+// A composition-rendered push button, built only on the public window, drawing, and
+// accessibility mechanisms: pointer and keyboard activation, focus ring, enabled state, and a
+// UI Automation Invoke provider.
 class Button final : public Window {
 public:
     Button(Window& parent, std::wstring_view label);
@@ -18,7 +19,7 @@ public:
     [[nodiscard]] bool enabled() const noexcept;
     void invoke();
     Connection on_click(std::function<void()> callback) { return clicked_.connect(std::move(callback)); }
-    [[nodiscard]] const wil::com_ptr<IRawElementProviderSimple>& accessibility_provider() const noexcept { return provider_; }
+    [[nodiscard]] const wil::com_ptr<IRawElementProviderSimple>& accessibility_provider() const noexcept { return accessible_.provider(); }
     [[nodiscard]] CompositionWindowTarget& composition_target() noexcept { return target_; }
 
 private:
@@ -30,13 +31,11 @@ private:
     void on_enabled(bool) override;
     std::optional<LRESULT> on_message(UINT, WPARAM, LPARAM) override;
     bool hit_test(LPARAM) const;
-    void disconnect_provider() noexcept;
     void cancel_press();
 
     CompositionWindowTarget target_;
     TextLayout text_;
-    std::shared_ptr<detail::ButtonState> state_;
-    wil::com_ptr<IRawElementProviderSimple> provider_;
+    Accessible accessible_;
     Signal<> clicked_;
     bool inside_{};
     bool mousePressed_{};

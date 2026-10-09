@@ -26,6 +26,7 @@ add_library(composia STATIC
     src/TextLayout.cpp
     src/Layout.cpp
     src/Button.cpp
+    src/Accessible.cpp
     src/TextureSurface.cpp
     src/ScreenCapture.cpp
 )
