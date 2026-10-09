@@ -5,6 +5,8 @@ function(composia_example target source)
     target_compile_options(${target} PRIVATE /W4 $<$<BOOL:${COMPOSIA_WARNINGS_AS_ERRORS}>:/WX>)
 endfunction()
 
+# The smallest complete program: a drawn window and a Button. The README shows it.
+composia_example(composia-hello-example hello/main.cpp)
 # Text in a composition canvas, hosted EDIT controls and a check box, a Button, and an accessible slider.
 composia_example(composia-inputs-example inputs/main.cpp)
 # Direct3D 11 content in a swap chain surface, presented only when it changes.
