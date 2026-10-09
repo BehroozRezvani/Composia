@@ -1,20 +1,33 @@
-#include "MediaDemoWindow.hpp"
+#include <composia/Application.hpp>
+#include <composia/ScreenCapture.hpp>
+#include "support/TestSupport.hpp"
 #include <windows.graphics.capture.interop.h>
+#include <chrono>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 
-namespace {
-void require(bool value, const char* message) { if (!value) { throw std::runtime_error(message); } }
+// Windows Graphics Capture of an owned window and of its monitor, through ScreenCapture alone:
+// changing pixels, a target resize, a graphics device replacement, stop and restart, and the
+// target closing while captured.
+using namespace composia;
+using testing::require;
+using testing::rejects;
 
-class SourceWindow final : public composia::Window {
+namespace {
+constexpr UINT_PTR repaintTimer = 30, checkTimer = 31;
+
+// A window painted with GDI: a solid color and a white marker that moves on a timer, so the
+// capture keeps producing frames.
+class SourceWindow final : public Window {
 public:
-    explicit SourceWindow(composia::Application& app) : Window(app, L"Composia WGC test source", 360, 260) {
-        THROW_LAST_ERROR_IF(SetTimer(hwnd(), 30, 40, nullptr) == 0);
+    explicit SourceWindow(Application& app) : Window(app, L"Composia capture source", 360, 260) {
+        THROW_LAST_ERROR_IF(SetTimer(hwnd(), repaintTimer, 40, nullptr) == 0);
         set_bounds({20, 20, 360, 260});
         show(SW_SHOWNOACTIVATE);
         THROW_IF_WIN32_BOOL_FALSE(SetWindowPos(hwnd(), HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE));
     }
-    void green() { color_ = RGB(0, 255, 0); invalidate(); }
+    void fill(COLORREF color) { color_ = color; invalidate(); }
 
 private:
     void on_paint() override {
@@ -23,10 +36,9 @@ private:
         const auto release = wil::scope_exit([&] { ReleaseDC(hwnd(), dc); });
         const auto size = client_pixels();
         const RECT bounds{0, 0, size.cx, size.cy};
-        const auto brush = CreateSolidBrush(color_);
+        const wil::unique_hbrush brush{CreateSolidBrush(color_)};
         THROW_LAST_ERROR_IF_NULL(brush);
-        const auto cleanup = wil::scope_exit([&] { DeleteObject(brush); });
-        FillRect(dc, &bounds, brush);
+        FillRect(dc, &bounds, brush.get());
         const auto x = static_cast<LONG>(ticks_ % 160);
         const RECT marker{x, 8, x + 30, 28};
         FillRect(dc, &marker, static_cast<HBRUSH>(GetStockObject(WHITE_BRUSH)));
@@ -34,188 +46,176 @@ private:
     }
     void on_resize() override { invalidate(); }
     std::optional<LRESULT> on_message(UINT message, WPARAM wparam, LPARAM) override {
-        if (message == WM_TIMER && wparam == 30) { ++ticks_; invalidate(); return 0; }
+        if (message == WM_TIMER && wparam == repaintTimer) { ++ticks_; invalidate(); return 0; }
         return std::nullopt;
     }
     COLORREF color_ = RGB(255, 0, 0);
     unsigned ticks_{};
 };
 
-class CaptureTest final : public MediaDemoWindow {
+// Drives the capture from a timer on its own window, one stage at a time.
+class CaptureCheck final : public Window {
 public:
-    CaptureTest(composia::Application& app, bool monitor) : MediaDemoWindow(app), monitor_(monitor) {
-        set_bounds({570, 20, 760, 600});
+    CaptureCheck(Application& app, bool monitor) : Window(app, L"Composia capture check", 240, 120), monitor_(monitor) {
         source_ = std::make_unique<SourceWindow>(app);
-        select();
-        THROW_LAST_ERROR_IF(SetTimer(hwnd(), 31, 50, nullptr) == 0);
+        start();
+        THROW_LAST_ERROR_IF(SetTimer(hwnd(), checkTimer, 50, nullptr) == 0);
     }
+    bool finished() const noexcept { return stage_ == 6; }
 
 private:
-    void select() {
-        const auto interop = winrt::get_activation_factory<composia::capture::GraphicsCaptureItem, IGraphicsCaptureItemInterop>();
-        composia::capture::GraphicsCaptureItem item{nullptr};
+    capture::GraphicsCaptureItem item() {
+        const auto interop = winrt::get_activation_factory<capture::GraphicsCaptureItem, IGraphicsCaptureItemInterop>();
+        capture::GraphicsCaptureItem item{nullptr};
         if (monitor_) {
             const auto monitor = MonitorFromWindow(source_->hwnd(), MONITOR_DEFAULTTONEAREST);
-            THROW_IF_FAILED(interop->CreateForMonitor(monitor, winrt::guid_of<composia::capture::GraphicsCaptureItem>(), winrt::put_abi(item)));
+            THROW_IF_FAILED(interop->CreateForMonitor(monitor, winrt::guid_of<capture::GraphicsCaptureItem>(), winrt::put_abi(item)));
             MONITORINFO info{};
             info.cbSize = sizeof(info);
             THROW_IF_WIN32_BOOL_FALSE(GetMonitorInfoW(monitor, &info));
             monitorOrigin_ = {info.rcMonitor.left, info.rcMonitor.top};
         } else {
-            THROW_IF_FAILED(interop->CreateForWindow(source_->hwnd(), winrt::guid_of<composia::capture::GraphicsCaptureItem>(), winrt::put_abi(item)));
+            THROW_IF_FAILED(interop->CreateForWindow(source_->hwnd(), winrt::guid_of<capture::GraphicsCaptureItem>(), winrt::put_abi(item)));
         }
-        require(start_capture(item), "Capture target was rejected");
+        return item;
     }
 
-    D3D11_TEXTURE2D_DESC description() const {
-        D3D11_TEXTURE2D_DESC desc{};
-        if (const auto texture = capture_texture()) { texture->GetDesc(&desc); }
-        return desc;
+    void start() {
+        const auto target = item();
+        capture_.start(target, application().graphics().d3d_device().get());
+        require(capture_.active() && !capture_.target_closed(), "A started capture was not active");
+        require(capture_.item() == target && capture_.frame_pool() && capture_.session(), "The capture objects were not exposed");
+        frames_ = 0;
     }
 
-    bool matches(bool green) {
-        const auto texture = capture_texture();
-        if (!texture) { return false; }
-        auto& graphics = application().graphics();
-        auto desc = description();
-        POINT point{static_cast<LONG>(desc.Width / 2), static_cast<LONG>(desc.Height / 2)};
+    // Takes the latest frame and checks the color at the source window's center.
+    bool shows(COLORREF color, SIZE* contentSize = nullptr) {
+        auto frame = capture_.next_frame();
+        if (!frame) { return false; }
+        const auto close = wil::scope_exit([&] { frame.Close(); });
+        ++frames_;
+        const auto size = frame.ContentSize();
+        if (contentSize) { *contentSize = {size.Width, size.Height}; }
+        POINT point{size.Width / 2, size.Height / 2};
         if (monitor_) {
-            const auto size = source_->client_pixels();
-            point = {size.cx / 2, size.cy / 2};
+            const auto client = source_->client_pixels();
+            point = {client.cx / 2, client.cy / 2};
             THROW_IF_WIN32_BOOL_FALSE(ClientToScreen(source_->hwnd(), &point));
             point.x -= monitorOrigin_.x;
             point.y -= monitorOrigin_.y;
         }
-        require(point.x >= 0 && point.y >= 0 && static_cast<UINT>(point.x) < desc.Width && static_cast<UINT>(point.y) < desc.Height,
-            "Owned source window is outside the captured monitor");
-        desc.Width = desc.Height = 1;
-        desc.Usage = D3D11_USAGE_STAGING;
-        desc.BindFlags = desc.MiscFlags = 0;
-        desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-        wil::com_ptr<ID3D11Texture2D> readback;
-        THROW_IF_FAILED(graphics.d3d_device()->CreateTexture2D(&desc, nullptr, readback.put()));
-        const D3D11_BOX region{static_cast<UINT>(point.x), static_cast<UINT>(point.y), 0,
-            static_cast<UINT>(point.x + 1), static_cast<UINT>(point.y + 1), 1};
-        const auto dc = graphics.d3d_context().get();
-        dc->CopySubresourceRegion(readback.get(), 0, 0, 0, 0, texture, 0, &region);
-        D3D11_MAPPED_SUBRESOURCE mapped{};
-        THROW_IF_FAILED(dc->Map(readback.get(), 0, D3D11_MAP_READ, 0, &mapped));
-        const auto unmap = wil::scope_exit([&] { dc->Unmap(readback.get(), 0); });
-        const auto pixel = static_cast<const unsigned char*>(mapped.pData);
-        return pixel[0] < 20 && pixel[green ? 1 : 2] > 230 && pixel[green ? 2 : 1] < 20;
-    }
-
-    void stop() {
-        const auto button = FindWindowExW(hwnd(), nullptr, L"Composia.Window", L"Stop capture");
-        require(button != nullptr && IsWindowEnabled(button), "Stop capture control is unavailable");
-        SetFocus(button);
-        SendMessageW(button, WM_KEYDOWN, VK_SPACE, 0);
-        SendMessageW(button, WM_KEYUP, VK_SPACE, 0);
-        require(!capturing() && capture_texture() == nullptr, "Stop capture retained a live session or texture");
-        require(!IsWindowEnabled(button), "Stop capture remained enabled after stopping");
+        require(point.x >= 0 && point.y >= 0 && point.x < size.Width && point.y < size.Height, "The source window is outside the capture");
+        const auto pixel = testing::frame_pixel(application(), frame, static_cast<UINT>(point.x), static_cast<UINT>(point.y));
+        return testing::matches(pixel, (GetRValue(color) << 16) | (GetGValue(color) << 8) | GetBValue(color), 24);
     }
 
     void check() {
-        if (checking_ || stage_ == 7) { return; }
+        if (checking_ || finished()) { return; }
         checking_ = true;
-        const auto finish = wil::scope_exit([&] { checking_ = false; });
-        if (std::chrono::steady_clock::now() - started_ >= std::chrono::seconds{20}) {
-            std::cerr << "stage=" << stage_ << " frames=" << capture_frames() << " baseline=" << baseline_ << '\n';
-            throw std::runtime_error("WGC test stopped making progress");
-        }
-        require(SUCCEEDED(media_error()), "Capture reported an error");
+        const auto done = wil::scope_exit([&] { checking_ = false; });
+        require(std::chrono::steady_clock::now() - started_ < std::chrono::seconds{20}, "Capture stopped making progress");
+        auto& graphics = application().graphics();
         switch (stage_) {
         case 0:
-            if (capture_frames() < 4 || !matches(false)) { return; }
-            source_->green();
+            if (!shows(RGB(255, 0, 0)) || frames_ < 3) { return; }
+            source_->fill(RGB(0, 255, 0));
             ++stage_;
             break;
-        case 1:
-            if (!matches(true)) { return; }
-            beforeResize_ = description();
+        case 1: {
+            SIZE before{};
+            if (!shows(RGB(0, 255, 0), &before)) { return; }
+            beforeResize_ = before;
             source_->set_bounds({20, 20, 510, 340});
-            baseline_ = capture_frames();
             ++stage_;
             break;
+        }
         case 2: {
-            if (!monitor_ && resizeSteps_ < 8) {
-                source_->set_bounds({20, 20, resizeSteps_ % 2 == 0 ? 320.0f : 510.0f, resizeSteps_ % 2 == 0 ? 230.0f : 340.0f});
-                ++resizeSteps_;
-                baseline_ = capture_frames();
-                return;
-            }
-            const auto desc = description();
-            if (capture_frames() < baseline_ + 4 || !matches(true)) { return; }
-            if (!monitor_ && (desc.Width <= beforeResize_.Width || desc.Height <= beforeResize_.Height)) { return; }
-            set_bounds({570, 20, 800, 640});
-            generation_ = application().graphics().generation();
-            baseline_ = capture_frames();
-            application().graphics().recreate();
+            SIZE size{};
+            if (!shows(RGB(0, 255, 0), &size)) { return; }
+            // A window capture follows the target's size; the frame pool adapts to it.
+            if (!monitor_ && (size.cx <= beforeResize_.cx || size.cy <= beforeResize_.cy)) { return; }
+            generation_ = graphics.generation();
+            graphics.recreate();
+            capture_.recreate(graphics.d3d_device().get());
+            frames_ = 0;
             ++stage_;
             break;
         }
         case 3:
-            if (capture_frames() < baseline_ + 4 || !matches(true)) { return; }
-            require(application().graphics().generation() == generation_ + 1, "Capture did not recover on the replacement device");
-            stop();
-            select();
+            if (!shows(RGB(0, 255, 0)) || frames_ < 3) { return; }
+            require(graphics.generation() == generation_ + 1, "The capture did not continue on the replacement device");
+            capture_.close();
+            require(!capture_.active() && !capture_.next_frame() && !capture_.item(), "A closed capture kept its session");
+            capture_.close();  // Closing again is harmless.
+            source_->fill(RGB(0, 0, 255));
+            start();
             ++stage_;
             break;
         case 4:
-            if (capture_frames() < 4 || !matches(true)) { return; }
-            if (monitor_) { stop(); }
-            else { THROW_IF_WIN32_BOOL_FALSE(DestroyWindow(source_->hwnd())); }
+            if (!shows(RGB(0, 0, 255)) || frames_ < 3) { return; }
+            if (monitor_) {
+                std::cout << "capture=monitor pixels=true restart=true recovery=true\n";
+                finish();
+                return;
+            }
+            THROW_IF_WIN32_BOOL_FALSE(DestroyWindow(source_->hwnd()));
             ++stage_;
             break;
         case 5:
-            if (capturing()) { return; }
-            require(capture_texture() == nullptr, "Closed target retained its preview texture");
-            source_.reset();
-            source_ = std::make_unique<SourceWindow>(application());
-            select();
-            ++stage_;
-            break;
-        case 6:
-            if (capture_frames() < 4 || !matches(false)) { return; }
-            std::cout << "capture=" << (monitor_ ? "monitor" : "window") << " pixel_updates=true resize=true restart=true recovery=true close_active=true\n";
-            ++stage_;
-            PostMessageW(hwnd(), WM_CLOSE, 0, 0);
-            PostMessageW(source_->hwnd(), WM_CLOSE, 0, 0);
+            if (!capture_.target_closed()) { return; }
+            require(!capture_.next_frame(), "A closed target still produced frames");
+            std::cout << "capture=window pixels=true resize=true restart=true recovery=true target_closed=true\n";
+            finish();
             break;
         }
     }
 
-    std::optional<LRESULT> on_message(UINT message, WPARAM wparam, LPARAM lparam) override {
-        if (message == WM_TIMER && wparam == 31) { check(); return 0; }
-        return MediaDemoWindow::on_message(message, wparam, lparam);
+    void finish() {
+        capture_.close();
+        stage_ = 6;
+        if (source_->hwnd()) { PostMessageW(source_->hwnd(), WM_CLOSE, 0, 0); }
+        PostMessageW(hwnd(), WM_CLOSE, 0, 0);
     }
+
+    std::optional<LRESULT> on_message(UINT message, WPARAM wparam, LPARAM) override {
+        if (message == WM_TIMER && wparam == checkTimer) { check(); return 0; }
+        return std::nullopt;
+    }
+
+    ScreenCapture capture_;
     std::unique_ptr<SourceWindow> source_;
     std::chrono::steady_clock::time_point started_ = std::chrono::steady_clock::now();
-    D3D11_TEXTURE2D_DESC beforeResize_{};
+    SIZE beforeResize_{};
     POINT monitorOrigin_{};
     std::uint64_t generation_{};
-    unsigned stage_{}, baseline_{}, resizeSteps_{};
+    unsigned stage_{}, frames_{};
     bool monitor_{}, checking_{};
 };
+
+int run_capture(const testing::Options& options, bool monitor) {
+    if (!ScreenCapture::supported()) {
+        std::cout << "skipped: Windows Graphics Capture is unavailable\n";
+        return testing::skipped;
+    }
+    Application app{options.warp};
+    {
+        ScreenCapture idle;
+        require(!idle.active() && !idle.next_frame() && !idle.target_closed(), "An idle capture reported a session");
+        require(rejects(RO_E_CLOSED, [&] { idle.recreate(app.graphics().d3d_device().get()); }), "An idle capture accepted recreation");
+        require(rejects(E_INVALIDARG, [&] { idle.start(nullptr, app.graphics().d3d_device().get()); }), "A missing capture item was accepted");
+        CaptureCheck check{app, monitor};
+        check.show(SW_SHOWNOACTIVATE);
+        require(app.run() == 0, "The capture loop failed");
+        require(check.finished(), "The capture stages did not complete");
+    }
+    app.close();
+    return 0;
+}
 }
 
 int main(int argc, char** argv) {
-    try {
-        const bool warp = argc > 1 && std::string_view{argv[1]} == "--warp";
-        const bool monitor = argc > 2 && std::string_view{argv[2]} == "--monitor";
-        composia::Application app{warp};
-        if (!composia::ScreenCapture::supported() || !composia::TextureSurface::supported(app.compositor(), app.graphics().d3d_device().get())) {
-            std::cout << "WGC or composition textures are unsupported on this device\n";
-            return 77;
-        }
-        {
-            CaptureTest window{app, monitor};
-            window.show(SW_SHOWNOACTIVATE);
-            require(app.run() == 0, "Capture message loop failed");
-        }
-        app.close();
-        return 0;
-    } catch (const winrt::hresult_error& error) { std::cerr << winrt::to_string(error.message()) << '\n'; }
-    catch (const std::exception& error) { std::cerr << error.what() << '\n'; }
-    return 1;
+    return testing::run(argc, argv, {
+        {"window", [](const testing::Options& options) { return run_capture(options, false); }},
+        {"monitor", [](const testing::Options& options) { return run_capture(options, true); }},
+    });
 }
