@@ -5,6 +5,7 @@
 #include <composia/CompositionWindowTarget.hpp>
 #include <composia/Signal.hpp>
 #include <composia/TextLayout.hpp>
+#include <d2d1_1.h>
 
 namespace composia {
 
@@ -37,7 +38,6 @@ private:
     TextLayout text_;
     Accessible accessible_;
     Signal<> clicked_;
-    bool inside_{};
     bool mousePressed_{};
     bool keyPressed_{};
 };

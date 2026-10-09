@@ -1,5 +1,6 @@
 #include <composia/Accessible.hpp>
 #include <composia/Application.hpp>
+#include "WindowHelpers.hpp"
 #include <UIAutomation.h>
 #include <mutex>
 #include <stdexcept>
@@ -11,7 +12,7 @@ struct AccessibleState {
     HWND hwnd{};
     Accessible* owner{};
     Application* application{};
-    std::wstring name, value;
+    std::wstring name, value, automationId, localizedControlType;
     long controlType{};
     bool focused{}, hasInvoke{}, hasValue{}, readOnly{};
     std::function<void()> invoke;
@@ -20,15 +21,6 @@ struct AccessibleState {
 }
 
 namespace {
-bool effectively_enabled(HWND hwnd) noexcept {
-    if (!hwnd) { return false; }
-    for (auto current = hwnd; current; current = GetParent(current)) {
-        if (!IsWindowEnabled(current)) { return false; }
-        if (!(GetWindowLongPtrW(current, GWL_STYLE) & WS_CHILD)) { break; }
-    }
-    return true;
-}
-
 HRESULT allocate(VARIANT* result, const std::wstring& text) noexcept {
     result->vt = VT_BSTR;
     result->bstrVal = SysAllocStringLen(text.data(), static_cast<UINT>(text.size()));
@@ -66,13 +58,19 @@ struct Provider : winrt::implements<Provider, IRawElementProviderSimple, IInvoke
             return S_OK;
         case UIA_NamePropertyId:
             return allocate(result, state_->name);
+        case UIA_AutomationIdPropertyId:
+            return state_->automationId.empty() ? S_OK : allocate(result, state_->automationId);
+        case UIA_LocalizedControlTypePropertyId:
+            return state_->localizedControlType.empty() ? S_OK : allocate(result, state_->localizedControlType);
         case UIA_IsEnabledPropertyId:
         case UIA_HasKeyboardFocusPropertyId:
         case UIA_IsKeyboardFocusablePropertyId:
         case UIA_IsControlElementPropertyId:
         case UIA_IsContentElementPropertyId: {
             result->vt = VT_BOOL;
-            const bool value = property == UIA_IsEnabledPropertyId ? effectively_enabled(state_->hwnd)
+            // A disabled window cannot take the focus, so it is not focusable while disabled.
+            const bool value = property == UIA_IsEnabledPropertyId || property == UIA_IsKeyboardFocusablePropertyId
+                ? detail::effectively_enabled(state_->hwnd)
                 : property == UIA_HasKeyboardFocusPropertyId ? state_->focused : true;
             result->boolVal = value ? VARIANT_TRUE : VARIANT_FALSE;
             return S_OK;
@@ -109,7 +107,7 @@ struct Provider : winrt::implements<Provider, IRawElementProviderSimple, IInvoke
         std::lock_guard lock{state_->mutex};
         if (!state_->owner) { return UIA_E_ELEMENTNOTAVAILABLE; }
         if (!state_->hasInvoke) { return UIA_E_NOTSUPPORTED; }
-        if (!effectively_enabled(state_->hwnd)) { return UIA_E_ELEMENTNOTENABLED; }
+        if (!detail::effectively_enabled(state_->hwnd)) { return UIA_E_ELEMENTNOTENABLED; }
         return post([](detail::AccessibleState& state) { if (state.invoke) { state.invoke(); } });
     }
 
@@ -119,7 +117,7 @@ struct Provider : winrt::implements<Provider, IRawElementProviderSimple, IInvoke
         if (!state_->owner) { return UIA_E_ELEMENTNOTAVAILABLE; }
         if (!state_->hasValue) { return UIA_E_NOTSUPPORTED; }
         if (state_->readOnly) { return UIA_E_INVALIDOPERATION; }
-        if (!effectively_enabled(state_->hwnd)) { return UIA_E_ELEMENTNOTENABLED; }
+        if (!detail::effectively_enabled(state_->hwnd)) { return UIA_E_ELEMENTNOTENABLED; }
         try {
             return post([text = std::wstring{value}](detail::AccessibleState& state) { if (state.setValue) { state.setValue(text); } });
         } catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }
@@ -160,10 +158,10 @@ void text_changed(IRawElementProviderSimple* provider, PROPERTYID property, cons
 }
 }
 
-Accessible::Accessible(Window& window, Options options) : window_(window), state_(std::make_shared<detail::AccessibleState>()) {
+Accessible::Accessible(Window& window, Options options) : window_(&window), state_(std::make_shared<detail::AccessibleState>()) {
     const auto hwnd = window.hwnd();
     THROW_HR_IF(HRESULT_FROM_WIN32(ERROR_INVALID_WINDOW_HANDLE), !hwnd);
-    if (window.accessible_) { throw std::logic_error("The window already has an accessibility provider"); }
+    if (window.automation_provider()) { throw std::logic_error("The window already has a UI Automation provider"); }
     state_->hwnd = hwnd;
     state_->owner = this;
     state_->application = &window.application();
@@ -174,23 +172,25 @@ Accessible::Accessible(Window& window, Options options) : window_(window), state
     state_->hasValue = options.value;
     state_->readOnly = options.setValue == nullptr;
     state_->setValue = std::move(options.setValue);
+    state_->automationId = std::move(options.automationId);
+    state_->localizedControlType = std::move(options.localizedControlType);
     state_->focused = GetFocus() == hwnd;
     provider_ = winrt::make_self<Provider>(state_).as<IRawElementProviderSimple>().get();
-    window.accessible_ = this;
+    focusConnection_ = window.on_focus_changed([this](bool focused) { focus_changed(focused); });
+    enabledConnection_ = window.on_enabled_changed([this](bool enabled) { enabled_changed(enabled); });
+    destroyConnection_ = window.on_destroy([this] { disconnect(); });
+    window.set_automation_provider(provider_.get());
 }
 
-Accessible::~Accessible() {
-    disconnect();
-    if (window_.accessible_ == this) { window_.accessible_ = nullptr; }
-}
+Accessible::~Accessible() { disconnect(); }
 
+// Runs when this object is destroyed, when the native window is destroyed, and when the Window
+// object is destroyed first; after it, nothing here refers to the window any more.
 void Accessible::disconnect() noexcept {
     { std::lock_guard lock{state_->mutex}; state_->owner = nullptr; state_->hwnd = nullptr; }
+    if (window_ && window_->automation_provider() == provider_.get()) { window_->set_automation_provider(nullptr); }
+    window_ = nullptr;
     if (provider_) { LOG_IF_FAILED(UiaDisconnectProvider(provider_.get())); provider_.reset(); }
-}
-
-LRESULT Accessible::root_provider(WPARAM wparam, LPARAM lparam) {
-    return provider_ ? UiaReturnRawElementProvider(window_.hwnd(), wparam, lparam, provider_.get()) : 0;
 }
 
 void Accessible::focus_changed(bool focused) {

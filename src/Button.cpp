@@ -56,7 +56,8 @@ void Button::on_paint() {
     target_.render(*this, [&](ScopedSurfaceDraw& draw, numerics::float2 size) {
         const auto dc = draw.context().get();
         dc->Clear(D2D1::ColorF(0x101923));
-        const bool pressed = keyPressed_ || (mousePressed_ && inside_);
+        // Hover follows the captured pointer, so dragging off a pressed button drops the pressed look.
+        const bool pressed = keyPressed_ || (mousePressed_ && hovered());
         const UINT32 fill = !enabled() ? 0x35434B : pressed ? 0x3DAB93 : hovered() ? 0xA2F5DF : 0x6FE6C8;
         const auto bounds = D2D1::RoundedRect({2, 2, std::max(2.0f, size.x - 2), std::max(2.0f, size.y - 2)}, 8, 8);
         dc->FillRoundedRectangle(bounds, draw.solid_brush(fill));
@@ -84,17 +85,11 @@ std::optional<LRESULT> Button::on_message(UINT message, WPARAM wparam, LPARAM lp
     switch (message) {
     case WM_GETDLGCODE:
         return DLGC_BUTTON | ((wparam == VK_SPACE || wparam == VK_RETURN) ? DLGC_WANTMESSAGE : 0);
-    case WM_MOUSEMOVE:
-        if (mousePressed_) {
-            const auto inside = hit_test(lparam);
-            if (inside != inside_) { inside_ = inside; invalidate(); }
-        }
-        return 0;
     case WM_LBUTTONDOWN:
         if (enabled() && hit_test(lparam)) {
             focus();
             capture_pointer();
-            inside_ = mousePressed_ = true;
+            mousePressed_ = true;
             invalidate();
         }
         return 0;

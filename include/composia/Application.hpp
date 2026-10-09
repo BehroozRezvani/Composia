@@ -31,6 +31,7 @@ private:
     void report_error(std::exception_ptr) noexcept;
     void rethrow_callback_error();
     bool has_windows() const noexcept;
+    void remember_focus() const noexcept;
     void verify_thread() const;
     void notify_graphics_recreated();
     void shutdown() noexcept;

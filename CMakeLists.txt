@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(Composia VERSION 0.2.0 LANGUAGES CXX)
+project(Composia VERSION 0.3.0 LANGUAGES CXX)
 
 if(NOT WIN32 OR NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR NOT MSVC)
     message(FATAL_ERROR "Composia requires Windows and clang-cl in an x64 Visual Studio developer shell.")
@@ -43,7 +43,7 @@ target_compile_definitions(composia PUBLIC UNICODE _UNICODE NOMINMAX WIN32_LEAN_
 target_compile_options(composia PUBLIC /EHsc /utf-8 PRIVATE /W4 /WX)
 target_link_libraries(composia
     PUBLIC WIL::WIL Microsoft::CppWinRT
-    PRIVATE spdlog::spdlog d3d11 dxgi d2d1 dwrite windowsapp CoreMessaging user32 gdi32 ole32 oleaut32 uiautomationcore comctl32
+    PRIVATE spdlog::spdlog d3d11 dxgi d2d1 dwrite windowsapp CoreMessaging user32 gdi32 ole32 oleaut32 uiautomationcore comctl32 uxtheme
 )
 
 if(COMPOSIA_BUILD_DEMO OR COMPOSIA_BUILD_TESTS)

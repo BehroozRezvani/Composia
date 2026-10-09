@@ -1,6 +1,8 @@
 #include <composia/Signal.hpp>
 #include <composia/Layout.hpp>
+#include <composia/TextLayout.hpp>
 #include <array>
+#include <cmath>
 #include <limits>
 #include <iostream>
 #include <stdexcept>
@@ -71,6 +73,34 @@ int main() {
         try { (void)composia::layout::stack({0, 0, 100, 100}, std::array{std::numeric_limits<float>::infinity()}); }
         catch (const std::invalid_argument&) { invalidRejected = true; }
         if (!invalidRejected) { throw std::runtime_error("Non-finite layout input was accepted"); }
+
+        // Text measurement needs DirectWrite only, not a window or a graphics device.
+        wil::com_ptr<IDWriteFactory7> factory;
+        THROW_IF_FAILED(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory7), reinterpret_cast<IUnknown**>(factory.put())));
+        composia::TextLayout shortText{factory.get(), L"Hi", 20};
+        composia::TextLayout longText{factory.get(), L"Hello, wide world", 20};
+        shortText.resize(1000, 200);
+        longText.resize(1000, 200);
+        const auto shortSize = shortText.metrics(), longSize = longText.metrics();
+        if (shortSize.width <= 0 || longSize.width <= shortSize.width || shortSize.lineCount != 1 || std::abs(shortSize.height - longSize.height) > 0.01f) {
+            throw std::runtime_error("Single-line text was not measured");
+        }
+        longText.resize(60, 400);
+        const auto wrapped = longText.metrics();
+        if (wrapped.lineCount < 2 || wrapped.height <= longSize.height || wrapped.width > 60.5f) {
+            throw std::runtime_error("Wrapped text was not measured at the new width");
+        }
+        composia::TextLayout proportional{factory.get(), L"iiiiiiii", 20};
+        composia::TextLayout monospaced{factory.get(), L"iiiiiiii", 20, DWRITE_FONT_WEIGHT_NORMAL, L"Consolas", L"en-US"};
+        proportional.resize(1000, 200);
+        monospaced.resize(1000, 200);
+        if (monospaced.metrics().width <= proportional.metrics().width * 1.5f) {
+            throw std::runtime_error("The requested font family was not used");
+        }
+        bool emptyFamilyRejected{};
+        try { composia::TextLayout invalid{factory.get(), L"x", 12, DWRITE_FONT_WEIGHT_NORMAL, L""}; }
+        catch (const wil::ResultException& error) { emptyFamilyRejected = error.GetErrorCode() == E_INVALIDARG; }
+        if (!emptyFamilyRejected) { throw std::runtime_error("An empty font family was accepted"); }
         return 0;
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

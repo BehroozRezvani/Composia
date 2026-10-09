@@ -1,45 +1,59 @@
 #include <composia/NativeControl.hpp>
-#include <composia/Application.hpp>
+#include "WindowHelpers.hpp"
 #include <commctrl.h>
+#include <uxtheme.h>
 #include <cmath>
-#include <limits>
+#include <cwchar>
+#include <iterator>
 
 namespace composia {
 namespace {
-constexpr wchar_t controlProperty[] = L"Composia.NativeControl";
 constexpr UINT_PTR subclassId = 1;
 
-HWND require_parent(const Window& parent) {
-    const auto hwnd = parent.hwnd();
-    THROW_HR_IF(HRESULT_FROM_WIN32(ERROR_INVALID_WINDOW_HANDLE), !hwnd);
-    return hwnd;
+bool has_class(HWND hwnd, const wchar_t* name) noexcept {
+    wchar_t actual[32]{};
+    return GetClassNameW(hwnd, actual, static_cast<int>(std::size(actual))) && _wcsicmp(actual, name) == 0;
 }
 }
 
 NativeControl::NativeControl(Window& parent, std::wstring_view className, DWORD style, std::wstring_view text, DWORD extendedStyle)
     : parent_(parent) {
-    const auto parentHwnd = require_parent(parent);
+    const auto parentHwnd = parent.hwnd();
+    THROW_HR_IF(HRESULT_FROM_WIN32(ERROR_INVALID_WINDOW_HANDLE), !parentHwnd);
     const std::wstring ownedClass{className}, ownedText{text};
     const auto handle = CreateWindowExW(extendedStyle, ownedClass.c_str(), ownedText.c_str(), style | WS_CHILD, 0, 0, 0, 0,
         parentHwnd, nullptr, GetModuleHandleW(nullptr), nullptr);
     THROW_LAST_ERROR_IF_NULL(handle);
     hwnd_.reset(handle);
-    THROW_IF_WIN32_BOOL_FALSE(SetPropW(handle, controlProperty, this));
+    auto undo = wil::scope_exit([&] { detach(); });
+    Window::set_notification_handler(handle, this);
+    // A drop-down list is a separate window, but it asks for colors through the combo box.
+    COMBOBOXINFO combo{};
+    combo.cbSize = sizeof(combo);
+    if (has_class(handle, L"ComboBox") && GetComboBoxInfo(handle, &combo) && combo.hwndList && !IsChild(handle, combo.hwndList)) {
+        Window::set_notification_handler(combo.hwndList, this);
+        list_ = combo.hwndList;
+    }
     THROW_IF_WIN32_BOOL_FALSE(SetWindowSubclass(handle, subclass_proc, subclassId, reinterpret_cast<DWORD_PTR>(this)));
     apply_font();
+    undo.release();
 }
 
-NativeControl::~NativeControl() { detach(); }
+NativeControl::~NativeControl() {
+    detach();
+    // The control goes before the font and brush it uses, as WM_SETFONT requires.
+    hwnd_.reset();
+}
 
 void NativeControl::detach() noexcept {
+    if (list_) {
+        if (IsWindow(list_)) { Window::set_notification_handler(list_, nullptr); }
+        list_ = nullptr;
+    }
     if (const auto handle = hwnd_.get()) {
-        RemovePropW(handle, controlProperty);
+        Window::set_notification_handler(handle, nullptr);
         RemoveWindowSubclass(handle, subclass_proc, subclassId);
     }
-}
-
-NativeControl* NativeControl::from(HWND hwnd) noexcept {
-    return hwnd ? static_cast<NativeControl*>(GetPropW(hwnd, controlProperty)) : nullptr;
 }
 
 LRESULT CALLBACK NativeControl::subclass_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, UINT_PTR, DWORD_PTR reference) noexcept {
@@ -51,12 +65,29 @@ LRESULT CALLBACK NativeControl::subclass_proc(HWND hwnd, UINT message, WPARAM wp
         break;
     case WM_NCDESTROY:
         // The parent may be destroyed first; the wrapper must not keep a dead handle.
-        RemovePropW(hwnd, controlProperty);
-        RemoveWindowSubclass(hwnd, subclass_proc, subclassId);
+        self->detach();
         if (self->hwnd_.get() == hwnd) { (void)self->hwnd_.release(); }
         break;
     }
     return DefSubclassProc(hwnd, message, wparam, lparam);
+}
+
+std::optional<LRESULT> NativeControl::notification(UINT message, WPARAM wparam, LPARAM lparam) {
+    switch (message) {
+    case WM_COMMAND:
+        command_.emit(HIWORD(wparam));
+        return 0;
+    case WM_NOTIFY:
+        notify_.emit(*reinterpret_cast<const NMHDR*>(lparam));
+        return 0;
+    case WM_CTLCOLOREDIT:
+    case WM_CTLCOLORSTATIC:
+    case WM_CTLCOLORBTN:
+    case WM_CTLCOLORLISTBOX:
+        return control_color(reinterpret_cast<HDC>(wparam));
+    default:
+        return std::nullopt;
+    }
 }
 
 HWND NativeControl::require_hwnd() const {
@@ -64,36 +95,11 @@ HWND NativeControl::require_hwnd() const {
     return hwnd_.get();
 }
 
-void NativeControl::set_bounds(layout::Rect bounds) {
-    const auto handle = require_hwnd();
-    const auto dpi = GetDpiForWindow(handle);
-    const auto scale = static_cast<double>(dpi ? dpi : 96) / 96.0;
-    const auto pixel = [scale](double value) {
-        const auto rounded = std::round(value * scale);
-        THROW_HR_IF(E_INVALIDARG, !std::isfinite(rounded) || rounded < INT_MIN || rounded > INT_MAX);
-        return static_cast<int>(rounded);
-    };
-    THROW_HR_IF(E_INVALIDARG, bounds.width < 0 || bounds.height < 0);
-    const int x = pixel(bounds.x), y = pixel(bounds.y);
-    const auto width = static_cast<long long>(pixel(static_cast<double>(bounds.x) + bounds.width)) - x;
-    const auto height = static_cast<long long>(pixel(static_cast<double>(bounds.y) + bounds.height)) - y;
-    THROW_HR_IF(E_INVALIDARG, width > INT_MAX || height > INT_MAX);
-    THROW_IF_WIN32_BOOL_FALSE(SetWindowPos(handle, nullptr, x, y, static_cast<int>(width), static_cast<int>(height), SWP_NOZORDER | SWP_NOACTIVATE));
-}
-
+void NativeControl::set_bounds(layout::Rect bounds) { detail::place(require_hwnd(), bounds); }
 void NativeControl::show(bool visible) { ShowWindow(require_hwnd(), visible ? SW_SHOWNA : SW_HIDE); }
 bool NativeControl::visible() const noexcept { return hwnd_ && IsWindowVisible(hwnd_.get()); }
 void NativeControl::set_enabled(bool value) { EnableWindow(require_hwnd(), value); }
-
-bool NativeControl::enabled() const noexcept {
-    if (!hwnd_) { return false; }
-    for (auto current = hwnd_.get(); current; current = GetParent(current)) {
-        if (!IsWindowEnabled(current)) { return false; }
-        if (!(GetWindowLongPtrW(current, GWL_STYLE) & WS_CHILD)) { break; }
-    }
-    return true;
-}
-
+bool NativeControl::enabled() const noexcept { return detail::effectively_enabled(hwnd_.get()); }
 void NativeControl::focus() { SetFocus(require_hwnd()); }
 bool NativeControl::focused() const noexcept { return hwnd_ && GetFocus() == hwnd_.get(); }
 
@@ -133,17 +139,47 @@ void NativeControl::apply_font() {
     font_ = std::move(font);  // The previous font is released after the control has switched.
 }
 
+// Check boxes, radio buttons, and group boxes draw their text with the theme's color while visual
+// styles are on, whatever WM_CTLCOLORSTATIC selects into the device context.
+bool NativeControl::theme_colors_text() const noexcept {
+    const auto handle = hwnd_.get();
+    if (!handle || !has_class(handle, L"Button")) { return false; }
+    const auto style = GetWindowLongPtrW(handle, GWL_STYLE);
+    if (style & BS_PUSHLIKE) { return false; }
+    switch (style & BS_TYPEMASK) {
+    case BS_CHECKBOX:
+    case BS_AUTOCHECKBOX:
+    case BS_3STATE:
+    case BS_AUTO3STATE:
+    case BS_RADIOBUTTON:
+    case BS_AUTORADIOBUTTON:
+    case BS_GROUPBOX:
+        return true;
+    default:
+        return false;
+    }
+}
+
 void NativeControl::set_colors(COLORREF text, COLORREF background) {
     const auto handle = require_hwnd();
+    wil::unique_hbrush brush{CreateSolidBrush(background)};
+    THROW_LAST_ERROR_IF_NULL(brush);
+    if (!unthemed_ && theme_colors_text()) {
+        THROW_IF_FAILED(SetWindowTheme(handle, L"", L""));
+        unthemed_ = true;
+    }
     textColor_ = text;
     backgroundColor_ = background;
-    background_.reset(CreateSolidBrush(background));
-    THROW_LAST_ERROR_IF_NULL(background_);
+    background_ = std::move(brush);
     THROW_IF_WIN32_BOOL_FALSE(InvalidateRect(handle, nullptr, TRUE));
 }
 
 void NativeControl::clear_colors() {
     const auto handle = require_hwnd();
+    if (unthemed_) {
+        THROW_IF_FAILED(SetWindowTheme(handle, nullptr, nullptr));
+        unthemed_ = false;
+    }
     textColor_.reset();
     backgroundColor_.reset();
     background_.reset();
@@ -161,8 +197,5 @@ std::optional<LRESULT> NativeControl::control_color(HDC dc) {
 LRESULT NativeControl::send(UINT message, WPARAM wparam, LPARAM lparam) const {
     return SendMessageW(require_hwnd(), message, wparam, lparam);
 }
-
-void NativeControl::command(UINT code) { command_.emit(code); }
-void NativeControl::notify(const NMHDR& header) { notify_.emit(header); }
 
 }

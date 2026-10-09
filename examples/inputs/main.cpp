@@ -1,3 +1,4 @@
+#include <composia/Accessible.hpp>
 #include <composia/Application.hpp>
 #include <composia/Button.hpp>
 #include <composia/CompositionWindowTarget.hpp>
@@ -8,6 +9,7 @@
 #include <commctrl.h>
 #include <algorithm>
 #include <cmath>
+#include <cwchar>
 #include <cwctype>
 #include <optional>
 #include <string>
@@ -17,28 +19,130 @@ using namespace composia;
 
 namespace {
 
-constexpr float kThumbRadius = 9.0f;
-constexpr float kHitRadius = 12.0f;
+constexpr UINT32 canvasColor = 0x101923;
+constexpr UINT32 fieldColor = 0x18232E;
+constexpr UINT32 textColor = 0xEAF2F4;
+constexpr UINT32 mutedColor = 0x93A9B5;
+constexpr UINT32 accentColor = 0x6FE6C8;
+constexpr COLORREF fieldText = RGB(234, 242, 244), fieldBackground = RGB(24, 35, 46), canvasBackground = RGB(16, 25, 35);
 
 IDWriteFactory7* text_factory(Application& app) { return app.graphics().text_factory().get(); }
+std::wstring percent_text(float value) { return std::to_wstring(std::lround(value * 100.0f)) + L"%"; }
 
-// The track spans x 120 to width - 32 at y 400 and is 4 DIPs tall.
-layout::Rect track_rect(float width) { return {120.0f, 400.0f, std::max(1.0f, width - 152.0f), 4.0f}; }
+// A slider drawn into its own child window. One HWND makes it a tab stop that the dialog
+// navigation reaches, gives it keyboard focus, and lets it carry a UI Automation element; the
+// track, fill, and thumb inside it are drawn, not windows.
+class Slider final : public Window {
+public:
+    Slider(Window& parent, std::wstring_view name, float value)
+        : Window(parent.application(), name, 300, 40, parent.hwnd()),
+          target_(application().compositor(), application().graphics(), hwnd()),
+          value_(std::clamp(value, 0.0f, 1.0f)),
+          accessible_(*this, {.name = std::wstring{name}, .controlType = UIA_SliderControlTypeId, .value = true,
+              .setValue = [this](std::wstring text) { set_value(static_cast<float>(std::wcstol(text.c_str(), nullptr, 10)) / 100.0f); },
+              .automationId = L"volume"}) {
+        accessible_.set_value(percent_text(value_));
+    }
 
-layout::Point thumb_center(layout::Rect track, float value) {
-    return {track.x + value * track.width, track.y + track.height * 0.5f};
+    [[nodiscard]] float value() const noexcept { return value_; }
+    Connection on_change(std::function<void(float)> callback) { return changed_.connect(std::move(callback)); }
+
+    void set_value(float value) {
+        value = std::clamp(value, 0.0f, 1.0f);
+        if (value == value_) { return; }
+        value_ = value;
+        accessible_.set_value(percent_text(value_));
+        invalidate();
+        changed_.emit(value_);
+    }
+
+private:
+    static constexpr float inset = 12.0f;
+
+    void on_resize() override { invalidate(); }
+    void on_hover(bool) override { invalidate(); }
+    void on_focus(bool) override { invalidate(); }
+    void on_enabled(bool) override { invalidate(); }
+    void on_capture_lost() override {
+        dragging_ = false;
+        invalidate();
+    }
+
+    void on_paint() override {
+        target_.render(*this, [this](ScopedSurfaceDraw& draw, numerics::float2 size) {
+            const auto dc = draw.context().get();
+            dc->Clear(D2D1::ColorF(canvasColor));
+            const float middle = size.y * 0.5f, right = std::max(inset, size.x - inset);
+            const float thumb = inset + value_ * (right - inset);
+            const bool active = enabled();
+            dc->FillRoundedRectangle(D2D1::RoundedRect({inset, middle - 2, right, middle + 2}, 2, 2), draw.solid_brush(0x2A3946));
+            dc->FillRoundedRectangle(D2D1::RoundedRect({inset, middle - 2, thumb, middle + 2}, 2, 2), draw.solid_brush(active ? accentColor : 0x35434B));
+            const UINT32 thumbColor = !active ? 0x35434B : (hovered() || dragging_) ? 0xA2F5DF : accentColor;
+            dc->FillEllipse(D2D1::Ellipse({thumb, middle}, 9, 9), draw.solid_brush(thumbColor));
+            if (focused()) {
+                dc->DrawRoundedRectangle(D2D1::RoundedRect({1, 1, size.x - 1, size.y - 1}, 6, 6), draw.solid_brush(0xFFFFFF), 1.5f);
+            }
+        });
+    }
+
+    void set_from(LPARAM position) {
+        const auto width = client_bounds().width;
+        set_value((pointer_position(position).x - inset) / std::max(1.0f, width - 2 * inset));
+    }
+
+    std::optional<LRESULT> on_message(UINT message, WPARAM wparam, LPARAM lparam) override {
+        switch (message) {
+        case WM_GETDLGCODE:
+            return DLGC_WANTARROWS;  // Arrow keys adjust the value instead of moving the focus.
+        case WM_LBUTTONDOWN:
+            if (!enabled()) { return 0; }
+            focus();
+            capture_pointer();
+            dragging_ = true;
+            set_from(lparam);
+            invalidate();
+            return 0;
+        case WM_MOUSEMOVE:
+            if (dragging_) { set_from(lparam); }
+            return 0;
+        case WM_LBUTTONUP:
+            if (dragging_) {
+                dragging_ = false;
+                release_pointer();
+                invalidate();
+            }
+            return 0;
+        case WM_KEYDOWN: {
+            const float step = GetKeyState(VK_SHIFT) < 0 ? 0.2f : 0.05f;
+            switch (wparam) {
+            case VK_LEFT: case VK_DOWN: set_value(value_ - step); return 0;
+            case VK_RIGHT: case VK_UP: set_value(value_ + step); return 0;
+            case VK_PRIOR: set_value(value_ + 0.2f); return 0;
+            case VK_NEXT: set_value(value_ - 0.2f); return 0;
+            case VK_HOME: set_value(0); return 0;
+            case VK_END: set_value(1); return 0;
+            default: break;
+            }
+            break;
+        }
+        default:
+            break;
+        }
+        return std::nullopt;
+    }
+
+    CompositionWindowTarget target_;
+    float value_{};
+    bool dragging_{};
+    Signal<float> changed_;
+    Accessible accessible_;
+};
+
 }
 
-bool on_slider(layout::Point p, layout::Rect track, float value) {
-    const auto center = thumb_center(track, value);
-    const float dx = p.x - center.x;
-    const float dy = p.y - center.y;
-    return dx * dx + dy * dy <= kHitRadius * kHitRadius
-        || layout::Rect{track.x, track.y - 8.0f, track.width, 20.0f}.contains(p.x, p.y);
-}
-
-}
-
+// Native EDIT controls and a check box for text and choices, a framework Button, and a painted
+// slider, over text drawn into the window's composition canvas. Everything is event driven: a
+// change repaints only the area it affects, and layout runs when the size or DPI changes.
 class InputsWindow final : public Window {
 public:
     explicit InputsWindow(Application& app)
@@ -46,36 +150,40 @@ public:
           target_(app.compositor(), app.graphics(), hwnd()),
           title_(text_factory(app), L"Inputs", 28.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD),
           subtitle_(text_factory(app),
-              L"Native EDIT controls give text input with IME, selection, clipboard, and accessibility. "
-              L"The slider is painted into this window and uses its pointer capture.", 14.0f),
+              L"The text fields and the check box are native controls, so IME, selection, the clipboard, and accessibility come "
+              L"from Windows. The slider is drawn into one child window that is a tab stop with its own UI Automation element.", 14.0f),
           nameLabel_(text_factory(app), L"Name", 14.0f),
           notesLabel_(text_factory(app), L"Notes", 14.0f),
-          volume_(text_factory(app), L"Volume 42%", 15.0f),
-          statusLayout_(text_factory(app), L"Ready.", 16.0f),
-          name_(*this, L"EDIT", WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL, L""),
-          notes_(*this, L"EDIT", WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN, L""),
+          volumeLabel_(text_factory(app), L"Volume", 14.0f),
+          volumeValue_(text_factory(app), percent_text(0.42f), 14.0f),
+          hint_(text_factory(app), L"", 13.0f),
+          status_(text_factory(app), L"Ready.", 16.0f),
+          name_(*this, L"EDIT", WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL),
+          notes_(*this, L"EDIT", WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN),
           loud_(*this, L"BUTTON", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX, L"Shout"),
-          greet_(*this, L"Say hello") {
+          greet_(*this, L"Say hello"),
+          volume_(*this, L"Volume", 0.42f) {
         name_.send(EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"Your name"));
-        name_.set_colors(RGB(234, 242, 244), RGB(14, 22, 31));
-        notes_.set_colors(RGB(234, 242, 244), RGB(14, 22, 31));
-        loud_.set_colors(RGB(234, 242, 244), RGB(16, 25, 35));
+        name_.set_colors(fieldText, fieldBackground);
+        notes_.set_colors(fieldText, fieldBackground);
+        loud_.set_colors(fieldText, canvasBackground);  // Check boxes take the classic look to honor colors.
+        greetClick_ = greet_.on_click([this] { greet(); });
+        volumeChange_ = volume_.on_change([this](float value) {
+            volumeValue_ = TextLayout{text_factory(application()), percent_text(value), 14.0f};
+            invalidate(volumeValueArea_);
+        });
+        // The parent watches the slider's focus through its public signal.
+        volumeFocus_ = volume_.on_focus_changed([this](bool focused) {
+            hint_ = TextLayout{text_factory(application()),
+                focused ? L"Arrow keys adjust the volume; Shift, Page Up, and Page Down take bigger steps; Home and End go to the ends." : L"", 13.0f};
+            invalidate(hintArea_);
+        });
+        arrange();
+    }
 
-        loudClick_ = loud_.on_command([this](UINT code) {
-            if (code == BN_CLICKED) {
-                loudOn_ = loud_.send(BM_GETCHECK) == BST_CHECKED;
-                invalidate();
-            }
-        });
-        greetClick_ = greet_.on_click([this] {
-            const std::wstring name = name_.text();
-            std::wstring greeting = name.empty() ? std::wstring{L"Hello, stranger!"} : L"Hello, " + name + L"!";
-            if (loudOn_) {
-                for (auto& ch : greeting) { ch = static_cast<wchar_t>(std::towupper(ch)); }
-            }
-            status_ = greeting;
-            invalidate();
-        });
+    void start(int showCommand) {
+        show(showCommand);
+        name_.focus();
     }
 
 protected:
@@ -85,134 +193,77 @@ protected:
     }
 
     void on_paint() override {
-        arrange();
-        target_.render(*this, [this](ScopedSurfaceDraw& draw, numerics::float2 size) { draw_canvas(draw, size); });
+        target_.render(*this, [this](ScopedSurfaceDraw& draw, numerics::float2) { draw_canvas(draw); });
     }
 
-    void on_hover(bool) override { invalidate(); }
-    void on_focus(bool) override { invalidate(); }
-
-    void on_capture_lost() override {
-        dragging_ = false;
-        invalidate();
-    }
-
-    std::optional<LRESULT> on_message(UINT message, WPARAM wparam, LPARAM lparam) override {
-        switch (message) {
-        case WM_GETMINMAXINFO: {
+    std::optional<LRESULT> on_message(UINT message, WPARAM, LPARAM lparam) override {
+        if (message == WM_GETMINMAXINFO) {
             auto* info = reinterpret_cast<MINMAXINFO*>(lparam);
             const auto windowDpi = hwnd() ? dpi() : GetDpiForSystem();
-            info->ptMinTrackSize = {MulDiv(640, windowDpi, 96), MulDiv(480, windowDpi, 96)};
+            info->ptMinTrackSize = {MulDiv(640, windowDpi, 96), MulDiv(560, windowDpi, 96)};
             return 0;
-        }
-        case WM_GETDLGCODE:
-            return DLGC_WANTARROWS;
-        case WM_LBUTTONDOWN: {
-            const auto point = pointer_position(lparam);
-            if (!on_slider(point, track_rect(client_bounds().width), value_)) { break; }
-            focus();
-            capture_pointer();
-            dragging_ = true;
-            set_value_from(point.x);
-            invalidate();
-            return 0;
-        }
-        case WM_MOUSEMOVE:
-            lastPointer_ = pointer_position(lparam);
-            if (dragging_) { set_value_from(lastPointer_.x); }
-            invalidate();
-            break;
-        case WM_LBUTTONUP:
-            if (dragging_) {
-                release_pointer();
-                dragging_ = false;
-                invalidate();
-                return 0;
-            }
-            break;
-        case WM_KEYDOWN:
-            if (wparam == VK_LEFT || wparam == VK_RIGHT) {
-                const float step = GetKeyState(VK_SHIFT) < 0 ? 0.2f : 0.05f;
-                value_ = std::clamp(value_ + (wparam == VK_RIGHT ? step : -step), 0.0f, 1.0f);
-                invalidate();
-                return 0;
-            }
-            break;
-        default:
-            break;
         }
         return std::nullopt;
     }
 
 private:
+    // Positions the child windows and records the areas that change on their own. Runs on resize,
+    // which also follows a DPI change, never while painting.
     void arrange() {
         const float width = client_bounds().width;
-        const float controlWidth = std::max(200.0f, width - 152.0f);
-        name_.set_bounds({120.0f, 96.0f, controlWidth, 32.0f});
-        notes_.set_bounds({120.0f, 144.0f, controlWidth, 160.0f});
-        loud_.set_bounds({120.0f, 320.0f, 160.0f, 24.0f});
-        greet_.set_bounds({300.0f, 320.0f, 140.0f, 36.0f});
-        volume_ = TextLayout{text_factory(application()), L"Volume " + std::to_wstring(percent()) + L"%", 15.0f};
-        statusLayout_ = TextLayout{text_factory(application()), status_, 16.0f};
+        const float fields = std::max(200.0f, width - 152.0f);
+        nameArea_ = {120, 116, fields, 28};
+        notesArea_ = {120, 160, fields, 132};
+        name_.set_bounds(nameArea_);
+        notes_.set_bounds(notesArea_);
+        loud_.set_bounds({120, 310, 140, 24});
+        greet_.set_bounds({280, 304, 150, 36});
+        volume_.set_bounds({112, 360, fields + 8, 40});
+        volumeValueArea_ = {120, 404, 120, 20};
+        hintArea_ = {120, 426, fields, 20};
+        statusArea_ = {32, 470, std::max(1.0f, width - 64), 28};
     }
 
-    int percent() const { return static_cast<int>(std::lround(value_ * 100.0f)); }
-
-    void set_value_from(float x) {
-        const auto track = track_rect(client_bounds().width);
-        value_ = std::clamp((x - track.x) / track.width, 0.0f, 1.0f);
-    }
-
-    void draw_canvas(ScopedSurfaceDraw& draw, numerics::float2 size) {
-        const auto dc = draw.context().get();
-        dc->Clear(D2D1::ColorF(0x101923));
-        const float inner = std::max(1.0f, size.x - 64.0f);
-        const auto text = [&](TextLayout& label, float x, float y, float width, float height, UINT32 color) {
-            label.resize(width, height);
-            dc->DrawTextLayout({x, y}, label.layout().get(), draw.solid_brush(color));
-        };
-        text(title_, 32.0f, 24.0f, inner, 40.0f, 0xEAF2F4);
-        text(subtitle_, 32.0f, 60.0f, inner, 36.0f, 0x93A9B5);
-        text(nameLabel_, 32.0f, 102.0f, 80.0f, 20.0f, 0xEAF2F4);
-        text(notesLabel_, 32.0f, 144.0f, 80.0f, 20.0f, 0xEAF2F4);
-        text(volume_, 120.0f, 424.0f, std::max(1.0f, size.x - 152.0f), 22.0f, 0xEAF2F4);
-        text(statusLayout_, 32.0f, 460.0f, inner, 28.0f, 0x6FE6C8);
-
-        // The slider has no child HWND; it is drawn here and reads pointer input in on_message.
-        const auto track = track_rect(size.x);
-        const auto thumb = thumb_center(track, value_);
-        const bool highlight = (hovered() && on_slider(lastPointer_, track, value_)) || dragging_;
-        dc->FillRoundedRectangle(D2D1::RoundedRect({track.x, track.y, track.x + track.width, track.y + track.height}, 2.0f, 2.0f),
-            draw.solid_brush(0x2A3946));
-        dc->FillRoundedRectangle(D2D1::RoundedRect({track.x, track.y, thumb.x, track.y + track.height}, 2.0f, 2.0f),
-            draw.solid_brush(0x6FE6C8));
-        dc->FillEllipse(D2D1::Ellipse({thumb.x, thumb.y}, kThumbRadius, kThumbRadius),
-            draw.solid_brush(highlight ? 0xA2F5DF : 0x6FE6C8));
-        if (focused()) {
-            const layout::Rect area{track.x - 12.0f, 384.0f, track.width + 24.0f, 36.0f};
-            dc->DrawRoundedRectangle(D2D1::RoundedRect({area.x, area.y, area.x + area.width, area.y + area.height}, 6.0f, 6.0f),
-                draw.solid_brush(0xFFFFFF), 1.5f);
+    void greet() {
+        std::wstring greeting = name_.text().empty() ? std::wstring{L"Hello, stranger!"} : L"Hello, " + name_.text() + L"!";
+        if (loud_.send(BM_GETCHECK) == BST_CHECKED) {
+            for (auto& ch : greeting) { ch = static_cast<wchar_t>(std::towupper(ch)); }
         }
+        status_ = TextLayout{text_factory(application()), greeting, 16.0f};
+        invalidate(statusArea_);
+    }
+
+    void draw_canvas(ScopedSurfaceDraw& draw) {
+        const auto dc = draw.context().get();
+        dc->Clear(D2D1::ColorF(canvasColor));
+        const float width = client_bounds().width;
+        const auto text = [&](TextLayout& label, layout::Rect area, UINT32 color) {
+            label.resize(std::max(1.0f, area.width), std::max(1.0f, area.height));
+            dc->DrawTextLayout({area.x, area.y}, label.layout().get(), draw.solid_brush(color));
+        };
+        text(title_, {32, 24, width - 64, 40}, textColor);
+        text(subtitle_, {32, 64, width - 64, 40}, mutedColor);
+        // Field backgrounds a little larger than the EDIT controls, which sit on top of the canvas.
+        for (const auto area : {nameArea_, notesArea_}) {
+            const auto frame = D2D1::RoundedRect({area.x - 8, area.y - 4, area.x + area.width + 4, area.y + area.height + 4}, 6, 6);
+            dc->FillRoundedRectangle(frame, draw.solid_brush(fieldColor));
+            dc->DrawRoundedRectangle(frame, draw.solid_brush(0x2A3946), 1.0f);
+        }
+        text(nameLabel_, {32, nameArea_.y + 4, 80, 20}, textColor);
+        text(notesLabel_, {32, notesArea_.y + 4, 80, 20}, textColor);
+        text(volumeLabel_, {32, 370, 80, 20}, textColor);
+        text(volumeValue_, volumeValueArea_, textColor);
+        text(hint_, hintArea_, mutedColor);
+        text(status_, statusArea_, accentColor);
     }
 
     CompositionWindowTarget target_;
-    TextLayout title_;
-    TextLayout subtitle_;
-    TextLayout nameLabel_;
-    TextLayout notesLabel_;
-    TextLayout volume_;
-    TextLayout statusLayout_;
-    NativeControl name_;
-    NativeControl notes_;
-    NativeControl loud_;
+    TextLayout title_, subtitle_, nameLabel_, notesLabel_, volumeLabel_, volumeValue_, hint_, status_;
+    NativeControl name_, notes_, loud_;
     Button greet_;
-    Connection loudClick_;
-    Connection greetClick_;
-    bool loudOn_{};
-    float value_{0.42f};
-    bool dragging_{};
-    layout::Point lastPointer_{};
-    std::wstring status_{L"Ready."};
+    Slider volume_;
+    Connection greetClick_, volumeChange_, volumeFocus_;
+    layout::Rect nameArea_{}, notesArea_{}, volumeValueArea_{}, hintArea_{}, statusArea_{};
 };
 
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR commandLine, int showCommand) {
@@ -223,7 +274,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR commandLine, int showCommand) {
         int result{};
         {
             InputsWindow window{app};
-            window.show(showCommand);
+            window.start(showCommand);
             result = app.run();
         }
         app.close();

@@ -134,6 +134,19 @@ bool Application::has_windows() const noexcept {
     return std::ranges::any_of(windows_, [](const Window* window) { return window->top_level() && window->hwnd(); });
 }
 
+// Records which window inside each top-level window has the focus, so activation can return it.
+void Application::remember_focus() const noexcept {
+    const auto focus = GetFocus();
+    if (!focus) { return; }
+    const auto root = GetAncestor(focus, GA_ROOT);
+    for (const auto window : windows_) {
+        if (window->top_level() && window->hwnd() == root) {
+            window->remember_focus(focus);
+            return;
+        }
+    }
+}
+
 void Application::notify_graphics_recreated() {
     const auto snapshot = windows_;
     std::exception_ptr firstError;
@@ -177,6 +190,7 @@ int Application::run() {
                 }
             }
             if (!handled) { TranslateMessage(&message); DispatchMessageW(&message); }
+            remember_focus();
             rethrow_callback_error();
         }
     }

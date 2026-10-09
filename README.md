@@ -1,9 +1,12 @@
 # Composia
 
-A small C++23 UI framework for desktop HWNDs, using Windows Composition,
-Direct2D, DirectWrite, and Direct3D 11. The demo renders a text/vector canvas with
-an animated visual tree and accessible buttons. No custom IDL, XAML, UWP
-application, or Windows App SDK is needed.
+A small C++23 foundation for native Windows applications: windowing, Windows
+Composition, Direct2D/DirectWrite drawing, Direct3D 11 interop, and reusable
+platform integration (input state, focus, accessibility, native controls), without
+prescribing an application architecture. It requires neither an HWND per UI
+element nor continuous rendering. No custom IDL, XAML, UWP application, or Windows
+App SDK is needed. The optional `Button` and `Layout` helpers and the demos are
+built on the public API.
 
 ## Build and run
 
@@ -215,7 +218,7 @@ cmake --install out/build/release --prefix out/install
 ```
 
 ```cmake
-find_package(Composia 0.2 CONFIG REQUIRED)
+find_package(Composia 0.3 CONFIG REQUIRED)
 target_link_libraries(my_app PRIVATE Composia::UI)
 ```
 
@@ -227,17 +230,17 @@ Installed targets carry their dependencies.
 | Module | Responsibility |
 | --- | --- |
 | `Application` | STA, dispatcher queue, compositor, message loop, and graphics recovery |
-| `Window` | Owning HWND, exception-safe message dispatch, resize and per-monitor DPI events, pointer hover and capture, focus, and enabled state |
+| `Window` | Owning HWND, exception-safe message dispatch, resize and per-monitor DPI events, pointer hover and capture, focus and its restoration, enabled state including ancestors, state signals, partial invalidation, child-control notification routing, and a UI Automation provider slot |
 | `GraphicsDevice` | D3D11 device5, D2D device6/context6, DirectWrite factory7, and Composition graphics device |
-| `CompositionWindowTarget` | Desktop HWND bridge, visual root, canvas surface/brush, pixel/DIP sizing, and one-call client rendering |
-| `ScopedSurfaceDraw` | Balanced surface BeginDraw/EndDraw with DPI and atlas-offset translation, and scope-owned solid brushes |
+| `CompositionWindowTarget` | Desktop HWND bridge, visual root, canvas surface/brush, pixel/DIP sizing, and one-call client rendering that updates only the invalidated area |
+| `ScopedSurfaceDraw` | Balanced surface BeginDraw/EndDraw with DPI and atlas-offset translation, an update clip, and scope-owned solid brushes |
 | `VirtualSurface` | Sparse drawing surface, bounded viewport tile cache, trimming, dirty regions, and recovery |
 | `TextureSurface` | Direct D3D11 texture composition, capability check, and availability fence |
 | `ScreenCapture` | WGC session, captured-frame polling, target resize, and device replacement |
 | `AnimationHelpers` | Containers/sprites, implicit offset, vector/scalar keyframes, and expression layout |
-| `TextLayout` | Reusable DirectWrite format/layout with incremental bounds updates |
-| `Accessible` | UI Automation provider for any window: name, control type, focus and enabled state, Invoke and Value patterns, cross-thread marshalling |
-| `NativeControl` | Hosts standard Win32 controls (EDIT, BUTTON, ...) with DIP bounds, DPI-aware fonts, colors, and routed notifications |
+| `TextLayout` | Reusable DirectWrite format/layout with a chosen family and locale, incremental bounds updates, and measurement |
+| `Accessible` | UI Automation provider for any window, built on the window's public signals: name, control type, automation ID, focus and enabled state, Invoke and Value patterns, cross-thread marshalling |
+| `NativeControl` | Hosts standard Win32 controls (EDIT, BUTTON, COMBOBOX, ...) with DIP bounds, DPI-aware fonts, colors, and notifications, built on the public notification route |
 | `Button` | Composition-rendered child HWND, pointer/keyboard input, and UI Automation Invoke, built only on the mechanisms above |
 | `Layout` | DIP points and rectangles, hit testing, and horizontal/vertical stack placement |
 
@@ -251,43 +254,82 @@ rendering timer.
 Resize events invalidate the canvas and coalesce into paint work. Text layouts
 are retained across redraws and device replacement; solid brushes come from the
 draw scope, so nothing device-dependent is cached across frames. `Window.hpp`
-includes only native windowing support; Composition and graphics headers are
-separate.
+includes only native windowing support (and a forward declaration of the UI
+Automation provider interface); Composition and graphics headers are separate.
 
 `Window` tracks the state every control and application window needs, so that
-plumbing is not repeated: `hovered()` with `on_hover`; `capture_pointer()` and
-`release_pointer()` with `on_capture_lost`, raised when another window takes the
-capture or `WM_CANCELMODE` cancels it, never for an explicit release; `focus()`
-and `focused()` with `on_focus`; and `set_enabled()` and `enabled()` with
-`on_enabled`, where `enabled()` is false while any ancestor is disabled.
-`pointer_position()` converts a client-relative mouse message to DIPs,
-`pointer_position_from_screen()` does the same for wheel messages, `scale()` is
-the DPI factor, and `client_bounds()` is the client area in DIPs. The tracking
-runs before `on_message`, so an override can handle a raw message and still read
-the state. Painted elements that share one HWND use these directly; nothing
-requires an HWND per element.
+plumbing is not repeated:
 
-`CompositionWindowTarget::render` paints a window in one call: it sizes the
-surface to the client area at the window's DPI, opens a draw scope through
-`Application::render` (one retry after device loss), and passes the scope and
-the logical size to the callback, skipping minimized or empty windows.
-`ScopedSurfaceDraw::solid_brush` hands out brushes owned by the scope, created
-once per color and released when it finishes. `Button` and the demo are built on
-these public mechanisms only.
+- **Hover.** `hovered()` and `on_hover` report whether the pointer is over the
+  client area. While the window has captured the pointer, Windows keeps sending
+  moves from outside and reports no leave until the capture ends, so hover follows
+  the pointer position then.
+- **Capture.** `capture_pointer()` and `release_pointer()`, with `on_capture_lost`
+  when another window takes the capture or `WM_CANCELMODE` cancels it, never for an
+  explicit release.
+- **Focus.** `focus()`, `focused()`, and `on_focus`. When a top-level window is
+  activated again (after Alt+Tab, another window, or minimize and restore), it gives
+  the focus back to the window inside it that last had it, as dialogs do, as long as
+  that window is still visible and enabled. The message loop records the focus,
+  because minimizing clears it before the window is deactivated. A multiline edit
+  control that passes Tab on with `WM_NEXTDLGCTL` gets the same handling as in a dialog.
+- **Enabled state.** `set_enabled()` and `enabled()`, where `enabled()` is false while
+  any ancestor is disabled. Windows sends `WM_ENABLE` only to the window whose own
+  state changed, so the window also refreshes every Composia window below it, and
+  `on_enabled` reports each change of the effective state. A disabled top-level
+  window, such as the owner of a modal dialog, therefore disables its Composia
+  controls too: they stop accepting input and UI Automation actions, and `Button`
+  draws itself disabled. Native child controls keep their normal look in that case.
+- **DIPs.** `pointer_position()` converts a client-relative mouse message to DIPs,
+  `pointer_position_from_screen()` does the same for wheel messages, `scale()` is the
+  DPI factor, and `client_bounds()` is the client area in DIPs.
 
-`Accessible` gives any window a UI Automation presence. Construct one with the
-window, a name, a control type, and optionally an `invoke` callback (the Invoke
-pattern) and `value` with an optional `setValue` callback (the Value pattern,
-read-only without the callback). The window answers `WM_GETOBJECT` with it,
-reports focus and enabled changes, including disabled ancestors, and
-disconnects it when the HWND is destroyed, after which the provider reports the
+The tracking runs before `on_message`, so an override can handle a raw message and
+still read the state. Code that does not derive from the window, such as a parent
+watching a `Button` or an object drawn into the window, subscribes to the same
+changes with `on_hover_changed`, `on_focus_changed`, `on_enabled_changed`,
+`on_pointer_capture_lost`, and `on_destroy`; each fires after the virtual hook.
+
+`invalidate()` schedules a repaint of the whole client area and
+`invalidate(layout::Rect)` of a DIP rectangle, rounded out to whole pixels. Requests
+coalesce into one `WM_PAINT`, and `paint_rect()` reports the pixels being repainted
+while `on_paint` runs. `CompositionWindowTarget::render` paints a window in one
+call: it sizes the surface to the client area at the window's DPI, opens a draw
+scope through `Application::render` (one retry after device loss), and passes the
+scope and the logical size to the callback, skipping minimized or empty windows.
+Inside `on_paint`, once the surface holds a complete frame, only the area being
+repainted is updated: Composition keeps the rest of the surface, the scope clips
+drawing to the area, and `ScopedSurfaceDraw::update_bounds()` reports it so a
+painter can skip anything outside. A resize, a DPI change, or a replaced graphics
+device repaints everything. A target renders only the window it was created for.
+`ScopedSurfaceDraw::solid_brush` hands out brushes owned by the scope, created once
+per color and released when it finishes. `Button` and the demos are built on these
+public mechanisms only.
+
+Elements drawn inside one HWND need no window of their own: they share the window's
+pointer messages, capture, invalidation, and DIP conversions. Two things stay per
+HWND in Windows, keyboard focus and the UI Automation element, so drawn content that
+must be reachable with Tab next to native controls, or exposed to screen readers,
+goes in a child `Window` (a tab stop by default) with an `Accessible`, as the slider
+in `examples/inputs` does. That child can still draw many parts; exposing those
+parts individually would need a UI Automation fragment provider, which Composia does
+not supply.
+
+`Accessible` gives any window a UI Automation presence, using only the window's
+public API: the provider slot that answers `WM_GETOBJECT`
+(`set_automation_provider`) and the focus, enabled, and destroy signals. Construct
+one with the window, a name, a control type, optionally an automation ID and a
+localized control type (UI Automation expects the latter for
+`UIA_CustomControlTypeId`), an `invoke` callback (the Invoke pattern), and `value`
+with an optional `setValue` callback (the Value pattern, read-only without the
+callback). It reports focus and enabled changes, including those of ancestors, and
+disconnects when the native window is destroyed or the `Window` object goes away,
+whichever comes first; after that, `window()` is null and the provider reports the
 element as unavailable. Properties are answered from state kept under a lock
-because UI Automation calls arrive on other threads; actions are posted to the
-UI thread through the Application and dropped if the control is gone by then.
-Call `set_name`, `set_value`, and `raise_invoked` to keep clients informed. One
-provider per window; a second attachment throws. Elements painted inside a
-single HWND are not individually exposed; that needs a fragment provider, which
-the framework does not supply.
+because UI Automation calls arrive on other threads; actions are posted to the UI
+thread through the Application and dropped if the control is gone by then. Call
+`set_name`, `set_value`, and `raise_invoked` to keep clients informed. One provider
+per window; a second attachment throws.
 
 Create one `Application` on the UI thread and pass it to each `Window` constructor.
 `Application::run()` serves all registered windows and exits when the last top-level HWND
@@ -330,8 +372,8 @@ access does not transfer ownership or extend a drawing scope's validity.
 ## Text input and native controls
 
 Two paths exist for text input. The recommended one reuses the system's EDIT
-control through `NativeControl`, which gets IME composition, selection, the
-clipboard, keyboard conventions, and UI Automation from Windows:
+control through `NativeControl`. Windows then supplies IME composition, selection,
+the clipboard, keyboard conventions, and the UI Automation Text and Value patterns:
 
 ```cpp
 composia::NativeControl name{window, L"EDIT", WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL};
@@ -342,31 +384,51 @@ auto changed = name.on_command([&](UINT code) { if (code == EN_CHANGE) { /* name
 
 `NativeControl` creates any standard control class as a child of a `Window`,
 places it in DIPs, applies a font sized in points for the window's monitor
-(Segoe UI 9pt by default, refreshed on `WM_DPICHANGED_AFTERPARENT`), and routes
-`WM_COMMAND` notification codes and `WM_NOTIFY` headers from the parent to
-`on_command` and `on_notify`. `set_colors` answers the control's
-`WM_CTLCOLOR*` request with the given text and background colors so a control
-can match a composition-drawn surface; `clear_colors` restores the system
-defaults. `text`, `set_text`, `show`, `set_enabled`, `focus`, and `send` cover
-the common operations, and `hwnd()` remains available for everything else, such
-as `EM_SETCUEBANNER` or `BM_GETCHECK`. The control is destroyed with its
-wrapper or with the parent window, after which calls throw
-`ERROR_INVALID_WINDOW_HANDLE`. Child HWNDs always draw above the parent's
-composition content, so hosted controls sit on top of a `CompositionWindowTarget`
-canvas. Embed a common-controls v6 manifest dependency, as `demo/app.manifest`
-does, to get the themed look.
+(Segoe UI 9pt by default, rebuilt on `WM_DPICHANGED_AFTERPARENT`), and delivers
+`WM_COMMAND` notification codes and `WM_NOTIFY` headers to `on_command` and
+`on_notify`. Windows does not move child windows when the DPI changes, so set the
+bounds again from `on_resize`, which runs after a DPI change; `examples/inputs`
+does this. `text`, `set_text`, `show`, `set_enabled`, `focus`, and `send` cover the
+common operations, and `hwnd()` remains available for everything else, such as
+`EM_SETCUEBANNER` or `BM_GETCHECK`. The control is destroyed with its wrapper or
+with the parent window, after which calls throw `ERROR_INVALID_WINDOW_HANDLE`.
+
+`set_colors` answers the control's `WM_CTLCOLOR*` requests with the given text and
+background colors so that it matches a composition-drawn surface. Edit fields,
+static text, list boxes, and combo boxes (their edit field and drop-down list
+included) honor both colors. Visual styles draw the text of check boxes, radio
+buttons, and group boxes in the theme's color, so `set_colors` turns visual styles
+off for those controls, which then take the classic look, and `clear_colors`
+restores them. Push buttons draw with system colors and use the background only
+around their edges; use `BS_OWNERDRAW` or a composition `Button` for colored ones.
+
+Notifications travel through a public route: `Window::set_notification_handler`
+registers a `NotificationHandler` for a child control's HWND, and the parent asks
+it about `WM_COMMAND`, `WM_NOTIFY`, `WM_CTLCOLOR*`, `WM_DRAWITEM`, `WM_HSCROLL`, and
+`WM_VSCROLL` from that control or from windows inside it. `NativeControl` uses this
+route, and so can wrappers for other controls. The parent asks after its own
+`on_message`, so an override that answers `WM_COMMAND` for every source also
+silences hosted controls; return `std::nullopt` for messages it does not handle.
+
+Child HWNDs always draw above the parent's composition content, so hosted controls
+sit on top of a `CompositionWindowTarget` canvas and cannot be clipped, transformed,
+or animated by Composition. Embed a common-controls v6 manifest dependency, as
+`demo/app.manifest` does, to get the themed look.
 
 The other path is a composition-rendered field such as `demo/mail/TextField`,
-for when rendering must be custom. It is sample code: it handles typing,
-editing keys, paste, scrolling, and caret placement, but has no selection, IME
-composition, or UI Automation provider; `Accessible` with the Value pattern
-supplies the last of these.
+for when rendering must be custom. It is sample code: it handles typing, editing
+keys, paste, scrolling, and caret placement, but has no selection, IME composition,
+or accessibility. A product-quality custom field needs those: an `Accessible` with
+the Value pattern exposes the text, but screen readers also need the Text pattern
+for the caret, selection, and moving through the text, which Composia does not
+provide.
 
-`examples/inputs/main.cpp` is a standalone program using only the public
-headers: a composition canvas, two hosted EDIT controls and a native checkbox
-with matching colors, a framework `Button`, and a slider painted into the window
-that uses `pointer_position`, `capture_pointer`, `on_capture_lost`, hover, and
-focus without a child HWND.
+`examples/inputs/main.cpp` is a standalone program using only the public headers:
+text drawn into a composition canvas, two hosted EDIT controls and a native check
+box with matching colors, a framework `Button`, and a slider drawn into one child
+window that is a tab stop with its own UI Automation element. Changes repaint only
+the areas they affect, and the window watches the slider's focus through its public
+signal to show keyboard help.
 
 ```powershell
 .\out\build\release\composia-inputs-example.exe
@@ -391,9 +453,10 @@ app.close();
 
 Include `composia/Application.hpp` and `composia/Button.hpp`. Keep the returned
 connection alive for as long as the handler should run. Buttons support pointer
-capture/cancellation, Space/Enter activation, Tab/Shift+Tab focus, disabled state,
-and a visible focus outline. Each button hosts an SDK UI Automation provider with
-name, button role, focus/enabled properties, Invoke, and focus/invocation events.
+capture/cancellation, Space/Enter activation, Tab/Shift+Tab focus, disabled state
+(including a disabled parent), and a visible focus outline. Each button carries an
+`Accessible` with name, button role, focus/enabled properties, Invoke, and
+focus/invocation events.
 UI Automation invocation is marshaled to the application queue; retained providers
 reject calls after the control is destroyed. The demo's buttons change and reset
 the tile's motion.
@@ -412,43 +475,66 @@ in-memory mailbox and its formatting helpers without windows; `mail-client` and
 button input: selection, stars, trash and undo, folders, search, scrolling, compose,
 send, reply, forward, drafts, Escape handling, resize, and device replacement.
 
-The Windows CI matrix builds Debug/Release and runs `-L core` (signals, layout,
-and a relocated installed-package consumer). Desktop checks are a separate
-`-L desktop` group, also available through the workflow's manual `desktop` input.
-Use `./scripts/build.ps1 -Preset debug -Test -TestLabel core` to build and run
-only checks that do not open desktop windows.
+The Windows CI matrix builds Debug/Release and runs `-L core`: signals, layout,
+text measurement, and a relocated installed-package consumer that compiles and
+links every public header, including the hosted-control and accessibility ones.
+Desktop checks, which include all the window-mechanism checks below, need an
+interactive desktop session; they are a separate `-L desktop` group that CI runs
+only through the workflow's manual `desktop` input. Use
+`./scripts/build.ps1 -Preset debug -Test -TestLabel core` to build and run only
+checks that do not open desktop windows.
 
 The checks exercise real HWND attachment, vector/text drawing, exception-unwind
 cleanup, resize, current-monitor DPI sizing, minimize/restore, native animation
-completion, and redraw after graphics replacement. `foundation-pointer`,
-`foundation-focus`, and `foundation-render` (with WARP variants) check the
-window mechanisms: DIP conversion of pointer and screen coordinates, hover entry
-and leave, capture released explicitly, taken by another window, or cancelled,
-focus and enabled notifications including disabled ancestors, the rendering
-helper's sizing, minimized skip, device replacement, and injected device-loss
-retry, scope-owned brushes, and rejection of destroyed windows.
-`foundation-accessible` checks an `Accessible` on a plain window in-process:
-properties, focus and enabled reporting, renaming, `WM_GETOBJECT` routing, the
-host provider, pattern availability, Invoke and Value actions marshalled to the UI
-thread, rejection while disabled or under a disabled parent, duplicate
-attachment, and unavailability after destruction. The separate MTA client in
-`accessibility` still discovers and invokes a `Button` through the system.
-`foundation-native` hosts an EDIT and a native checkbox: class and placement in
-pixels, text, typed `EN_CHANGE` routing, the default and replaced fonts, colors
-answered through `WM_CTLCOLOREDIT` and cleared again, `BN_CLICKED` and check
-state, enabled and visible state including a disabled parent, Tab navigation
-through the application's dialog loop, and destruction with the parent. Device loss is injected as
-an HRESULT and a removal-event signal; these checks do not reset the GPU or
-qualify driver/TDR recovery. Pixel readback checks cover text, color, atlas offsets,
-and 96/120/144/168/192 DPI before and after recovery. Multiple-window lifetime,
-callback exceptions, failed/repeated recovery, and shutdown ordering have dedicated
-regressions. Input tests cover capture, cancellation, keyboard activation, disabled
-ancestors, tab navigation, and stale providers. A separate MTA UI Automation client
-discovers and invokes the button. Monitor tests move a window across all attached
-monitors and check child HWND/Composition sizing; their output records monitor
-count and observed DPIs. Physical mixed-DPI transitions need monitors with differing
-scale settings. Windows 10 runtime compatibility still requires separate machine
-testing.
+completion, and redraw after graphics replacement. The `foundation-*` checks (each
+with a WARP variant) cover the window mechanisms:
+
+- `foundation-pointer`: DIP conversion of pointer and screen coordinates; hover
+  entry and leave, hover that follows a captured pointer out of and back into the
+  client area, and hover from a button press; capture released explicitly, taken
+  by another window, or cancelled; and the hover and capture signals.
+- `foundation-focus`: focus and enabled notifications; enabled changes of an
+  ancestor reaching every descendant, including a `Button` that repaints, and
+  staying silent while an ancestor decides the state; the focus and enabled
+  signals; and focus restoration after another window was activated, after
+  minimize and restore, to the window itself, and not to a hidden control. Steps run
+  from the message loop, which records the focus between them.
+- `foundation-render`: the rendering helper's sizing, minimized skip, device
+  replacement, injected device-loss retry, scope-owned brushes, and rejection of
+  other or destroyed windows; and partial rendering: the update area for one or
+  several invalidated rectangles, clipping to the client area, and full repaints
+  after a resize or a device replacement.
+- `foundation-partial`: captures the target's visual with Windows Graphics Capture
+  and checks the composited pixels after partial repaints, inside and outside the
+  repainted areas. It reports a CTest skip when capture is unavailable.
+- `foundation-accessible`: an `Accessible` on a plain window in-process: properties
+  including the automation ID and localized control type, focus and enabled
+  reporting, focusability while disabled, renaming, `WM_GETOBJECT` routing, the
+  host provider, pattern availability, Invoke and Value actions marshalled to the
+  UI thread, rejection while disabled or under a disabled parent, duplicate
+  attachment, unavailability after the HWND is destroyed, and an `Accessible` that
+  outlives its `Window` object. The separate MTA client in `accessibility` still
+  discovers and invokes a `Button` through the system.
+- `foundation-native`: hosted EDIT, multiline EDIT, check box, combo box, and list
+  view controls: class and placement in pixels, text, typed `EN_CHANGE` routing, the
+  default, replaced, and DPI-rebuilt fonts, colors answered through the
+  `WM_CTLCOLOR*` messages and cleared again, the drawn pixels of colored text in an
+  EDIT and a check box label (through `PrintWindow`), visual styles turned off and
+  back on for the check box, combo box edit-field and drop-down colors, `NM_SETFOCUS`
+  reaching `on_notify`, a raw child control on the public notification route,
+  `BN_CLICKED` and check state, enabled and visible state including a disabled
+  parent, Tab navigation through the application's dialog loop and out of a
+  multiline EDIT, and destruction with the parent.
+
+Device loss is injected as an HRESULT and a removal-event signal; these checks do
+not reset the GPU or qualify driver/TDR recovery. Pixel readback checks cover text,
+color, atlas offsets, and 96/120/144/168/192 DPI before and after recovery.
+Multiple-window lifetime, callback exceptions, failed/repeated recovery, and
+shutdown ordering have dedicated regressions. Input tests cover capture,
+cancellation, keyboard activation, disabled ancestors, tab navigation, and stale
+providers. A separate MTA UI Automation client discovers and invokes the button.
+Monitor tests move a window across all attached monitors and check child
+HWND/Composition sizing; their output records monitor count and observed DPIs.
 
 Texture checks run with hardware-preferred and forced-WARP devices. Media checks
 verify changing GPU and decoded video pixels, opaque alpha, pause/resume, resize,
@@ -479,8 +565,51 @@ Verified locally on Windows 11 build 26300 with clang-cl 21.1.1 and SDK
 out when `COMPOSIA_BUILD_TESTS=OFF`; automatic device-removal recovery remains
 enabled.
 
+These behaviors are not verified by the checks above:
+
+- Moving windows between monitors with different scale settings. The DPI checks
+  ran on a single 96-DPI monitor; the hosted-control font rebuild is checked by
+  sending `WM_DPICHANGED_AFTERPARENT`, not by a real DPI change, and the classic
+  check box glyph that colored check boxes use was not inspected at high DPI.
+- IME composition in hosted EDIT controls, and what a screen reader announces. UI
+  Automation is checked through in-process provider calls and one system client
+  that invokes a `Button`.
+- Real pointer and keyboard input. The checks send messages; hover during capture
+  follows documented Windows behavior (no leave until the capture ends) rather
+  than an observed mouse drag, and focus restoration is driven by
+  `SetActiveWindow` and `WM_SYSCOMMAND` minimize and restore rather than Alt+Tab.
+- Windows 10, and hosted controls without a common-controls v6 manifest.
+- Whether the update clip is ever needed: on this machine, drawing outside a
+  partial update's rectangle did not reach the surface even without the clip, so
+  the clip guards against a behavior the checks could not produce.
+
 The interop follows the Windows SDK's
 [Composition surface BeginDraw contract](https://learn.microsoft.com/en-us/windows/win32/api/windows.ui.composition.interop/nf-windows-ui-composition-interop-icompositiondrawingsurfaceinterop-begindraw).
+
+## Compatibility
+
+0.3.0 is source compatible with 0.2.0 for code that uses the public API; rebuild
+everything that links Composia, because `Window` gained virtual functions and
+members, and require `find_package(Composia 0.3)`. Behavior changes:
+
+- `Window` answers more messages after `on_message`: `WM_GETOBJECT` when an
+  automation provider is set; `WM_COMMAND`, `WM_NOTIFY`, `WM_CTLCOLOR*`,
+  `WM_DRAWITEM`, `WM_HSCROLL`, and `WM_VSCROLL` from controls with a notification
+  handler; `WM_NEXTDLGCTL`; and `WM_ACTIVATE` on a top-level window, which now
+  returns the focus to the window that last had it. Overrides of `on_message` that
+  return a result still take precedence.
+- `on_enabled` now also reports changes caused by an ancestor, so a disabled
+  top-level window (for example, the owner of a modal dialog) disables and redraws
+  its Composia controls.
+- `hovered()` follows the pointer position while the window has captured it.
+- Inside `on_paint`, `CompositionWindowTarget::render` updates only the area being
+  repainted once the surface holds a complete frame; painters that draw the whole
+  scene stay correct because drawing is clipped to that area. `ScopedSurfaceDraw`
+  clips drawing to its update rectangle whenever it is given one.
+- `NativeControl::set_colors` turns visual styles off for check boxes, radio
+  buttons, and group boxes while colors are set.
+- `Button` no longer caches brushes across frames; its header still includes
+  `d2d1_1.h`.
 
 ## License
 
