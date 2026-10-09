@@ -82,6 +82,9 @@ function(composia_add_library target)
         MSVC_DEBUG_INFORMATION_FORMAT "$<$<CONFIG:Debug,RelWithDebInfo>:Embedded>")
     target_compile_definitions(${target} PUBLIC UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN _WIN32_WINNT=0x0A00)
     target_compile_options(${target} PUBLIC /EHsc /utf-8 PRIVATE /W4 $<$<BOOL:${COMPOSIA_WARNINGS_AS_ERRORS}>:/WX>)
+    # C++/WinRT clears its factory cache with a 16-byte compare-exchange (CMPXCHG16B), which every
+    # x64 processor running Windows 10 supports; clang emits it only with this feature enabled.
+    target_compile_options(${target} PRIVATE $<$<CXX_COMPILER_ID:Clang>:/clang:-mcx16>)
     target_link_libraries(${target}
         PUBLIC WIL::WIL Microsoft::CppWinRT
         PRIVATE d3d11 dxgi d2d1 dwrite windowsapp CoreMessaging user32 gdi32 ole32 oleaut32 uiautomationcore comctl32 uxtheme

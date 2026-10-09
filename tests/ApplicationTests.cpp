@@ -106,6 +106,28 @@ int failed_recovery(const testing::Options&) {
     return 0;
 }
 
+// One Application after another on the same thread: after a normal shutdown, and after a failure
+// while one was being built, which undoes what was built.
+int sequential(const testing::Options&) {
+    const auto use = [](Application& app) {
+        require(app.graphics().generation() == 1, "A later application did not start");
+        {
+            Window window{app, L"A later application", 100, 100};
+            require(window.hwnd() != nullptr && app.post([] {}), "A later application does not work");
+        }
+        app.close();
+    };
+    for (int round = 0; round != 2; ++round) {
+        Application app{true};
+        use(app);
+    }
+    detail::failurePoint = detail::FailurePoint::deviceCreated;
+    require(testing::rejects(E_OUTOFMEMORY, [] { Application failed{true}; }), "A failure while building the application was not reported");
+    Application app{true};
+    use(app);
+    return 0;
+}
+
 // Without a hardware device, the application runs on WARP and reports why.
 int hardware_fallback(const testing::Options&) {
     std::vector<std::string> events;
@@ -186,6 +208,7 @@ int main(int argc, char** argv) {
         {"transaction", transaction},
         {"repeated", repeated_recovery},
         {"failed", failed_recovery},
+        {"sequential", sequential},
         {"hardware-fallback", hardware_fallback},
         {"shutdown", shutdown},
         {"callback-error", callback_error},

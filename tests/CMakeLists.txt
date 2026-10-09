@@ -68,7 +68,7 @@ composia_test_target(composia-application-tests ApplicationTests.cpp composia-te
 target_compile_definitions(composia-application-tests PRIVATE COMPOSIA_TESTING)
 target_include_directories(composia-application-tests PRIVATE ${PROJECT_SOURCE_DIR}/src)
 composia_add_scenarios(composia-application-tests application TIMEOUT 20
-    SCENARIOS transaction repeated failed hardware-fallback shutdown callback-error wrong-thread)
+    SCENARIOS transaction repeated failed sequential hardware-fallback shutdown callback-error wrong-thread)
 
 # Window and message loop lifetime.
 composia_test_target(composia-window-tests WindowTests.cpp)

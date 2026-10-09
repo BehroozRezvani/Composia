@@ -14,6 +14,16 @@ struct Application::CallbackState {
     std::exception_ptr error;
 };
 
+Application::Apartment::Apartment() { winrt::init_apartment(winrt::apartment_type::single_threaded); }
+
+// Leaving the thread's last apartment can unload COM servers, so C++/WinRT's cached activation
+// factories go first; a later Application on this thread would otherwise use factories from
+// unloaded code.
+Application::Apartment::~Apartment() {
+    winrt::clear_factory_cache();
+    winrt::uninit_apartment();
+}
+
 Application::Application(bool forceWarp) {
     const DispatcherQueueOptions options{sizeof(DispatcherQueueOptions), DQTYPE_THREAD_CURRENT, DQTAT_COM_STA};
     THROW_IF_FAILED(CreateDispatcherQueueController(options,

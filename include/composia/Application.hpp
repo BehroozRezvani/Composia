@@ -53,9 +53,10 @@ private:
     void notify_graphics_recreated();
     void shutdown() noexcept;
 
+    // The thread's single-threaded apartment, for the Application's lifetime.
     struct Apartment {
-        Apartment() { winrt::init_apartment(winrt::apartment_type::single_threaded); }
-        ~Apartment() { winrt::uninit_apartment(); }
+        Apartment();
+        ~Apartment();
     } apartment_;
     winrt::Windows::System::DispatcherQueueController dispatcher_{nullptr};
     composition::Compositor compositor_{nullptr};
