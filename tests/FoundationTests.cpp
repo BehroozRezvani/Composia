@@ -735,6 +735,7 @@ void native(bool warp) {
         composia::NativeControl list{host, WC_LISTVIEWW, WS_CHILD | WS_VISIBLE | LVS_REPORT};
         unsigned changed{};
         unsigned clicks{};
+        int tabs{};  // Read by the host's check after the posted callback below has returned.
         std::vector<UINT> notifications;
         const auto changes = edit.on_command([&](UINT code) { if (code == EN_CHANGE) { ++changed; } });
         const auto clickCount = check.on_command([&](UINT code) { if (code == BN_CLICKED) { ++clicks; } });
@@ -870,7 +871,6 @@ void native(bool warp) {
             // Tab goes through the application's dialog loop; each check runs after the focus move.
             // A multiline edit control hands Tab to its parent with WM_NEXTDLGCTL, as in a dialog.
             edit.focus();
-            int tabs{};
             host.check = [&] {
                 if (tabs++ == 0) {
                     require(GetFocus() == notes.hwnd(), "Tab did not move focus to the multiline edit control");
