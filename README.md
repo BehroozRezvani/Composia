@@ -205,13 +205,14 @@ quarter smaller than the first version.
 ## UI builder demo
 
 ```powershell
-.\outuildelease\composia-builder-demo.exe
+.\outuild
+elease\composia-builder-demo.exe
 ```
 
 A visual form designer built from the framework's primitives: a palette of widgets,
-a design surface, an inspector, and a live preview. It opens with a sample sign-in
-form. **It is a UI exercise**: designs are saved as small text files, nothing is
-generated or executed, and the preview runs inside the demo window.
+a design surface, an inspector, a live preview, and **Build app**, which writes a
+standalone executable that runs the design. It opens with a sample sign-in form.
+Designs are saved as small text files; the preview runs inside the demo window.
 
 The palette offers panels, labels, buttons, text fields, checkboxes, sliders, and
 image placeholders. Click an entry to add it to the selected panel (or the form),
@@ -243,20 +244,38 @@ reach the design; Escape returns to editing. **Save** and **Open** use a line-ba
 UTF-8 text format (`.cui`), and the title shows unsaved changes. Undo and redo cover
 every edit, with consecutive keystrokes in one field sharing a step. With the form
 focused: arrows nudge by 1 DIP (Shift for 8), Delete removes, Ctrl+D duplicates,
-Ctrl+Z/Ctrl+Y undo and redo, Ctrl+S saves, Ctrl+O opens, Ctrl+N starts over, and
-Ctrl+] / Ctrl+[ change z-order. Add `--warp` for software rendering. The demo
-keeps the Windows 10 baseline.
+Ctrl+Z/Ctrl+Y undo and redo, Ctrl+S saves, Ctrl+O opens, Ctrl+N starts over,
+Ctrl+B builds an app, and Ctrl+] / Ctrl+[ change z-order. Add `--warp` for
+software rendering. The demo keeps the Windows 10 baseline.
+
+**Build app…** (Ctrl+B) asks for a file name and writes a standalone `.exe`: a
+Windows application whose window is titled and sized by the design and whose
+controls are the same real framework controls the preview uses, with the anchors
+reflowing on resize. The status bar then offers **Run app**. No compiler runs: the
+output is a copy of `composia-form-player.exe`, a compiled player built alongside
+the demo, with the design embedded as an `RCDATA` resource through
+`UpdateResource`. The builder carries its own copy of the player as a resource,
+so it needs nothing beside it; a `composia-form-player.exe` next to it is used
+when that copy is absent. Built apps are statically linked and import only
+Windows system DLLs, like the demos. Running the player directly opens a `.cui`
+given on the command line, and `--validate` loads the design and exits with 0
+without showing a window, which is how the tests check built apps. A built app
+has no save, settings, or network behaviour; it is the form, running.
 
 `demo/builder/BuilderModel` holds the document and has no UI dependencies. A
 widget stores a parent, a position and size for its free edges, and an `Anchor`
 per edge: none, the parent, or a sibling edge, plus an inward margin. `resolve()`
 walks each container, orders siblings by their dependencies, and returns DIP
 rectangles in draw order; `fit()` is the inverse, deriving free coordinates and
-margins from a target rectangle. `History` keeps document snapshots. The window
-paints every widget into the canvas surface on each draw with design-time
-renderings, records hit regions for the chrome, and hit-tests the form spatially
-from the resolved placements. It reuses the mail demo's `TextField` for the
-inspector and for previewed fields.
+margins from a target rectangle. `History` keeps document snapshots.
+`FormPainter` draws each widget kind; `FormView` runs a document inside any host
+window, creating the real controls and handling checkbox and slider input, and
+is shared by the designer's preview and by `FormPlayerWindow`, the built app's
+window, so both render identically. `AppPackager` reads and writes the embedded
+resources. The designer paints the chrome and the design-time form into its
+canvas surface on each draw, records hit regions for the chrome, and hit-tests
+the form spatially from the resolved placements. It reuses the mail demo's
+`TextField` for the inspector and for running fields.
 
 ## Framework
 
@@ -391,7 +410,12 @@ z-order, the text format, and history coalescing. `builder-editor` and
 field input: selection, palette click and drag, drop into panels, inspector edits,
 undo and redo, snapping, corner resize, pin clicks and drags, margins, form resize,
 save and reopen, the live preview with real controls following a window resize, and
-device replacement.
+device replacement. `builder-app` and `builder-app-warp` (desktop) build an app from
+the freshly built player, read the embedded design back from the output, run the
+output with `--validate` as a separate process, reject a bad player, run the
+player's window in-process with its real controls following a resize and its
+checkbox and slider responding to clicks, and drive the designer's own Build app
+command including its error path.
 
 The Windows CI matrix builds Debug/Release and runs `-L core` (signals, layout,
 and a relocated installed-package consumer). Desktop checks are a separate

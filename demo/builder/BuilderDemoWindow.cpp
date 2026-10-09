@@ -1,7 +1,9 @@
 #include "BuilderDemoWindow.hpp"
+#include "AppPackager.hpp"
 #include <composia/ScopedSurfaceDraw.hpp>
 #include <windowsx.h>
 #include <commdlg.h>
+#include <shellapi.h>
 #include <algorithm>
 #include <cmath>
 #include <fstream>
@@ -11,35 +13,23 @@
 using namespace composia;
 using builder::Anchor;
 using builder::Edge;
+using builder::FormPainter;
 using builder::Kind;
 using builder::Target;
+using builder::inset;
+using builder::intersect;
+using Style = builder::TextStyle;
 
 namespace {
-constexpr UINT32 chrome = 0x0B121B, pane = 0x101923, workspaceBg = 0x0C131B, formBg = 0x131D28, panelBg = 0x18242F, divider = 0x1F2C38,
-    border = 0x2A3946, ink = 0xEAF2F4, inkSoft = 0xC3D0D8, inkMuted = 0x93A9B5, inkFaint = 0x5F7380, accent = 0x6FE6C8, danger = 0xE66F8F,
-    selectedBg = 0x1C2B38, hoverBg = 0x16212C, fieldBg = 0x0E161F, chipBg = 0x1C2733, gridDot = 0x1D2A36, buttonInk = 0x101923,
-    thumb = 0x33424E, hoverOutline = 0x3B5160, shadow = 0x070C12;
+namespace palette = builder::palette;
+constexpr UINT32 chrome = palette::chrome, pane = palette::pane, workspaceBg = palette::workspace, formBg = palette::form, divider = palette::divider,
+    ink = palette::ink, inkSoft = palette::inkSoft, inkMuted = palette::inkMuted, inkFaint = palette::inkFaint,
+    accent = palette::accent, danger = palette::danger, selectedBg = palette::selected, hoverBg = palette::hover, fieldBg = palette::field,
+    chipBg = palette::chip, gridDot = palette::gridDot, buttonInk = palette::buttonInk, hoverOutline = palette::hoverOutline, shadow = palette::shadow;
 constexpr float topBar = 56, statusBar = 28, paletteWidth = 224, inspectorWidth = 304, paletteRow = 36, outlineRow = 26, outlineTop = 364,
     handleSize = 8, pinRadius = 5, pinGap = 14, gridStep = 8, snapDistance = 6, dragThreshold = 3, fieldHeight = 32;
 constexpr wchar_t fileFilter[] = L"Composia UI designs (*.cui)\0*.cui\0All files\0*.*\0";
-
-struct Style {
-    float size = 14;
-    DWRITE_FONT_WEIGHT weight = DWRITE_FONT_WEIGHT_NORMAL;
-    bool wrap = false;
-    DWRITE_TEXT_ALIGNMENT align = DWRITE_TEXT_ALIGNMENT_LEADING;
-    bool middle = false;
-};
-
-layout::Rect intersect(layout::Rect a, layout::Rect b) noexcept {
-    const float left = std::max(a.x, b.x), top = std::max(a.y, b.y);
-    const float right = std::min(a.x + a.width, b.x + b.width), bottom = std::min(a.y + a.height, b.y + b.height);
-    return {left, top, std::max(0.0f, right - left), std::max(0.0f, bottom - top)};
-}
-
-layout::Rect inset(layout::Rect r, float amount) noexcept {
-    return {r.x + amount, r.y + amount, std::max(0.0f, r.width - 2 * amount), std::max(0.0f, r.height - 2 * amount)};
-}
+constexpr wchar_t appFilter[] = L"Applications (*.exe)\0*.exe\0";
 
 float snap_grid(float value) noexcept { return std::round(value / gridStep) * gridStep; }
 
@@ -58,142 +48,15 @@ bool control_down() noexcept { return GetKeyState(VK_CONTROL) < 0; }
 bool shift_down() noexcept { return GetKeyState(VK_SHIFT) < 0; }
 }
 
-// Drawing helpers for one surface update. Text layouts are rebuilt per draw.
-class BuilderPainter {
-public:
-    BuilderPainter(ID2D1DeviceContext6* dc, IDWriteFactory7* factory, ID2D1SolidColorBrush* brush) : dc_(dc), factory_(factory), brush_(brush) {}
-
-    [[nodiscard]] TextLayout make(std::wstring_view value, float width, float height, const Style& style) const {
-        TextLayout label{factory_, value, style.size, style.weight};
-        label.resize(std::max(1.0f, width), std::max(1.0f, height));
-        const auto layout = label.layout().get();
-        THROW_IF_FAILED(layout->SetTextAlignment(style.align));
-        THROW_IF_FAILED(layout->SetParagraphAlignment(style.middle ? DWRITE_PARAGRAPH_ALIGNMENT_CENTER : DWRITE_PARAGRAPH_ALIGNMENT_NEAR));
-        if (!style.wrap) {
-            THROW_IF_FAILED(layout->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP));
-            wil::com_ptr<IDWriteInlineObject> ellipsis;
-            THROW_IF_FAILED(factory_->CreateEllipsisTrimmingSign(layout, ellipsis.put()));
-            const DWRITE_TRIMMING trimming{DWRITE_TRIMMING_GRANULARITY_CHARACTER, 0, 0};
-            THROW_IF_FAILED(layout->SetTrimming(&trimming, ellipsis.get()));
-        }
-        return label;
-    }
-
-    float text(std::wstring_view value, layout::Rect bounds, UINT32 color, const Style& style = {}) const {
-        if (value.empty() || bounds.width <= 0 || bounds.height <= 0) { return 0; }
-        const auto label = make(value, bounds.width, bounds.height, style);
-        brush_->SetColor(D2D1::ColorF(color));
-        dc_->DrawTextLayout({bounds.x, bounds.y}, label.layout().get(), brush_, D2D1_DRAW_TEXT_OPTIONS_CLIP);
-        DWRITE_TEXT_METRICS metrics{};
-        THROW_IF_FAILED(label.layout()->GetMetrics(&metrics));
-        return metrics.height;
-    }
-
-    [[nodiscard]] float measure(std::wstring_view value, const Style& style = {}) const {
-        if (value.empty()) { return 0; }
-        DWRITE_TEXT_METRICS metrics{};
-        THROW_IF_FAILED(make(value, 100000, 1000, style).layout()->GetMetrics(&metrics));
-        return metrics.widthIncludingTrailingWhitespace;
-    }
-
-    void fill(layout::Rect r, UINT32 color, float radius = 0, float alpha = 1) const {
-        if (r.width <= 0 || r.height <= 0) { return; }
-        brush_->SetColor(D2D1::ColorF(color, alpha));
-        const D2D1_RECT_F rect{r.x, r.y, r.x + r.width, r.y + r.height};
-        if (radius > 0) { dc_->FillRoundedRectangle(D2D1::RoundedRect(rect, radius, radius), brush_); }
-        else { dc_->FillRectangle(rect, brush_); }
-    }
-
-    void stroke(layout::Rect r, UINT32 color, float width = 1, float radius = 0) const {
-        if (r.width <= 0 || r.height <= 0) { return; }
-        brush_->SetColor(D2D1::ColorF(color));
-        const float half = width / 2;
-        const D2D1_RECT_F rect{r.x + half, r.y + half, r.x + r.width - half, r.y + r.height - half};
-        if (radius > 0) { dc_->DrawRoundedRectangle(D2D1::RoundedRect(rect, radius, radius), brush_, width); }
-        else { dc_->DrawRectangle(rect, brush_, width); }
-    }
-
-    void line(float x1, float y1, float x2, float y2, UINT32 color, float width = 1) const {
-        brush_->SetColor(D2D1::ColorF(color));
-        dc_->DrawLine({x1, y1}, {x2, y2}, brush_, width);
-    }
-
-    void circle(float cx, float cy, float radius, UINT32 color, bool filled, float width = 1) const {
-        brush_->SetColor(D2D1::ColorF(color));
-        if (filled) { dc_->FillEllipse(D2D1::Ellipse({cx, cy}, radius, radius), brush_); }
-        else { dc_->DrawEllipse(D2D1::Ellipse({cx, cy}, radius, radius), brush_, width); }
-    }
-
-    void check(float x, float y, float size, UINT32 color, float width = 1.8f) const {
-        line(x + size * 0.2f, y + size * 0.52f, x + size * 0.42f, y + size * 0.74f, color, width);
-        line(x + size * 0.42f, y + size * 0.74f, x + size * 0.82f, y + size * 0.3f, color, width);
-    }
-
-    void cross(float x, float y, float size, UINT32 color, float width = 1.4f) const {
-        line(x, y, x + size, y + size, color, width);
-        line(x + size, y, x, y + size, color, width);
-    }
-
-    // Vector pictograms on a 16 DIP grid, scaled to size.
-    void glyph(Kind kind, float x, float y, float size, UINT32 color) const {
-        const float s = size / 16;
-        switch (kind) {
-        case Kind::panel:
-            stroke({x + 1 * s, y + 2 * s, 14 * s, 12 * s}, color, 1.2f, 2 * s);
-            fill({x + 1 * s, y + 2 * s, 14 * s, 3.5f * s}, color, 1.5f * s);
-            break;
-        case Kind::label:
-            text(L"Aa", {x, y - 1 * s, 16 * s, 18 * s}, color, {.size = 11.5f * s, .weight = DWRITE_FONT_WEIGHT_SEMI_BOLD, .align = DWRITE_TEXT_ALIGNMENT_CENTER, .middle = true});
-            break;
-        case Kind::button:
-            fill({x + 1 * s, y + 4 * s, 14 * s, 8 * s}, color, 3 * s);
-            break;
-        case Kind::text_field:
-            stroke({x + 1 * s, y + 4 * s, 14 * s, 8 * s}, color, 1.2f, 2 * s);
-            line(x + 4.5f * s, y + 6 * s, x + 4.5f * s, y + 10 * s, color, 1.2f);
-            break;
-        case Kind::checkbox:
-            stroke({x + 2 * s, y + 2 * s, 12 * s, 12 * s}, color, 1.2f, 2 * s);
-            check(x + 2 * s, y + 2 * s, 12 * s, color, 1.5f);
-            break;
-        case Kind::slider:
-            line(x + 1 * s, y + 8 * s, x + 15 * s, y + 8 * s, color, 1.6f);
-            circle(x + 10 * s, y + 8 * s, 3 * s, color, true);
-            break;
-        case Kind::image:
-            stroke({x + 1 * s, y + 2 * s, 14 * s, 12 * s}, color, 1.2f, 2 * s);
-            line(x + 3 * s, y + 11.5f * s, x + 7 * s, y + 7 * s, color, 1.2f);
-            line(x + 7 * s, y + 7 * s, x + 10 * s, y + 10 * s, color, 1.2f);
-            line(x + 10 * s, y + 10 * s, x + 13 * s, y + 11.5f * s, color, 1.2f);
-            circle(x + 11 * s, y + 5 * s, 1.3f * s, color, true);
-            break;
-        }
-    }
-
-    void clip(layout::Rect r) const { dc_->PushAxisAlignedClip({r.x, r.y, r.x + r.width, r.y + r.height}, D2D1_ANTIALIAS_MODE_ALIASED); }
-    void unclip() const { dc_->PopAxisAlignedClip(); }
-
-    void scrollbar(layout::Rect view, float extent, float offset) const {
-        if (extent <= view.height) { return; }
-        const float length = std::max(24.0f, view.height * view.height / extent);
-        const float top = view.y + (view.height - length) * offset / (extent - view.height);
-        fill({view.x + view.width - 6, top, 3, length}, thumb, 1.5f);
-    }
-
-private:
-    ID2D1DeviceContext6* dc_;
-    IDWriteFactory7* factory_;
-    ID2D1SolidColorBrush* brush_;
-};
-
 BuilderDemoWindow::BuilderDemoWindow(Application& app)
     : Window(app, L"Composia | UI builder", 1380, 880), app_(app), target_(app.compositor(), app.graphics(), hwnd()),
       history_(builder::Document::sample()),
       newButton_(*this, L"New"), openButton_(*this, L"Open"), saveButton_(*this, L"Save"), undoButton_(*this, L"Undo"),
-      redoButton_(*this, L"Redo"), previewButton_(*this, L"Preview"), stopButton_(*this, L"Stop preview"),
+      redoButton_(*this, L"Redo"), previewButton_(*this, L"Preview"), stopButton_(*this, L"Stop preview"), buildButton_(*this, L"Build app…"),
       name_(*this, L"Name"), text_(*this, L"Text"), x_(*this, L"X"), y_(*this, L"Y"), width_(*this, L"Width"), height_(*this, L"Height"),
       value_(*this, L"Value"), marginLeft_(*this, L"0"), marginTop_(*this, L"0"), marginRight_(*this, L"0"), marginBottom_(*this, L"0"),
-      deleteButton_(*this, L"Delete"), duplicateButton_(*this, L"Duplicate"), frontButton_(*this, L"Bring forward"), backButton_(*this, L"Send backward") {
+      deleteButton_(*this, L"Delete"), duplicateButton_(*this, L"Duplicate"), frontButton_(*this, L"Bring forward"), backButton_(*this, L"Send backward"),
+      runButton_(*this, L"Run app") {
     connections_[0] = newButton_.on_click([this] { new_document(); });
     connections_[1] = openButton_.on_click([this] { open(); });
     connections_[2] = saveButton_.on_click([this] { save(); });
@@ -254,7 +117,10 @@ BuilderDemoWindow::BuilderDemoWindow(Application& app)
     connections_[28] = width_.on_submit([this] { sync_inspector(); });
     connections_[29] = height_.on_submit([this] { sync_inspector(); });
     connections_[30] = value_.on_submit([this] { sync_inspector(); });
+    connections_[31] = buildButton_.on_click([this] { build_app(); });
+    connections_[32] = runButton_.on_click([this] { run_built(); });
     stopButton_.show(SW_HIDE);
+    runButton_.show(SW_HIDE);
     sync_inspector();
     update_controls();
     invalidate();
@@ -272,20 +138,10 @@ TextField& BuilderDemoWindow::margin_field(Edge edge) noexcept {
     return marginLeft_;
 }
 
-const builder::Document* BuilderDemoWindow::preview_document() const noexcept { return preview_ ? &preview_->document : nullptr; }
-const builder::Document& BuilderDemoWindow::active() const noexcept { return preview_ ? preview_->document : document(); }
-
-Button* BuilderDemoWindow::preview_control(unsigned id) noexcept {
-    if (!preview_) { return nullptr; }
-    for (auto& [widget, button] : preview_->buttons) { if (widget == id) { return button.get(); } }
-    return nullptr;
-}
-
-TextField* BuilderDemoWindow::preview_field(unsigned id) noexcept {
-    if (!preview_) { return nullptr; }
-    for (auto& [widget, field] : preview_->fields) { if (widget == id) { return field.get(); } }
-    return nullptr;
-}
+const builder::Document* BuilderDemoWindow::preview_document() const noexcept { return preview_ ? &preview_->document() : nullptr; }
+const builder::Document& BuilderDemoWindow::active() const noexcept { return preview_ ? preview_->document() : document(); }
+Button* BuilderDemoWindow::preview_control(unsigned id) noexcept { return preview_ ? preview_->button(id) : nullptr; }
+TextField* BuilderDemoWindow::preview_field(unsigned id) noexcept { return preview_ ? preview_->field(id) : nullptr; }
 
 std::optional<layout::Rect> BuilderDemoWindow::region(Hit kind, unsigned id) const noexcept {
     for (const auto& region : regions_) {
@@ -350,6 +206,7 @@ std::wstring BuilderDemoWindow::anchor_label(const Anchor& anchor) const {
 
 void BuilderDemoWindow::notify(std::wstring text) {
     status_ = std::move(text);
+    builtPath_.clear();
     invalidate();
 }
 
@@ -369,6 +226,7 @@ void BuilderDemoWindow::update_controls() {
     newButton_.enabled(!preview);
     openButton_.enabled(!preview);
     saveButton_.enabled(!preview);
+    buildButton_.enabled(!preview);
     undoButton_.enabled(!preview && history_.can_undo());
     redoButton_.enabled(!preview && history_.can_redo());
     const bool actions = widget && !preview;
@@ -681,19 +539,11 @@ void BuilderDemoWindow::open() {
 void BuilderDemoWindow::start_preview() {
     if (previewing()) { return; }
     end_drag(true);
-    auto preview = std::make_unique<Preview>();
-    preview->document = document();
-    for (const auto& placed : preview->document.resolve()) {
-        const auto& widget = *preview->document.find(placed.id);
-        if (widget.kind == Kind::button) {
-            auto button = std::make_unique<Button>(*this, widget.text);
-            preview->clicks.push_back(button->on_click([this, text = widget.text] { notify(L"Clicked \"" + text + L"\""); }));
-            preview->buttons.emplace_back(widget.id, std::move(button));
-        } else if (widget.kind == Kind::text_field) {
-            preview->fields.emplace_back(widget.id, std::make_unique<TextField>(*this, widget.text));
-        }
-    }
-    preview_ = std::move(preview);
+    preview_ = std::make_unique<builder::FormView>(*this, document());
+    previewClick_ = preview_->on_click([this](const builder::Widget& widget) { notify(L"Clicked \"" + widget.text + L"\""); });
+    previewChange_ = preview_->on_change([this](const builder::Widget& widget) {
+        notify(widget.kind == Kind::checkbox ? widget.name + (widget.checked ? L" checked" : L" unchecked") : widget.name + L" = " + std::to_wstring(widget.value));
+    });
     history_.seal();
     update_controls();
     arrange();
@@ -704,6 +554,8 @@ void BuilderDemoWindow::start_preview() {
 void BuilderDemoWindow::stop_preview() {
     if (!previewing()) { return; }
     end_drag(true);
+    previewClick_.disconnect();
+    previewChange_.disconnect();
     preview_.reset();
     hover_.reset();
     update_controls();
@@ -714,6 +566,46 @@ void BuilderDemoWindow::stop_preview() {
 void BuilderDemoWindow::toggle_snap() {
     snap_ = !snap_;
     notify(snap_ ? L"Snapping to the 8 DIP grid and to sibling edges" : L"Snapping off");
+}
+
+bool BuilderDemoWindow::build_app(const std::filesystem::path& output) {
+    if (previewing()) { return false; }
+    std::wstring error;
+    const auto player = builder::player_bytes(&error);
+    if (!player) { notify(error); return false; }
+    if (!builder::write_app(*player, document(), output, &error)) { notify(error); return false; }
+    std::error_code ignored;
+    const auto bytes = std::filesystem::file_size(output, ignored);
+    notify(L"Built " + output.filename().wstring() + L" (" + std::to_wstring((bytes + 1023) / 1024) + L" KB), a standalone app running this form");
+    builtPath_ = output;
+    update_controls();
+    invalidate();
+    return true;
+}
+
+void BuilderDemoWindow::build_app() {
+    if (previewing()) { return; }
+    std::wstring path(MAX_PATH, L'\0');
+    const auto suggested = builder::app_file_name(document().title());
+    if (suggested.size() < path.size()) { std::ranges::copy(suggested, path.begin()); }
+    OPENFILENAMEW dialog{};
+    dialog.lStructSize = sizeof(dialog);
+    dialog.hwndOwner = hwnd();
+    dialog.lpstrFilter = appFilter;
+    dialog.lpstrFile = path.data();
+    dialog.nMaxFile = static_cast<DWORD>(path.size());
+    dialog.lpstrDefExt = L"exe";
+    dialog.lpstrTitle = L"Build app";
+    dialog.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+    if (GetSaveFileNameW(&dialog)) { build_app(std::filesystem::path{path.c_str()}); }
+}
+
+void BuilderDemoWindow::run_built() {
+    if (builtPath_.empty()) { return; }
+    const auto path = builtPath_;
+    const auto directory = path.parent_path().wstring();
+    const auto result = reinterpret_cast<INT_PTR>(ShellExecuteW(hwnd(), L"open", path.c_str(), nullptr, directory.empty() ? nullptr : directory.c_str(), SW_SHOWNORMAL));
+    if (result <= 32) { notify(L"Could not start " + path.filename().wstring()); }
 }
 
 void BuilderDemoWindow::layout_panes() {
@@ -753,6 +645,8 @@ void BuilderDemoWindow::arrange() {
     }
     previewButton_.set_bounds({x + 8, 10, 104, 36});
     stopButton_.set_bounds({x + 8, 10, 132, 36});
+    buildButton_.set_bounds({x + 120, 10, 112, 36});
+    visible(buildButton_, !previewing());
 
     const bool preview = previewing();
     const auto widget = selected_ ? document().find(*selected_) : nullptr;
@@ -812,10 +706,8 @@ void BuilderDemoWindow::arrange() {
     frontButton_.set_bounds({x0, rows_.actions + 44, actionW, 36});
     backButton_.set_bounds({x0 + actionW + 8, rows_.actions + 44, actionW, 36});
     for (Button* button : {&deleteButton_, &duplicateButton_, &frontButton_, &backButton_}) { visible(*button, showWidget); }
-    if (preview_) {
-        for (auto& [id, button] : preview_->buttons) { if (const auto placed = placement(id)) { button->set_bounds(to_window(placed->bounds)); } }
-        for (auto& [id, field] : preview_->fields) { if (const auto placed = placement(id)) { field->set_bounds(to_window(placed->bounds)); } }
-    }
+    visible(runButton_, !preview && !builtPath_.empty());
+    if (preview_) { preview_->arrange(form_); }
 }
 
 void BuilderDemoWindow::on_paint() {
@@ -835,7 +727,7 @@ void BuilderDemoWindow::draw() {
     dc->Clear(D2D1::ColorF(chrome));
     if (!brush_) { THROW_IF_FAILED(dc->CreateSolidColorBrush(D2D1::ColorF(ink), brush_.put())); }
     regions_.clear();
-    BuilderPainter p{dc, draw.text_factory().get(), brush_.get()};
+    FormPainter p{dc, draw.text_factory().get(), brush_.get()};
     p.text(L"Composia", {20, 11, 200, 22}, accent, {.size = 12, .weight = DWRITE_FONT_WEIGHT_SEMI_BOLD});
     p.text(L"UI builder", {20, 27, 200, 24}, ink, {.size = 17, .weight = DWRITE_FONT_WEIGHT_SEMI_BOLD});
     const auto title = (path_.empty() ? document().title() : file_name(path_)) + (history_.dirty() ? L"  ·  unsaved changes" : L"");
@@ -852,7 +744,7 @@ void BuilderDemoWindow::draw() {
     ++drawCount_;
 }
 
-void BuilderDemoWindow::draw_palette(BuilderPainter& p) {
+void BuilderDemoWindow::draw_palette(FormPainter& p) {
     p.fill(palette_, pane);
     p.fill({palette_.x + palette_.width - 1, palette_.y, 1, palette_.height}, divider);
     p.text(L"WIDGETS", {16, palette_.y + 16, 180, 18}, inkMuted, {.size = 11, .weight = DWRITE_FONT_WEIGHT_SEMI_BOLD});
@@ -869,7 +761,7 @@ void BuilderDemoWindow::draw_palette(BuilderPainter& p) {
     p.text(L"Click to add, or drag onto the form", {16, palette_.y + 44 + 7 * paletteRow + 4, palette_.width - 32, 18}, inkFaint, {.size = 11});
 }
 
-void BuilderDemoWindow::draw_outline(BuilderPainter& p) {
+void BuilderDemoWindow::draw_outline(FormPainter& p) {
     const auto& document = this->document();
     p.text(L"OUTLINE", {16, outline_.y - 32, 120, 18}, inkMuted, {.size = 11, .weight = DWRITE_FONT_WEIGHT_SEMI_BOLD});
     p.text(std::to_wstring(document.size()) + (document.size() == 1 ? L" widget" : L" widgets"), {outline_.x + outline_.width - 116, outline_.y - 32, 100, 18},
@@ -908,7 +800,7 @@ void BuilderDemoWindow::draw_outline(BuilderPainter& p) {
     p.scrollbar(outline_, outlineExtent_, outlineScroll_);
 }
 
-void BuilderDemoWindow::draw_form(BuilderPainter& p) {
+void BuilderDemoWindow::draw_form(FormPainter& p) {
     p.fill(workspace_, workspaceBg);
     p.clip(workspace_);
     const bool preview = previewing();
@@ -931,77 +823,28 @@ void BuilderDemoWindow::draw_form(BuilderPainter& p) {
         p.text(std::to_wstring(document().width()) + L" × " + std::to_wstring(document().height()), {form_.x, form_.y - 22, form_.width, 18}, inkFaint,
             {.size = 12, .align = DWRITE_TEXT_ALIGNMENT_TRAILING});
     }
-    for (const auto& placed : placements_) { draw_widget(p, *active().find(placed.id), placed, placements_); }
-    p.unclip();
-}
-
-void BuilderDemoWindow::draw_widget(BuilderPainter& p, const builder::Widget& widget, const builder::Placement& placed, const std::vector<builder::Placement>& all) {
-    auto clip = workspace_;
-    for (auto parent = widget.parent; parent != 0;) {
-        const auto it = std::ranges::find(all, parent, &builder::Placement::id);
-        if (it == all.end()) { break; }
-        clip = intersect(clip, to_window(it->bounds));
-        parent = active().find(parent)->parent;
-    }
-    const auto r = to_window(placed.bounds);
-    const auto visible = intersect(clip, r);
-    if (clip.width <= 0 || clip.height <= 0 || visible.width <= 0 || visible.height <= 0) { return; }
-    p.clip(clip);
-    const bool preview = previewing();
-    switch (widget.kind) {
-    case Kind::panel:
-        p.fill(r, panelBg, 8);
-        p.stroke(r, border, 1, 8);
-        p.text(widget.text, {r.x + 12, r.y + 8, std::max(1.0f, r.width - 24), 18}, inkMuted, {.size = 12, .weight = DWRITE_FONT_WEIGHT_SEMI_BOLD});
-        break;
-    case Kind::label:
-        p.text(widget.text, r, ink, {.size = 14, .middle = true});
-        break;
-    case Kind::button:
-        p.fill(inset(r, 2), accent, 8);
-        p.text(widget.text, r, buttonInk, {.size = 15, .weight = DWRITE_FONT_WEIGHT_SEMI_BOLD, .align = DWRITE_TEXT_ALIGNMENT_CENTER, .middle = true});
-        break;
-    case Kind::text_field:
-        p.fill(r, fieldBg, 6);
-        p.stroke(r, border, 1, 6);
-        p.text(widget.text, {r.x + 12, r.y, std::max(1.0f, r.width - 24), r.height}, inkFaint, {.size = 14, .middle = true});
-        break;
-    case Kind::checkbox: {
-        const layout::Rect box{r.x, r.y + (r.height - 18) / 2, 18, 18};
-        if (widget.checked) {
-            p.fill(box, accent, 4);
-            p.check(box.x, box.y, 18, buttonInk, 2);
-        } else {
-            p.fill(box, fieldBg, 4);
-            p.stroke(box, inkMuted, 1.2f, 4);
+    if (preview_) {
+        preview_->draw(p);
+        for (const auto& region : preview_->regions()) {
+            regions_.push_back({region.kind == builder::FormView::Interactive::checkbox ? Hit::preview_checkbox : Hit::preview_slider, region.id, region.bounds});
         }
-        p.text(widget.text, {r.x + 28, r.y, std::max(1.0f, r.width - 28), r.height}, ink, {.size = 14, .middle = true});
-        if (preview) { regions_.push_back({Hit::preview_checkbox, widget.id, visible}); }
-        break;
-    }
-    case Kind::slider: {
-        const float ty = r.y + r.height / 2, trackX = r.x + 8, trackW = std::max(1.0f, r.width - 16);
-        const float ratio = static_cast<float>(std::clamp(widget.value, 0, 100)) / 100;
-        p.fill({trackX, ty - 2, trackW, 4}, border, 2);
-        p.fill({trackX, ty - 2, trackW * ratio, 4}, accent, 2);
-        p.circle(trackX + trackW * ratio, ty, 8, accent, true);
-        p.circle(trackX + trackW * ratio, ty, 3, buttonInk, true);
-        if (preview) { regions_.push_back({Hit::preview_slider, widget.id, visible}); }
-        break;
-    }
-    case Kind::image: {
-        p.fill(r, chipBg, 6);
-        p.stroke(r, border, 1, 6);
-        const float g = std::clamp(std::min(r.width, r.height) * 0.5f, 16.0f, 48.0f);
-        p.glyph(Kind::image, r.x + (r.width - g) / 2, r.y + (r.height - g) / 2 - (r.height > 60 ? 8 : 0), g, inkFaint);
-        if (r.height > 60) { p.text(widget.text, {r.x + 4, r.y + r.height - 24, std::max(1.0f, r.width - 8), 18}, inkFaint, {.size = 11, .align = DWRITE_TEXT_ALIGNMENT_CENTER}); }
-        break;
-    }
+    } else {
+        for (const auto& placed : placements_) {
+            const auto widget = document().find(placed.id);
+            if (!widget) { continue; }
+            const auto clip = builder::ancestor_clip(document(), placements_, *widget, {form_.x, form_.y}, workspace_);
+            const auto r = to_window(placed.bounds);
+            const auto visible = intersect(clip, r);
+            if (visible.width <= 0 || visible.height <= 0) { continue; }
+            p.clip(clip);
+            builder::paint_widget(p, *widget, r);
+            p.unclip();
+        }
     }
     p.unclip();
 }
 
-void BuilderDemoWindow::draw_overlay(BuilderPainter& p) {
+void BuilderDemoWindow::draw_overlay(FormPainter& p) {
     if (previewing()) { return; }
     const auto& document = this->document();
     p.clip(workspace_);
@@ -1090,7 +933,7 @@ void BuilderDemoWindow::draw_overlay(BuilderPainter& p) {
     p.unclip();
 }
 
-void BuilderDemoWindow::draw_inspector(BuilderPainter& p) {
+void BuilderDemoWindow::draw_inspector(FormPainter& p) {
     p.fill(inspector_, pane);
     p.fill({inspector_.x, inspector_.y, 1, inspector_.height}, divider);
     const float x0 = inspector_.x + 16, w = inspector_.width - 32, fieldX = x0 + 76;
@@ -1160,13 +1003,16 @@ void BuilderDemoWindow::draw_inspector(BuilderPainter& p) {
     }
 }
 
-void BuilderDemoWindow::draw_status(BuilderPainter& p) {
+void BuilderDemoWindow::draw_status(FormPainter& p) {
     const auto size = target_.logical_size();
     const layout::Rect bar{0, size.y - statusBar, size.x, statusBar};
     p.fill(bar, chrome);
     p.fill({0, bar.y, size.x, 1}, divider);
     const auto hint = previewing() ? std::wstring{L"Preview"} : L"Select a widget on the form, drag its corners to resize it, and drag its pins to anchor edges";
-    p.text(status_.empty() ? hint : status_, {16, bar.y + 5, std::max(1.0f, size.x - 420), 18}, status_.empty() ? inkMuted : ink, {.size = 12});
+    const auto message = status_.empty() ? hint : status_;
+    const float messageWidth = std::clamp(p.measure(message, {.size = 12}) + 4, 1.0f, std::max(1.0f, size.x - 420));
+    p.text(message, {16, bar.y + 5, messageWidth, 18}, status_.empty() ? inkMuted : ink, {.size = 12});
+    runButton_.set_bounds({16 + messageWidth + 10, bar.y + 3, 80, 22});
     const auto& active = this->active();
     const auto summary = std::to_wstring(static_cast<int>(std::lround(form_.width))) + L" × " + std::to_wstring(static_cast<int>(std::lround(form_.height))) + L"   ·   " + std::to_wstring(active.size()) +
         (active.size() == 1 ? L" widget" : L" widgets");
@@ -1339,7 +1185,7 @@ void BuilderDemoWindow::update_drag(numerics::float2 point) {
         break;
     }
     case DragKind::slider:
-        set_slider(drag_.id, point.x);
+        if (preview_) { preview_->pointer_move(point); }
         break;
     case DragKind::none:
         break;
@@ -1355,6 +1201,7 @@ void BuilderDemoWindow::end_drag(bool cancel) {
     if (GetCapture() == hwnd()) { ReleaseCapture(); }
     if (cancel) {
         if (drag.recorded) { history_.undo(); select(selected_); }
+        if (preview_) { preview_->pointer_up(); }
         invalidate();
         return;
     }
@@ -1400,21 +1247,12 @@ void BuilderDemoWindow::end_drag(bool cancel) {
         history_.seal();
         break;
     case DragKind::slider:
+        if (preview_) { preview_->pointer_up(); }
+        break;
     case DragKind::none:
         break;
     }
     invalidate();
-}
-
-void BuilderDemoWindow::set_slider(unsigned id, float x) {
-    if (!preview_) { return; }
-    const auto widget = preview_->document.find(id);
-    const auto placed = placement(id);
-    if (!widget || !placed) { return; }
-    const auto r = to_window(placed->bounds);
-    const float ratio = std::clamp((x - (r.x + 8)) / std::max(1.0f, r.width - 16), 0.0f, 1.0f);
-    widget->value = static_cast<int>(std::lround(ratio * 100));
-    notify(widget->name + L" = " + std::to_wstring(widget->value));
 }
 
 std::optional<LRESULT> BuilderDemoWindow::on_message(UINT message, WPARAM wparam, LPARAM lparam) {
@@ -1460,13 +1298,8 @@ std::optional<LRESULT> BuilderDemoWindow::on_message(UINT message, WPARAM wparam
         SetFocus(hwnd());
         const auto hit = hit_test(point.x, point.y);
         if (previewing()) {
-            if (hit && hit->kind == Hit::preview_checkbox) {
-                if (const auto widget = preview_->document.find(hit->id)) { widget->checked = !widget->checked; notify(widget->name + (widget->checked ? L" checked" : L" unchecked")); }
-            } else if (hit && hit->kind == Hit::preview_slider) {
-                begin_drag(DragKind::slider, hit->id, 0, point);
-                set_slider(hit->id, point.x);
-                invalidate();
-            }
+            if (preview_->pointer_down(point) == builder::FormView::Pointer::dragging) { begin_drag(DragKind::slider, 0, 0, point); }
+            invalidate();
             return 0;
         }
         if (!hit) {
@@ -1546,6 +1379,7 @@ std::optional<LRESULT> BuilderDemoWindow::on_message(UINT message, WPARAM wparam
         case 'S': if (control) { if (shift_down()) { save_as(); } else { save(); } return 0; } break;
         case 'O': if (control) { open(); return 0; } break;
         case 'N': if (control) { new_document(); return 0; } break;
+        case 'B': if (control) { build_app(); return 0; } break;
         case VK_OEM_6: if (control) { bring_forward(); return 0; } break;
         case VK_OEM_4: if (control) { send_backward(); return 0; } break;
         }

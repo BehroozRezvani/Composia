@@ -62,10 +62,15 @@ if(COMPOSIA_BUILD_DEMO OR COMPOSIA_BUILD_TESTS)
     target_compile_options(composia-mail-sample PRIVATE /W4 /WX)
     # The builder reuses the mail demo's editable TextField sample control.
     add_library(composia-builder-sample STATIC
-        demo/builder/BuilderModel.cpp demo/builder/BuilderDemoWindow.cpp demo/mail/TextField.cpp)
-    target_link_libraries(composia-builder-sample PUBLIC Composia::UI PRIVATE comdlg32)
+        demo/builder/BuilderModel.cpp demo/builder/FormPainter.cpp demo/builder/FormView.cpp demo/builder/FormPlayerWindow.cpp
+        demo/builder/AppPackager.cpp demo/builder/BuilderDemoWindow.cpp demo/mail/TextField.cpp)
+    target_link_libraries(composia-builder-sample PUBLIC Composia::UI PRIVATE comdlg32 shell32)
     target_include_directories(composia-builder-sample PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/demo/builder ${CMAKE_CURRENT_SOURCE_DIR}/demo/mail)
     target_compile_options(composia-builder-sample PRIVATE /W4 /WX)
+    # The form player is the executable the builder stamps a design into; tests exercise it too.
+    add_executable(composia-form-player WIN32 demo/builder/player_main.cpp demo/app.manifest)
+    target_link_libraries(composia-form-player PRIVATE composia-builder-sample shell32)
+    target_compile_options(composia-form-player PRIVATE /W4 /WX)
 endif()
 if(COMPOSIA_BUILD_DEMO)
     add_executable(composia-virtual-demo WIN32 demo/virtual/main.cpp demo/app.manifest)
@@ -80,7 +85,17 @@ if(COMPOSIA_BUILD_DEMO)
     add_executable(composia-mail-demo WIN32 demo/mail/main.cpp demo/app.manifest)
     target_link_libraries(composia-mail-demo PRIVATE composia-mail-sample spdlog::spdlog)
     target_compile_options(composia-mail-demo PRIVATE /W4 /WX)
-    add_executable(composia-builder-demo WIN32 demo/builder/main.cpp demo/app.manifest)
+    # The builder embeds the player as a resource, so "Build app" needs nothing beside the executable.
+    enable_language(RC)
+    set(embedded_player ${CMAKE_CURRENT_BINARY_DIR}/embedded/composia-form-player.exe)
+    add_custom_command(OUTPUT ${embedded_player}
+        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:composia-form-player> ${embedded_player}
+        DEPENDS composia-form-player COMMENT "Embedding the form player" VERBATIM)
+    file(TO_NATIVE_PATH "${embedded_player}" embedded_player_native)
+    string(REPLACE "\\" "\\\\" embedded_player_escaped "${embedded_player_native}")
+    file(GENERATE OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/embedded/player.rc CONTENT "COMPOSIA_PLAYER RCDATA \"${embedded_player_escaped}\"\n")
+    set_source_files_properties(${CMAKE_CURRENT_BINARY_DIR}/embedded/player.rc PROPERTIES OBJECT_DEPENDS ${embedded_player} GENERATED TRUE)
+    add_executable(composia-builder-demo WIN32 demo/builder/main.cpp demo/app.manifest ${CMAKE_CURRENT_BINARY_DIR}/embedded/player.rc)
     target_link_libraries(composia-builder-demo PRIVATE composia-builder-sample spdlog::spdlog)
     target_compile_options(composia-builder-demo PRIVATE /W4 /WX)
 endif()

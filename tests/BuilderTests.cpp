@@ -1,7 +1,10 @@
+#include "AppPackager.hpp"
 #include "BuilderDemoWindow.hpp"
+#include "FormPlayerWindow.hpp"
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <string_view>
@@ -383,12 +386,142 @@ void editor(bool warp) {
 }
 }
 
+// Runs a command line to completion and returns its exit code.
+int run_process(const std::wstring& commandLine) {
+    STARTUPINFOW startup{};
+    startup.cb = sizeof(startup);
+    PROCESS_INFORMATION process{};
+    std::wstring arguments = commandLine;
+    require(CreateProcessW(nullptr, arguments.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &startup, &process) != FALSE, "Could not start the process");
+    const wil::unique_handle thread{process.hThread}, handle{process.hProcess};
+    require(WaitForSingleObject(handle.get(), 30000) == WAIT_OBJECT_0, "The process did not exit");
+    DWORD code{};
+    require(GetExitCodeProcess(handle.get(), &code) != FALSE, "Could not read the exit code");
+    return static_cast<int>(code);
+}
+
+void app(const std::filesystem::path& player, bool warp) {
+    require(std::filesystem::exists(player), "The form player executable is missing");
+    const auto playerBytes = builder::read_file(player);
+    require(playerBytes && playerBytes->size() > 100000, "Could not read the form player");
+    const auto temp = std::filesystem::temp_directory_path();
+    const auto output = temp / L"composia-built-form.exe", design = temp / L"composia-built-form.cui", second = temp / L"composia-built-second.exe";
+    const auto cleanup = wil::scope_exit([&] {
+        std::error_code ignored;
+        for (const auto& path : {output, design, second}) { std::filesystem::remove(path, ignored); }
+    });
+    auto document = Document::sample();
+    document.set_title(L"Built form");
+    std::wstring error;
+    require(builder::write_app(*playerBytes, document, output, &error), "write_app failed");
+    require(std::filesystem::file_size(output) > playerBytes->size(), "The built app should be larger than the player");
+    {
+        const wil::unique_hmodule module{LoadLibraryExW(output.c_str(), nullptr, LOAD_LIBRARY_AS_DATAFILE | LOAD_LIBRARY_AS_IMAGE_RESOURCE)};
+        require(module != nullptr, "Could not load the built app as data");
+        const auto embedded = builder::read_resource(module.get(), builder::design_resource);
+        require(embedded && *embedded == document.to_text(), "The embedded design differs from the document");
+        require(!builder::read_resource(module.get(), builder::player_resource), "A built app should not carry a player");
+    }
+    require(!builder::write_app("not an executable", document, second, &error) && !error.empty() && !std::filesystem::exists(second), "Bad player bytes were accepted");
+    require(builder::app_file_name(L"Sign in: v2/\"x\"") == L"Sign in_ v2__x_.exe" && builder::app_file_name(L"  ") == L"Form.exe", "App file name sanitizing is wrong");
+
+    // The built app validates its own design; the bare player has nothing to run unless given a file.
+    require(run_process(L"\"" + output.wstring() + L"\" --validate") == 0, "The built app did not validate");
+    require(run_process(L"\"" + player.wstring() + L"\" --validate") != 0, "The bare player validated without a design");
+    {
+        std::ofstream file{design, std::ios::binary};
+        const auto text = document.to_text();
+        file.write(text.data(), static_cast<std::streamsize>(text.size()));
+    }
+    require(run_process(L"\"" + player.wstring() + L"\" --validate \"" + design.wstring() + L"\"") == 0, "The player did not validate a design file");
+    require(run_process(L"\"" + player.wstring() + L"\" --validate \"" + output.wstring() + L"\"") != 0, "The player validated an executable as a design");
+
+    composia::Application app{warp};
+    const auto scale = [&](const composia::Window& window) { return static_cast<float>(window.dpi()) / 96.0f; };
+    const auto right_edge = [&](const composia::Window& control, const composia::Window& parent) {
+        RECT rect{};
+        GetWindowRect(control.hwnd(), &rect);
+        MapWindowPoints(nullptr, parent.hwnd(), reinterpret_cast<POINT*>(&rect), 2);
+        return static_cast<float>(rect.right);
+    };
+    {
+        builder::FormPlayerWindow window{app, document};
+        window.show();
+        const auto paint = [&] { UpdateWindow(window.hwnd()); };
+        const auto click = [&](composia::layout::Rect r) {
+            const auto lparam = MAKELPARAM(static_cast<int>(std::lround((r.x + 8) * scale(window))), static_cast<int>(std::lround((r.y + r.height / 2) * scale(window))));
+            SendMessageW(window.hwnd(), WM_LBUTTONDOWN, MK_LBUTTON, lparam);
+            SendMessageW(window.hwnd(), WM_LBUTTONUP, 0, lparam);
+        };
+        const auto region = [&](builder::FormView::Interactive kind, unsigned id) {
+            paint();
+            for (const auto& region : window.view().regions()) { if (region.kind == kind && region.id == id) { return region.bounds; } }
+            throw std::runtime_error("Expected an interactive region from the last draw");
+        };
+        require(app.post([&] {
+            paint();
+            const auto& form = window.view().document();
+            const auto signIn = by_name(form, L"signIn"), email = by_name(form, L"email"), remember = by_name(form, L"remember"), session = by_name(form, L"session");
+            require(window.draw_count() > 0 && window.view().button(signIn) && window.view().field(email), "The player did not create controls");
+            wchar_t title[64]{};
+            GetWindowTextW(window.hwnd(), title, 64);
+            require(std::wstring{title} == L"Built form", "The window title should be the design title");
+            const auto client = window.client_pixels();
+            require(close_to(static_cast<float>(client.cx) / scale(window), 640, 2) && close_to(static_cast<float>(client.cy) / scale(window), 440, 2), "The window should be sized by the design");
+            require(close_to(right_edge(*window.view().button(signIn), window), static_cast<float>(client.cx) - 32 * scale(window), 2 * scale(window)), "The button is not anchored to the window edge");
+            THROW_IF_WIN32_BOOL_FALSE(SetWindowPos(window.hwnd(), nullptr, 0, 0, static_cast<int>(960 * scale(window)), static_cast<int>(640 * scale(window)), SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE));
+            paint();
+            const auto grown = window.client_pixels();
+            require(grown.cx > client.cx && close_to(right_edge(*window.view().button(signIn), window), static_cast<float>(grown.cx) - 32 * scale(window), 2 * scale(window)),
+                "The button did not follow the resized window");
+            require(close_to(window.view().widget_bounds(email)->width, static_cast<float>(grown.cx) / scale(window) - 64 - 48, 2), "The field did not stretch with the panel");
+            const bool checked = form.find(remember)->checked;
+            click(region(builder::FormView::Interactive::checkbox, remember));
+            require(form.find(remember)->checked != checked, "Clicking the checkbox did not toggle it");
+            click(region(builder::FormView::Interactive::slider, session));
+            require(form.find(session)->value == 0, "Clicking the slider start did not set it to zero");
+            const auto draws = window.draw_count();
+            app.graphics().recreate();
+            paint();
+            require(window.draw_count() > draws, "Device replacement did not repaint the player");
+            PostMessageW(window.hwnd(), WM_CLOSE, 0, 0);
+        }), "Could not schedule the player checks");
+        require(app.run() == 0, "The player loop failed");
+    }
+    {
+        BuilderDemoWindow window{app};
+        window.show();
+        builder::set_player_path(player);
+        require(app.post([&] {
+            UpdateWindow(window.hwnd());
+            require(window.build_app(second) && std::filesystem::exists(second), "The builder did not build the app");
+            require(window.status().starts_with(L"Built composia-built-second.exe") && window.built_path() == second, "The build was not reported");
+            UpdateWindow(window.hwnd());
+            require(IsWindowVisible(window.run_button().hwnd()), "The run button did not appear after a build");
+            require(run_process(L"\"" + second.wstring() + L"\" --validate") == 0, "The builder's app did not validate");
+            window.new_document();
+            UpdateWindow(window.hwnd());
+            require(!IsWindowVisible(window.run_button().hwnd()) && window.built_path().empty(), "The run offer outlived the next action");
+            builder::set_player_path(temp / L"composia-missing-player.exe");
+            require(!window.build_app(second) && window.status().starts_with(L"Could not read the form player"), "A missing player was not reported");
+            PostMessageW(window.hwnd(), WM_CLOSE, 0, 0);
+        }), "Could not schedule the builder checks");
+        require(app.run() == 0, "The builder loop failed");
+    }
+    app.close();
+}
+
 int main(int argc, char** argv) {
     try {
         require(argc >= 2, "Expected a test name");
         const std::string_view name{argv[1]};
+        const auto warp = [&](int index) { return argc > index && std::string_view{argv[index]} == "--warp"; };
         if (name == "model") { model(); }
-        else if (name == "editor") { editor(argc > 2 && std::string_view{argv[2]} == "--warp"); }
+        else if (name == "editor") { editor(warp(2)); }
+        else if (name == "app") {
+            require(argc >= 3, "Expected the form player path");
+            app(std::filesystem::path{argv[2]}, warp(3));
+        }
         else { throw std::runtime_error("Unknown test"); }
         return 0;
     } catch (const winrt::hresult_error& error) { std::cerr << winrt::to_string(error.message()) << '\n'; }

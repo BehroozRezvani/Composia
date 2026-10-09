@@ -1,21 +1,22 @@
 #pragma once
 
 #include "BuilderModel.hpp"
+#include "FormView.hpp"
 #include "TextField.hpp"
 #include <composia/Application.hpp>
 #include <composia/Button.hpp>
 #include <composia/CompositionWindowTarget.hpp>
 #include <array>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
 #include <vector>
 
-class BuilderPainter;
-
 // A visual UI builder: a palette and outline, a design surface with drag placement, corner resize
 // handles, and anchor pins for edge constraints, an inspector, and a live preview that instantiates
-// the framework's real controls. Designs save to a small text format; nothing leaves the PC.
+// the framework's real controls. Designs save to a small text format, and "Build app" writes a
+// standalone executable running the design. Nothing leaves the PC.
 class BuilderDemoWindow final : public composia::Window {
 public:
     enum class Hit { palette, outline, anchor_target, anchor_clear, checked, snap, widget, handle, pin, form_corner, preview_checkbox, preview_slider };
@@ -36,6 +37,7 @@ public:
     [[nodiscard]] const builder::Document* preview_document() const noexcept;
     [[nodiscard]] const std::wstring& status() const noexcept { return status_; }
     [[nodiscard]] const std::wstring& path() const noexcept { return path_; }
+    [[nodiscard]] const std::filesystem::path& built_path() const noexcept { return builtPath_; }
     [[nodiscard]] bool snapping() const noexcept { return snap_; }
     [[nodiscard]] unsigned draw_count() const noexcept { return drawCount_; }
     [[nodiscard]] composia::layout::Rect form_bounds() const noexcept { return form_; }
@@ -59,6 +61,9 @@ public:
     [[nodiscard]] composia::Button& stop_button() noexcept { return stopButton_; }
     [[nodiscard]] composia::Button& delete_button() noexcept { return deleteButton_; }
     [[nodiscard]] composia::Button& duplicate_button() noexcept { return duplicateButton_; }
+    [[nodiscard]] composia::Button& build_button() noexcept { return buildButton_; }
+    [[nodiscard]] composia::Button& run_button() noexcept { return runButton_; }
+    [[nodiscard]] builder::FormView* preview() noexcept { return preview_.get(); }
     [[nodiscard]] composia::Button* preview_control(unsigned id) noexcept;
     [[nodiscard]] TextField* preview_field(unsigned id) noexcept;
 
@@ -87,6 +92,10 @@ public:
     void start_preview();
     void stop_preview();
     void toggle_snap();
+    // Writes a standalone executable that runs the design; the dialog form asks where.
+    bool build_app(const std::filesystem::path& output);
+    void build_app();
+    void run_built();
 
 private:
     enum class DragKind { none, place, move, resize, pin, form, slider };
@@ -97,12 +106,6 @@ private:
         composia::numerics::float2 start{}, current{};
         composia::layout::Rect original{};
         bool moved{}, recorded{};
-    };
-    struct Preview {
-        builder::Document document;
-        std::vector<std::pair<unsigned, std::unique_ptr<composia::Button>>> buttons;
-        std::vector<std::pair<unsigned, std::unique_ptr<TextField>>> fields;
-        std::vector<composia::Connection> clicks;
     };
     struct InspectorRows {
         float header{}, name{}, text{}, position{}, size{}, extra{}, anchors{}, actions{}, bottom{};
@@ -117,13 +120,12 @@ private:
     void layout_panes();
     void arrange();
     void draw();
-    void draw_palette(BuilderPainter&);
-    void draw_outline(BuilderPainter&);
-    void draw_form(BuilderPainter&);
-    void draw_widget(BuilderPainter&, const builder::Widget&, const builder::Placement&, const std::vector<builder::Placement>&);
-    void draw_overlay(BuilderPainter&);
-    void draw_inspector(BuilderPainter&);
-    void draw_status(BuilderPainter&);
+    void draw_palette(builder::FormPainter&);
+    void draw_outline(builder::FormPainter&);
+    void draw_form(builder::FormPainter&);
+    void draw_overlay(builder::FormPainter&);
+    void draw_inspector(builder::FormPainter&);
+    void draw_status(builder::FormPainter&);
     void refresh_placements();
     void sync_inspector();
     void update_controls();
@@ -135,7 +137,6 @@ private:
     void begin_drag(DragKind, unsigned id, unsigned index, composia::numerics::float2 point);
     void update_drag(composia::numerics::float2 point);
     void end_drag(bool cancel);
-    void set_slider(unsigned id, float x);
     [[nodiscard]] const builder::Document& active() const noexcept;
     [[nodiscard]] const builder::Placement* placement(unsigned id) const noexcept;
     [[nodiscard]] std::optional<Region> hit_test(float x, float y) const noexcept;
@@ -152,7 +153,8 @@ private:
     composia::CompositionWindowTarget target_;
     wil::com_ptr<ID2D1SolidColorBrush> brush_;
     builder::History history_;
-    std::unique_ptr<Preview> preview_;
+    std::unique_ptr<builder::FormView> preview_;
+    composia::Connection previewClick_, previewChange_;
     std::vector<builder::Placement> placements_;
     std::vector<Region> regions_;
     std::optional<Region> hover_;
@@ -162,12 +164,13 @@ private:
     composia::layout::Rect palette_{}, outline_{}, workspace_{}, inspector_{}, form_{};
     InspectorRows rows_;
     std::wstring status_, path_;
+    std::filesystem::path builtPath_;
     float outlineScroll_{}, outlineExtent_{};
     bool snap_{true}, tracking_{}, syncing_{};
     unsigned drawCount_{};
     // Declaration order is creation order, which sets the Tab order.
-    composia::Button newButton_, openButton_, saveButton_, undoButton_, redoButton_, previewButton_, stopButton_;
+    composia::Button newButton_, openButton_, saveButton_, undoButton_, redoButton_, previewButton_, stopButton_, buildButton_;
     TextField name_, text_, x_, y_, width_, height_, value_, marginLeft_, marginTop_, marginRight_, marginBottom_;
-    composia::Button deleteButton_, duplicateButton_, frontButton_, backButton_;
-    std::array<composia::Connection, 32> connections_;
+    composia::Button deleteButton_, duplicateButton_, frontButton_, backButton_, runButton_;
+    std::array<composia::Connection, 36> connections_;
 };
