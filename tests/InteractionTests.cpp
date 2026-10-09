@@ -1,14 +1,15 @@
 #include <composia/Application.hpp>
 #include <composia/Button.hpp>
+#include "support/TestSupport.hpp"
 #include <UIAutomation.h>
 #include <array>
-#include <iostream>
-#include <stdexcept>
 #include <thread>
+
+// Button input as Windows delivers it, and a UI Automation client in another apartment.
+using composia::testing::require;
 
 namespace {
 constexpr UINT checkMessage = WM_APP + 55;
-void require(bool value, const char* message) { if (!value) { throw std::runtime_error(message); } }
 
 class Host final : public composia::Window {
 public:
@@ -21,7 +22,7 @@ private:
     }
 };
 
-void input() {
+int input(const composia::testing::Options&) {
     composia::Application app{true};
     {
         Host host{app};
@@ -58,6 +59,12 @@ void input() {
             SendMessageW(first.hwnd(), WM_KEYDOWN, VK_RETURN, 0);
             SendMessageW(first.hwnd(), WM_KEYDOWN, VK_RETURN, 1LL << 30);
             require(clicks == 3, "Enter auto-repeat invoked more than once");
+            // The characters that Space and Enter translate to are not passed on.
+            require(SendMessageW(first.hwnd(), WM_CHAR, VK_SPACE, 0) == 0 && SendMessageW(first.hwnd(), WM_CHAR, VK_RETURN, 0) == 0 &&
+                clicks == 3, "A Space or Enter character activated the button");
+            SendMessageW(first.hwnd(), WM_KEYUP, VK_RETURN, 0);
+            SendMessageW(first.hwnd(), WM_CHAR, L'a', 0);
+            require(clicks == 3, "Releasing Enter or typing activated the button");
             SendMessageW(first.hwnd(), WM_KEYDOWN, VK_SPACE, 0);
             SetFocus(second.hwnd());
             SendMessageW(first.hwnd(), WM_KEYUP, VK_SPACE, 0);
@@ -84,9 +91,10 @@ void input() {
         require(app.run() == 0, "Interaction loop failed");
     }
     app.close();
+    return 0;
 }
 
-void accessibility() {
+int accessibility(const composia::testing::Options&) {
     composia::Application app{true};
     {
         Host host{app};
@@ -133,16 +141,13 @@ void accessibility() {
         if (workerError) { std::rethrow_exception(workerError); }
     }
     app.close();
+    return 0;
 }
 }
 
 int main(int argc, char** argv) {
-    try {
-        require(argc == 2, "Expected a test name");
-        if (std::string_view{argv[1]} == "input") { input(); }
-        else { accessibility(); }
-        return 0;
-    } catch (const winrt::hresult_error& error) { std::cerr << winrt::to_string(error.message()) << '\n'; }
-    catch (const std::exception& error) { std::cerr << error.what() << '\n'; }
-    return 1;
+    return composia::testing::run(argc, argv, {
+        {"input", input},
+        {"accessibility", accessibility},
+    });
 }

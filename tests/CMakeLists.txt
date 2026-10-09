@@ -1,77 +1,119 @@
-# A test executable linking Composia::UI, or the library named by a third argument.
+# Each test executable takes a scenario name and, optionally, --warp for the WARP software device.
+# Tests labeled core need no desktop; tests labeled desktop open windows, so they need an
+# interactive session and run one at a time. A scenario this machine cannot run exits with 77,
+# which CTest reports as skipped.
+
+# A test executable linking Composia::UI, or the library named by a third argument. A coverage
+# build instruments the tests too, for the inline functions in the public headers, and links them
+# all to one library variant, so each library function has one set of counters.
 function(composia_test_target target source)
     set(library Composia::UI)
-    if(ARGC GREATER 2)
-        set(library ${ARGV2})
+    if(ARGC GREATER 2 OR COMPOSIA_COVERAGE)
+        set(library composia-testing)
     endif()
     add_executable(${target} ${source} ${COMPOSIA_MANIFEST})
     target_link_libraries(${target} PRIVATE ${library})
     target_compile_options(${target} PRIVATE /W4 $<$<BOOL:${COMPOSIA_WARNINGS_AS_ERRORS}>:/WX>)
+    if(COMPOSIA_COVERAGE)
+        target_compile_options(${target} PRIVATE -fprofile-instr-generate -fcoverage-mapping)
+    endif()
 endfunction()
 
-# The library with failure injection compiled in, for the recovery checks only.
+# Registers a test named <area>-<scenario> for each scenario of a test executable, and with WARP
+# an <area>-<scenario>-warp variant too. CORE labels them core instead of desktop.
+function(composia_add_scenarios target area)
+    cmake_parse_arguments(PARSE_ARGV 2 arg "WARP;CORE" "TIMEOUT" "SCENARIOS")
+    if(NOT arg_TIMEOUT)
+        set(arg_TIMEOUT 30)
+    endif()
+    foreach(scenario IN LISTS arg_SCENARIOS)
+        set(names ${area}-${scenario})
+        add_test(NAME ${area}-${scenario} COMMAND ${target} ${scenario})
+        if(arg_WARP)
+            add_test(NAME ${area}-${scenario}-warp COMMAND ${target} ${scenario} --warp)
+            list(APPEND names ${area}-${scenario}-warp)
+        endif()
+        if(arg_CORE)
+            set_tests_properties(${names} PROPERTIES TIMEOUT ${arg_TIMEOUT} LABELS core)
+        else()
+            set_tests_properties(${names} PROPERTIES TIMEOUT ${arg_TIMEOUT} LABELS desktop RUN_SERIAL TRUE SKIP_RETURN_CODE 77)
+        endif()
+    endforeach()
+endfunction()
+
+# Every public header compiles on its own and tolerates a second inclusion; the build fails if not.
+file(GLOB publicHeaders CONFIGURE_DEPENDS RELATIVE ${PROJECT_SOURCE_DIR}/include ${PROJECT_SOURCE_DIR}/include/composia/*.hpp)
+list(APPEND publicHeaders composia/Version.hpp)
+set(headerSources)
+foreach(header IN LISTS publicHeaders)
+    get_filename_component(name ${header} NAME_WE)
+    set(source ${CMAKE_CURRENT_BINARY_DIR}/headers/${name}.cpp)
+    file(CONFIGURE OUTPUT ${source} CONTENT "#include <${header}>\n#include <${header}>\n")
+    list(APPEND headerSources ${source})
+endforeach()
+add_library(composia-header-check OBJECT ${headerSources})
+target_link_libraries(composia-header-check PRIVATE Composia::UI)
+target_compile_options(composia-header-check PRIVATE /W4 $<$<BOOL:${COMPOSIA_WARNINGS_AS_ERRORS}>:/WX>)
+
+# The library with failure injection compiled in, for the application checks only.
 composia_add_library(composia-testing)
 target_compile_definitions(composia-testing PRIVATE COMPOSIA_TESTING)
 
-composia_test_target(composia-virtual-tests VirtualSurfaceTests.cpp)
-foreach(scenario sparse-cache partial-updates)
-    add_test(NAME virtual-${scenario} COMMAND composia-virtual-tests ${scenario})
-    add_test(NAME virtual-${scenario}-warp COMMAND composia-virtual-tests ${scenario} --warp)
-    set_tests_properties(virtual-${scenario} virtual-${scenario}-warp PROPERTIES TIMEOUT 40 RUN_SERIAL TRUE LABELS desktop)
-endforeach()
-add_test(NAME virtual-arguments COMMAND composia-virtual-tests arguments --warp)
-set_tests_properties(virtual-arguments PROPERTIES TIMEOUT 20 LABELS desktop)
-composia_test_target(composia-capture-tests CaptureTests.cpp)
-foreach(scenario window monitor)
-    add_test(NAME capture-${scenario} COMMAND composia-capture-tests ${scenario})
-    add_test(NAME capture-${scenario}-warp COMMAND composia-capture-tests ${scenario} --warp)
-    set_tests_properties(capture-${scenario} capture-${scenario}-warp PROPERTIES TIMEOUT 40 RUN_SERIAL TRUE LABELS desktop SKIP_RETURN_CODE 77)
-endforeach()
-composia_test_target(composia-texture-tests TextureTests.cpp)
-add_test(NAME texture-surface COMMAND composia-texture-tests)
-add_test(NAME texture-surface-warp COMMAND composia-texture-tests --warp)
-set_tests_properties(texture-surface texture-surface-warp PROPERTIES TIMEOUT 30 RUN_SERIAL TRUE LABELS desktop SKIP_RETURN_CODE 77)
-composia_test_target(composia-foundation-tests FoundationTests.cpp)
-foreach(scenario pointer focus render partial swapchain accessible native)
-    add_test(NAME foundation-${scenario} COMMAND composia-foundation-tests ${scenario})
-    add_test(NAME foundation-${scenario}-warp COMMAND composia-foundation-tests ${scenario} --warp)
-    set_tests_properties(foundation-${scenario} foundation-${scenario}-warp PROPERTIES TIMEOUT 30 RUN_SERIAL TRUE LABELS desktop SKIP_RETURN_CODE 77)
-endforeach()
-composia_test_target(composia-dpi-tests DpiTests.cpp)
-add_test(NAME monitor-dpi COMMAND composia-dpi-tests)
-set_tests_properties(monitor-dpi PROPERTIES TIMEOUT 30 RUN_SERIAL TRUE LABELS desktop)
-composia_test_target(composia-interaction-tests InteractionTests.cpp)
-foreach(scenario input accessibility)
-    add_test(NAME ${scenario} COMMAND composia-interaction-tests ${scenario})
-    set_tests_properties(${scenario} PROPERTIES TIMEOUT 30 RUN_SERIAL TRUE LABELS desktop)
-endforeach()
-composia_test_target(composia-recovery-tests RecoveryTests.cpp composia-testing)
-target_compile_definitions(composia-recovery-tests PRIVATE COMPOSIA_TESTING)
-target_include_directories(composia-recovery-tests PRIVATE ${PROJECT_SOURCE_DIR}/src)
-foreach(scenario transaction repeated-recovery failed-recovery shutdown callback-error)
-    add_test(NAME ${scenario} COMMAND composia-recovery-tests ${scenario})
-    set_tests_properties(${scenario} PROPERTIES TIMEOUT 20 RUN_SERIAL TRUE LABELS desktop)
-endforeach()
-
-composia_test_target(composia-window-tests WindowTests.cpp)
-foreach(scenario secondary-close secondary-error closed-window closed-parent)
-    add_test(NAME ${scenario} COMMAND composia-window-tests ${scenario})
-    set_tests_properties(${scenario} PROPERTIES TIMEOUT 15 RUN_SERIAL TRUE LABELS desktop)
-endforeach()
-
-composia_test_target(composia-surface-tests SurfaceTests.cpp)
-add_test(NAME surface-pixels COMMAND composia-surface-tests)
-set_tests_properties(surface-pixels PROPERTIES TIMEOUT 30 RUN_SERIAL TRUE LABELS desktop)
-
-composia_test_target(composia-smoke-tests SmokeTests.cpp)
-add_test(NAME smoke COMMAND composia-smoke-tests)
-add_test(NAME smoke-warp COMMAND composia-smoke-tests --warp)
-set_tests_properties(smoke smoke-warp PROPERTIES TIMEOUT 30 RUN_SERIAL TRUE LABELS desktop)
-
+# Signals, layout, and text measurement: no window or graphics device.
 composia_test_target(composia-core-tests CoreTests.cpp)
-add_test(NAME core COMMAND composia-core-tests)
-set_tests_properties(core PROPERTIES TIMEOUT 10 LABELS core)
+composia_add_scenarios(composia-core-tests core CORE TIMEOUT 10 SCENARIOS signal layout text)
 
+# The Application and its graphics device: replacement, WARP fallback, shutdown, and threading.
+composia_test_target(composia-application-tests ApplicationTests.cpp composia-testing)
+target_compile_definitions(composia-application-tests PRIVATE COMPOSIA_TESTING)
+target_include_directories(composia-application-tests PRIVATE ${PROJECT_SOURCE_DIR}/src)
+composia_add_scenarios(composia-application-tests application TIMEOUT 20
+    SCENARIOS transaction repeated failed hardware-fallback shutdown callback-error wrong-thread)
+
+# Window and message loop lifetime.
+composia_test_target(composia-window-tests WindowTests.cpp)
+composia_add_scenarios(composia-window-tests window TIMEOUT 15
+    SCENARIOS closed closed-parent secondary-close secondary-error quit-code callback-rethrow)
+
+# An application window through its whole life in the message loop.
+composia_test_target(composia-smoke-tests SmokeTests.cpp)
+composia_add_scenarios(composia-smoke-tests smoke WARP SCENARIOS lifecycle)
+
+# The mechanisms Window provides: pointer, focus, enabled state, rendering, accessibility, controls.
+composia_test_target(composia-foundation-tests FoundationTests.cpp)
+composia_add_scenarios(composia-foundation-tests foundation WARP
+    SCENARIOS pointer focus render partial swapchain accessible native)
+
+# Button input as Windows delivers it, and a UI Automation client in another apartment.
+composia_test_target(composia-interaction-tests InteractionTests.cpp)
+composia_add_scenarios(composia-interaction-tests interaction SCENARIOS input accessibility)
+
+# Per-monitor DPI.
+composia_test_target(composia-dpi-tests DpiTests.cpp)
+composia_add_scenarios(composia-dpi-tests dpi SCENARIOS monitors messages)
+
+# Drawing into a window's composition surface.
+composia_test_target(composia-surface-tests SurfaceTests.cpp)
+composia_add_scenarios(composia-surface-tests surface WARP SCENARIOS pixels)
+
+# The animation helpers, through composited pixels.
+composia_test_target(composia-animation-tests AnimationTests.cpp)
+composia_add_scenarios(composia-animation-tests animation WARP SCENARIOS helpers)
+
+# Sparse virtual surfaces.
+composia_test_target(composia-virtual-tests VirtualSurfaceTests.cpp)
+composia_add_scenarios(composia-virtual-tests virtual WARP TIMEOUT 40 SCENARIOS sparse-cache partial-updates)
+composia_add_scenarios(composia-virtual-tests virtual TIMEOUT 20 SCENARIOS arguments)
+
+# Direct3D textures in the visual tree, where the system supports composition textures.
+composia_test_target(composia-texture-tests TextureTests.cpp)
+composia_add_scenarios(composia-texture-tests texture WARP SCENARIOS surface)
+
+# Windows Graphics Capture of a window and of a monitor.
+composia_test_target(composia-capture-tests CaptureTests.cpp)
+composia_add_scenarios(composia-capture-tests capture WARP TIMEOUT 40 SCENARIOS window monitor)
+
+# The installed package, relocated, consumed through find_package.
 add_test(NAME package-consumer COMMAND ${CMAKE_COMMAND}
     -DBINARY_DIR=${PROJECT_BINARY_DIR} -DSOURCE_DIR=${PROJECT_SOURCE_DIR}
     -DCONFIG=$<CONFIG> -DCOMPILER=${CMAKE_CXX_COMPILER}
@@ -80,6 +122,7 @@ add_test(NAME package-consumer COMMAND ${CMAKE_COMMAND}
     -P ${CMAKE_CURRENT_SOURCE_DIR}/PackageTest.cmake)
 set_tests_properties(package-consumer PROPERTIES TIMEOUT 120 LABELS core RUN_SERIAL TRUE)
 
+# The source tree, added to another build with add_subdirectory.
 add_test(NAME subproject-consumer COMMAND ${CMAKE_COMMAND}
     -DBINARY_DIR=${PROJECT_BINARY_DIR} -DSOURCE_DIR=${PROJECT_SOURCE_DIR}
     -DCONFIG=$<CONFIG> -DCOMPILER=${CMAKE_CXX_COMPILER}

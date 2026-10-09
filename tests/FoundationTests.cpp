@@ -7,6 +7,7 @@
 #include <composia/ScopedSurfaceDraw.hpp>
 #include <composia/ScreenCapture.hpp>
 #include <composia/SwapChainSurface.hpp>
+#include "support/TestSupport.hpp"
 #include <commctrl.h>
 #include <uxtheme.h>
 #include <UIAutomation.h>
@@ -28,9 +29,10 @@
 // pointer conversion, hover, capture, focus and its restoration, the enabled state and its
 // propagation, invalidation and partial rendering, accessibility, and hosted native controls.
 namespace {
-void require(bool value, const char* message) { if (!value) { throw std::runtime_error(message); } }
+using composia::testing::require;
+using composia::testing::rejects;
+using composia::testing::skipped;
 constexpr UINT checkMessage = WM_APP + 77;
-constexpr int skipped = 77;
 
 class Probe final : public composia::Window {
 public:
@@ -84,12 +86,6 @@ unsigned count(const std::vector<std::string>& events, std::string_view name) {
     return total;
 }
 
-template<class Action>
-bool rejects(HRESULT expected, Action&& action) {
-    try { action(); } catch (const wil::ResultException& error) { return error.GetErrorCode() == expected; }
-    return false;
-}
-
 // Runs each step from the message loop, one posted message apiece, so the loop's own work, such
 // as dialog navigation and focus tracking, happens between steps. The loop ends with the host.
 void run_steps(composia::Application& app, Probe& host, std::vector<std::function<void()>> steps) {
@@ -133,31 +129,6 @@ unsigned count_pixels(HWND top, HWND control, int skipLeft, bool light) {
         }
     }
     return matching;
-}
-
-struct Pixel { int r{}, g{}, b{}; };
-
-Pixel read_pixel(composia::Application& app, const composia::capture::Direct3D11CaptureFrame& frame, UINT x, UINT y) {
-    const auto access = frame.Surface().as<::Windows::Graphics::DirectX::Direct3D11::IDirect3DDxgiInterfaceAccess>();
-    wil::com_ptr<ID3D11Texture2D> texture;
-    THROW_IF_FAILED(access->GetInterface(IID_PPV_ARGS(texture.put())));
-    D3D11_TEXTURE2D_DESC desc{};
-    texture->GetDesc(&desc);
-    desc.Width = desc.Height = 1;
-    desc.Usage = D3D11_USAGE_STAGING;
-    desc.BindFlags = desc.MiscFlags = 0;
-    desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-    wil::com_ptr<ID3D11Texture2D> staging;
-    THROW_IF_FAILED(app.graphics().d3d_device()->CreateTexture2D(&desc, nullptr, staging.put()));
-    const D3D11_BOX box{x, y, 0, x + 1, y + 1, 1};
-    const auto context = app.graphics().d3d_context().get();
-    context->CopySubresourceRegion(staging.get(), 0, 0, 0, 0, texture.get(), 0, &box);
-    D3D11_MAPPED_SUBRESOURCE mapped{};
-    THROW_IF_FAILED(context->Map(staging.get(), 0, D3D11_MAP_READ, 0, &mapped));
-    const auto bytes = static_cast<const unsigned char*>(mapped.pData);
-    const Pixel pixel{bytes[2], bytes[1], bytes[0]};
-    context->Unmap(staging.get(), 0);
-    return pixel;
 }
 
 void pointer(bool warp) {
@@ -227,6 +198,25 @@ void pointer(bool warp) {
         child.release_pointer();
         require(!child.pointer_captured(), "Repeated release is not idempotent");
         require(captureSignals == 2, "on_pointer_capture_lost did not follow the capture losses");
+
+        // A plain Window runs its default hooks and still reports through its signals, to every
+        // subscriber; destroying it while it has the capture releases the capture silently.
+        composia::Window plain{app, L"Plain child", 100, 60, host.hwnd()};
+        unsigned plainHover{}, plainLost{};
+        const auto firstHover = plain.on_hover_changed([&](bool) { ++plainHover; });
+        const auto secondHover = plain.on_hover_changed([&](bool) { ++plainHover; });
+        const auto plainCapture = plain.on_pointer_capture_lost([&] { ++plainLost; });
+        SendMessageW(plain.hwnd(), WM_MOUSEMOVE, 0, MAKELPARAM(2, 2));
+        require(plain.hovered() && plainHover == 2, "Not every hover subscriber of a plain window ran");
+        plain.capture_pointer();
+        SetCapture(host.hwnd());
+        require(plainLost == 1 && !plain.pointer_captured(), "A plain window did not report losing the capture");
+        ReleaseCapture();
+        plain.capture_pointer();
+        const auto plainHandle = plain.hwnd();
+        THROW_IF_WIN32_BOOL_FALSE(DestroyWindow(plainHandle));
+        require(GetCapture() != plainHandle && !plain.pointer_captured() && plainLost == 1,
+            "Destroying a window kept its capture or reported a capture loss");
 
         THROW_IF_WIN32_BOOL_FALSE(DestroyWindow(child.hwnd()));
         require(child.scale() == 1.0f && !child.hovered() && !child.pointer_captured(), "Destroyed window kept pointer state");
@@ -459,7 +449,7 @@ int partial(bool warp) {
         capture.start(composia::capture::GraphicsCaptureItem::CreateFromVisual(target.root()), app.graphics().d3d_device().get());
         const auto logical = target.logical_size();
         const composia::layout::Rect firstArea{20, 20, 40, 40}, secondArea{120, 60, 40, 40};
-        const auto is = [](Pixel pixel, UINT32 rgb) {
+        const auto is = [](composia::testing::Pixel pixel, UINT32 rgb) {
             return std::abs(pixel.r - static_cast<int>((rgb >> 16) & 0xFF)) < 12 && std::abs(pixel.g - static_cast<int>((rgb >> 8) & 0xFF)) < 12 &&
                 std::abs(pixel.b - static_cast<int>(rgb & 0xFF)) < 12;
         };
@@ -471,7 +461,7 @@ int partial(bool warp) {
             const auto close = wil::scope_exit([&] { frame.Close(); });
             const auto size = frame.ContentSize();
             const auto sample = [&](float x, float y) {
-                return read_pixel(app, frame, static_cast<UINT>(x / logical.x * static_cast<float>(size.Width)), static_cast<UINT>(y / logical.y * static_cast<float>(size.Height)));
+                return composia::testing::frame_pixel(app, frame, static_cast<UINT>(x / logical.x * static_cast<float>(size.Width)), static_cast<UINT>(y / logical.y * static_cast<float>(size.Height)));
             };
             const auto first = sample(40, 40), second = sample(140, 80), outside = sample(logical.x - 20, logical.y - 20);
             if (stage == 0 && is(first, 0xFF0000) && is(second, 0xFF0000) && is(outside, 0xFF0000)) {
@@ -530,6 +520,19 @@ int swapchain(bool warp) {
             });
         }
 
+        {
+            composia::SwapChainSurface rebuilt{app, {32, 32}};
+            const wil::com_ptr<IDXGISwapChain1> before = rebuilt.swap_chain();
+            app.graphics().recreate();
+            rebuilt.resize({48, 40});
+            DXGI_SWAP_CHAIN_DESC1 desc{};
+            THROW_IF_FAILED(rebuilt.swap_chain()->GetDesc1(&desc));
+            require(rebuilt.swap_chain().get() != before.get() && desc.Width == 48 && desc.Height == 40 && rebuilt.size().cx == 48 && rebuilt.size().cy == 40,
+                "A resize after a device replacement did not rebuild the swap chain at the new size");
+            rebuilt.resize({48, 40});  // The same size changes nothing.
+            require(rebuilt.size().cx == 48, "Resizing to the same size changed the swap chain");
+        }
+
         composia::SwapChainSurface chain{app, {160, 100}};
         require(rejects(E_INVALIDARG, [&] { chain.resize({-1, 5}); }), "A negative swap chain size was accepted");
         require(rejects(E_INVALIDARG, [&] { chain.present({}); }), "A missing renderer was accepted");
@@ -558,7 +561,7 @@ int swapchain(bool warp) {
         // In DIPs: inside the first size, inside only the grown size, and on the canvas.
         const composia::layout::Point inside{20 + 40 / scale, 20 + 40 / scale}, grown{20 + 180 / scale, 20 + 110 / scale},
             outside{logical.x - 10, logical.y - 10};
-        const auto is = [](Pixel pixel, UINT32 rgb) {
+        const auto is = [](composia::testing::Pixel pixel, UINT32 rgb) {
             return std::abs(pixel.r - static_cast<int>((rgb >> 16) & 0xFF)) < 12 && std::abs(pixel.g - static_cast<int>((rgb >> 8) & 0xFF)) < 12 &&
                 std::abs(pixel.b - static_cast<int>(rgb & 0xFF)) < 12;
         };
@@ -571,7 +574,7 @@ int swapchain(bool warp) {
             const auto close = wil::scope_exit([&] { frame.Close(); });
             const auto size = frame.ContentSize();
             const auto sample = [&](composia::layout::Point point) {
-                return read_pixel(app, frame, static_cast<UINT>(point.x / logical.x * static_cast<float>(size.Width)),
+                return composia::testing::frame_pixel(app, frame, static_cast<UINT>(point.x / logical.x * static_cast<float>(size.Width)),
                     static_cast<UINT>(point.y / logical.y * static_cast<float>(size.Height)));
             };
             if (stage == 0 && is(sample(inside), 0xFF0000) && is(sample(outside), 0x000000)) {
@@ -655,6 +658,13 @@ void accessible(bool warp) {
         require(text(property(UIA_NamePropertyId)) == L"Loudness", "Renaming was not reported");
         require(SendMessageW(knob.hwnd(), WM_GETOBJECT, 0, UiaRootObjectId) != 0 && SendMessageW(host.hwnd(), WM_GETOBJECT, 0, UiaRootObjectId) == 0,
             "WM_GETOBJECT was not answered for the right windows");
+        ProviderOptions providerOptions{};
+        THROW_IF_FAILED(provider->get_ProviderOptions(&providerOptions));
+        require(providerOptions == ProviderOptions_ServerSideProvider, "The provider is not a server-side provider");
+        require(provider->get_ProviderOptions(nullptr) == E_POINTER && provider->GetPropertyValue(UIA_NamePropertyId, nullptr) == E_POINTER &&
+            provider->GetPatternProvider(UIA_InvokePatternId, nullptr) == E_POINTER && provider->get_HostRawElementProvider(nullptr) == E_POINTER,
+            "A missing result pointer was accepted");
+        require(property(UIA_HelpTextPropertyId).vt == VT_EMPTY, "An unsupported property was not left to the host");
         wil::com_ptr<IRawElementProviderSimple> host_provider;
         THROW_IF_FAILED(provider->get_HostRawElementProvider(host_provider.put()));
         require(host_provider != nullptr, "The HWND host provider was not supplied");
@@ -671,6 +681,23 @@ void accessible(bool warp) {
         wil::unique_bstr initial;
         THROW_IF_FAILED(valuePattern->get_Value(initial.put()));
         require(readOnly == FALSE && SysStringLen(initial.get()) == 0, "Initial value state is wrong");
+        require(valuePattern->SetValue(nullptr) == E_POINTER && valuePattern->get_Value(nullptr) == E_POINTER &&
+            valuePattern->get_IsReadOnly(nullptr) == E_POINTER, "A missing Value pattern argument was accepted");
+
+        // Without a setValue callback the Value pattern is read-only; without invoke there is no
+        // Invoke pattern, and its interface reports that.
+        Probe gauge{app, L"Gauge", host.hwnd()};
+        composia::Accessible gaugeAccess{gauge, {.name = L"Level", .controlType = UIA_ProgressBarControlTypeId, .value = true}};
+        gaugeAccess.set_value(L"70%");
+        wil::com_ptr<IUnknown> gaugeValue, gaugeInvoke;
+        THROW_IF_FAILED(gaugeAccess.provider()->GetPatternProvider(UIA_ValuePatternId, gaugeValue.put()));
+        THROW_IF_FAILED(gaugeAccess.provider()->GetPatternProvider(UIA_InvokePatternId, gaugeInvoke.put()));
+        BOOL gaugeReadOnly{};
+        THROW_IF_FAILED(gaugeValue.query<IValueProvider>()->get_IsReadOnly(&gaugeReadOnly));
+        require(gaugeReadOnly != FALSE && gaugeValue.query<IValueProvider>()->SetValue(L"1") == static_cast<HRESULT>(UIA_E_INVALIDOPERATION) &&
+            gaugeAccess.value() == L"70%", "A read-only value accepted a write");
+        require(!gaugeInvoke && gaugeAccess.provider().query<IInvokeProvider>()->Invoke() == static_cast<HRESULT>(UIA_E_NOTSUPPORTED),
+            "An element without an invoke callback offered the Invoke pattern");
 
         // An Accessible that outlives its Window object lets go of it and reports the element as gone.
         auto lone = std::make_unique<Probe>(app, L"Lone", host.hwnd());
@@ -740,6 +767,9 @@ void native(bool warp) {
         const auto changes = edit.on_command([&](UINT code) { if (code == EN_CHANGE) { ++changed; } });
         const auto clickCount = check.on_command([&](UINT code) { if (code == BN_CLICKED) { ++clicks; } });
         const auto listNotifications = list.on_notify([&](const NMHDR& header) { notifications.push_back(header.code); });
+        unsigned changedAgain{}, notifiedAgain{};
+        const auto moreChanges = edit.on_command([&](UINT code) { if (code == EN_CHANGE) { ++changedAgain; } });
+        const auto moreNotifications = list.on_notify([&](const NMHDR&) { ++notifiedAgain; });
         edit.set_bounds({10, 10, 200, 28});
         check.set_bounds({10, 50, 200, 24});
         combo.set_bounds({10, 84, 200, 120});
@@ -747,10 +777,14 @@ void native(bool warp) {
         notes.set_bounds({220, 120, 80, 40});
         host.show();
         require(app.post([&] {
+            require(rejects(HRESULT_FROM_WIN32(ERROR_CANNOT_FIND_WND_CLASS), [&] { composia::NativeControl unknown{host, L"Composia.NoSuchClass", WS_CHILD}; }),
+                "A native control of an unknown class was created");
+
             // Native window identity and placement in pixels.
             wchar_t className[32]{};
             GetClassNameW(edit.hwnd(), className, 32);
-            require(_wcsicmp(className, L"Edit") == 0 && GetParent(edit.hwnd()) == host.hwnd(), "The EDIT was not created under the host");
+            require(_wcsicmp(className, L"Edit") == 0 && GetParent(edit.hwnd()) == host.hwnd() && &edit.parent() == &host,
+                "The EDIT was not created under the host");
             RECT rect{};
             GetWindowRect(edit.hwnd(), &rect);
             POINT origin{rect.left, rect.top};
@@ -768,7 +802,7 @@ void native(bool warp) {
             require(edit.focused() && GetFocus() == edit.hwnd(), "The EDIT did not take focus");
             edit.send(EM_SETSEL, 3, 3);  // SetWindowText leaves the caret at the start.
             SendMessageW(edit.hwnd(), WM_CHAR, L'x', 0);
-            require(edit.text() == L"abcx" && changed >= 1, "Typing did not update the text or raise EN_CHANGE");
+            require(edit.text() == L"abcx" && changed >= 1 && changedAgain == changed, "Typing did not update the text or raise EN_CHANGE to every subscriber");
 
             // Fonts: the default is Segoe UI 9pt at the parent's DPI, set_font replaces it, and a DPI
             // change notification builds it again for the new monitor.
@@ -824,6 +858,17 @@ void native(bool warp) {
             require(themedDark > 8, "The check box label kept the requested color after clear_colors");
             std::cout << "light_pixels edit=" << editLight << " label=" << labelLight << " themed_label_dark=" << themedDark << '\n';
 
+            // Visual styles draw a push button with system colors whatever the colors, so it keeps
+            // them; a plain (not automatic) check box gives them up like an automatic one.
+            {
+                composia::NativeControl push{host, L"BUTTON", WS_CHILD | BS_PUSHBUTTON, L"Push"};
+                composia::NativeControl plainCheck{host, L"BUTTON", WS_CHILD | BS_CHECKBOX, L"Plain"};
+                push.set_colors(RGB(250, 250, 250), RGB(20, 30, 40));
+                plainCheck.set_colors(RGB(250, 250, 250), RGB(20, 30, 40));
+                require(GetWindowTheme(push.hwnd()) != nullptr && GetWindowTheme(plainCheck.hwnd()) == nullptr,
+                    "Visual styles were not kept for a push button or dropped for a check box");
+            }
+
             // A drop-down combo box asks for colors from its edit field and from its separate list.
             combo.set_colors(RGB(1, 2, 3), RGB(4, 5, 6));
             COMBOBOXINFO parts{};
@@ -835,7 +880,8 @@ void native(bool warp) {
 
             // WM_NOTIFY from a common control reaches on_notify.
             list.focus();
-            require(std::ranges::find(notifications, static_cast<UINT>(NM_SETFOCUS)) != notifications.end(), "NM_SETFOCUS did not reach on_notify");
+            require(std::ranges::find(notifications, static_cast<UINT>(NM_SETFOCUS)) != notifications.end() && notifiedAgain == notifications.size(),
+                "NM_SETFOCUS did not reach every on_notify subscriber");
 
             // A native checkbox: BM_CLICK notifies the parent and changes the check state.
             check.send(BM_CLICK);
@@ -849,6 +895,18 @@ void native(bool warp) {
             composia::Window::set_notification_handler(raw.get(), &recorder);
             SendMessageW(raw.get(), BM_CLICK, 0, 0);
             require(std::ranges::find(recorder.messages, static_cast<UINT>(WM_COMMAND)) != recorder.messages.end(), "A registered handler did not receive WM_COMMAND");
+            // Owner drawing names its control in the DRAWITEMSTRUCT; a menu item names none.
+            DRAWITEMSTRUCT item{};
+            item.CtlType = ODT_BUTTON;
+            item.hwndItem = raw.get();
+            SendMessageW(host.hwnd(), WM_DRAWITEM, 0, reinterpret_cast<LPARAM>(&item));
+            require(std::ranges::find(recorder.messages, static_cast<UINT>(WM_DRAWITEM)) != recorder.messages.end(), "WM_DRAWITEM did not reach the control's handler");
+            recorder.messages.clear();
+            item.CtlType = ODT_MENU;
+            SendMessageW(host.hwnd(), WM_DRAWITEM, 0, reinterpret_cast<LPARAM>(&item));
+            require(recorder.messages.empty(), "A menu item's WM_DRAWITEM was routed to a control");
+            // NativeControl leaves the notifications it does not handle, such as scrolling, to the parent.
+            require(SendMessageW(host.hwnd(), WM_HSCROLL, SB_LINERIGHT, reinterpret_cast<LPARAM>(check.hwnd())) == 0, "WM_HSCROLL was not left to the parent");
             composia::Window::set_notification_handler(raw.get(), nullptr);
             const auto received = recorder.messages.size();
             SendMessageW(raw.get(), BM_CLICK, 0, 0);
@@ -883,6 +941,8 @@ void native(bool warp) {
                 require(edit.hwnd() == nullptr && notes.hwnd() == nullptr && check.hwnd() == nullptr && combo.hwnd() == nullptr && list.hwnd() == nullptr,
                     "Destroying the parent did not clear the native controls");
                 require(rejects(HRESULT_FROM_WIN32(ERROR_INVALID_WINDOW_HANDLE), [&] { edit.set_text(L"x"); }), "A destroyed native control accepted text");
+                require(rejects(HRESULT_FROM_WIN32(ERROR_INVALID_WINDOW_HANDLE), [&] { composia::NativeControl orphan{host, L"EDIT", WS_CHILD}; }),
+                    "A native control was created under a destroyed parent");
             };
             PostMessageW(edit.hwnd(), WM_KEYDOWN, VK_TAB, 0);
             PostMessageW(host.hwnd(), checkMessage, 0, 0);
@@ -893,20 +953,14 @@ void native(bool warp) {
 }
 
 int main(int argc, char** argv) {
-    try {
-        require(argc >= 2, "Expected a test name");
-        const std::string_view name{argv[1]};
-        const bool warp = argc > 2 && std::string_view{argv[2]} == "--warp";
-        if (name == "pointer") { pointer(warp); }
-        else if (name == "focus") { focus(warp); }
-        else if (name == "render") { render(warp); }
-        else if (name == "partial") { return partial(warp); }
-        else if (name == "swapchain") { return swapchain(warp); }
-        else if (name == "accessible") { accessible(warp); }
-        else if (name == "native") { native(warp); }
-        else { throw std::runtime_error("Unknown test"); }
-        return 0;
-    } catch (const winrt::hresult_error& error) { std::cerr << winrt::to_string(error.message()) << '\n'; }
-    catch (const std::exception& error) { std::cerr << error.what() << '\n'; }
-    return 1;
+    using composia::testing::Options;
+    return composia::testing::run(argc, argv, {
+        {"pointer", [](const Options& options) { pointer(options.warp); return 0; }},
+        {"focus", [](const Options& options) { focus(options.warp); return 0; }},
+        {"render", [](const Options& options) { render(options.warp); return 0; }},
+        {"partial", [](const Options& options) { return partial(options.warp); }},
+        {"swapchain", [](const Options& options) { return swapchain(options.warp); }},
+        {"accessible", [](const Options& options) { accessible(options.warp); return 0; }},
+        {"native", [](const Options& options) { native(options.warp); return 0; }},
+    });
 }

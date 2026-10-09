@@ -145,5 +145,5 @@ int smoke(const testing::Options& options) {
 }
 
 int main(int argc, char** argv) {
-    return testing::run(argc, argv, {{"smoke", smoke}});
+    return testing::run(argc, argv, {{"lifecycle", smoke}});
 }

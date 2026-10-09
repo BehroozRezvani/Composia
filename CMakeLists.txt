@@ -12,6 +12,7 @@ option(COMPOSIA_BUILD_EXAMPLES "Build the examples" ${PROJECT_IS_TOP_LEVEL})
 option(COMPOSIA_BUILD_TESTS "Build Composia's tests" ${PROJECT_IS_TOP_LEVEL})
 option(COMPOSIA_INSTALL "Generate Composia's install rules" ${PROJECT_IS_TOP_LEVEL})
 option(COMPOSIA_WARNINGS_AS_ERRORS "Treat warnings in Composia's own code as errors" ${PROJECT_IS_TOP_LEVEL})
+option(COMPOSIA_COVERAGE "Instrument the library for clang source-based code coverage" OFF)
 
 # A top-level build uses the static CRT, so its executables depend only on Windows system DLLs.
 # Inside another project, Composia uses that project's runtime library.
@@ -55,6 +56,13 @@ set(COMPOSIA_SOURCES
 )
 list(TRANSFORM COMPOSIA_SOURCES PREPEND ${PROJECT_SOURCE_DIR}/src/)
 
+if(COMPOSIA_COVERAGE)
+    # Programs that link an instrumented library need clang's profile runtime.
+    execute_process(COMMAND ${CMAKE_CXX_COMPILER} /clang:-print-resource-dir
+        OUTPUT_VARIABLE resourceDir OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)
+    set(COMPOSIA_PROFILE_RUNTIME ${resourceDir}/lib/windows/clang_rt.profile-x86_64.lib)
+endif()
+
 # Defines a Composia library target. The tests define a second one with failure injection
 # compiled in, so the library that is installed never carries test hooks.
 function(composia_add_library target)
@@ -78,6 +86,10 @@ function(composia_add_library target)
         PUBLIC WIL::WIL Microsoft::CppWinRT
         PRIVATE d3d11 dxgi d2d1 dwrite windowsapp CoreMessaging user32 gdi32 ole32 oleaut32 uiautomationcore comctl32 uxtheme
     )
+    if(COMPOSIA_COVERAGE)
+        target_compile_options(${target} PRIVATE -fprofile-instr-generate -fcoverage-mapping)
+        target_link_libraries(${target} PUBLIC ${COMPOSIA_PROFILE_RUNTIME})
+    endif()
 endfunction()
 
 composia_add_library(composia)

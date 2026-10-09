@@ -2,24 +2,27 @@
 #include <composia/CompositionWindowTarget.hpp>
 #include <composia/ScopedSurfaceDraw.hpp>
 #include <composia/TextLayout.hpp>
+#include "support/TestSupport.hpp"
 #include <iostream>
-#include <stdexcept>
 #include <vector>
 
-namespace {
-void require(bool value, const char* message) { if (!value) { throw std::runtime_error(message); } }
+// A window's composition target and drawing into its surface: the visual tree it builds, sizing
+// at each DPI, and the pixels a drawing scope produces, before and after a device replacement.
+using namespace composia;
+using testing::require;
 
-void verify_pixels(composia::Application& app, const composia::composition::CompositionDrawingSurface& surface,
-    composia::TextLayout& text, UINT dpi) {
-    composia::ScopedSurfaceDraw draw{surface, app.graphics(), dpi};
+namespace {
+void verify_pixels(Application& app, const composition::CompositionDrawingSurface& surface, TextLayout& text, UINT dpi) {
+    ScopedSurfaceDraw draw{surface, app.graphics(), dpi};
+    require(draw.text_factory().get() == app.graphics().text_factory().get(), "The scope has another text factory");
+    require(draw.interop().get() == surface.as<ABI::Windows::UI::Composition::ICompositionDrawingSurfaceInterop>().get(),
+        "The scope's interop is not the surface's");
     const auto dc = draw.context().get();
     dc->Clear(D2D1::ColorF(D2D1::ColorF::Black));
-    wil::com_ptr<ID2D1SolidColorBrush> brush;
-    THROW_IF_FAILED(dc->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Red), brush.put()));
-    dc->FillRectangle({8, 8, 24, 24}, brush.get());
-    brush->SetColor(D2D1::ColorF(D2D1::ColorF::White));
+    dc->FillRectangle({8, 8, 24, 24}, draw.solid_brush(D2D1::ColorF(D2D1::ColorF::Red)));
+    require(draw.solid_brush(0xFF0000) == draw.solid_brush(D2D1::ColorF(D2D1::ColorF::Red)), "A brush was not reused for the same color");
     text.resize(78, 27);
-    dc->DrawTextLayout({32, 8}, text.layout().get(), brush.get());
+    dc->DrawTextLayout({32, 8}, text.layout().get(), draw.solid_brush(0xFFFFFF));
     THROW_IF_FAILED(dc->Flush());
 
     wil::com_ptr<ID2D1Image> image;
@@ -27,8 +30,7 @@ void verify_pixels(composia::Application& app, const composia::composition::Comp
     auto bitmap = image.query<ID2D1Bitmap1>();
     const auto size = surface.Size();
     const D2D1_SIZE_U pixelSize{static_cast<UINT32>(size.Width), static_cast<UINT32>(size.Height)};
-    auto properties = D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_CPU_READ | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
-        bitmap->GetPixelFormat());
+    auto properties = D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_CPU_READ | D2D1_BITMAP_OPTIONS_CANNOT_DRAW, bitmap->GetPixelFormat());
     wil::com_ptr<ID2D1Bitmap1> readback;
     THROW_IF_FAILED(dc->CreateBitmap(pixelSize, nullptr, 0, properties, readback.put()));
     const auto offset = draw.update_offset();
@@ -54,25 +56,39 @@ void verify_pixels(composia::Application& app, const composia::composition::Comp
     draw.finish();
     std::cout << "dpi=" << dpi << " atlas_offset=" << offset.x << ',' << offset.y << " text_pixels=" << textPixels << '\n';
 }
+
+int pixels(const testing::Options& options) {
+    Application app{options.warp};
+    {
+        Window window{app, L"Surface test", 320, 240};
+        CompositionWindowTarget target{app.compositor(), app.graphics(), window.hwnd()};
+        // The tree: the window target shows the root, whose bottom child is the canvas sprite that
+        // paints the drawing surface through the brush.
+        require(target.target().Root() == target.root(), "The window target does not show the root");
+        require(target.root().Children().Count() == 1 && target.root().Children().First().Current() == target.canvas(),
+            "The canvas is not the root's only child");
+        require(target.canvas().Brush() == target.brush() && target.brush().Surface() == target.surface(),
+            "The canvas does not paint the drawing surface");
+        TextLayout text{app.graphics().text_factory().get(), L"Text", 18};
+        for (UINT dpi : {96u, 120u, 144u, 168u, 192u}) {
+            const SIZE pixelSize{static_cast<LONG>(160 * dpi / 96), static_cast<LONG>(80 * dpi / 96)};
+            target.resize(pixelSize, dpi);
+            const auto logical = target.logical_size();
+            require(logical.x == 160 && logical.y == 80 && target.root().Scale().x == static_cast<float>(dpi) / 96.0f,
+                "The tree was not sized in DIPs and scaled for the DPI");
+            target.resize({0, 0}, dpi);
+            target.resize(pixelSize, 0);
+            require(target.logical_size() == logical, "An empty size or a zero DPI changed the target");
+            verify_pixels(app, target.surface(), text, dpi);
+            app.graphics().recreate();
+            verify_pixels(app, target.surface(), text, dpi);
+        }
+    }
+    app.close();
+    return 0;
+}
 }
 
-int main() {
-    try {
-        composia::Application app{true};
-        {
-            composia::Window window{app, L"Surface test", 320, 240};
-            composia::CompositionWindowTarget target{app.compositor(), app.graphics(), window.hwnd()};
-            composia::TextLayout text{app.graphics().text_factory().get(), L"Text", 18};
-            for (UINT dpi : {96u, 120u, 144u, 168u, 192u}) {
-                target.resize({static_cast<LONG>(160 * dpi / 96), static_cast<LONG>(80 * dpi / 96)}, dpi);
-                verify_pixels(app, target.surface(), text, dpi);
-                app.graphics().recreate();
-                verify_pixels(app, target.surface(), text, dpi);
-            }
-        }
-        app.close();
-        return 0;
-    } catch (const winrt::hresult_error& error) { std::cerr << winrt::to_string(error.message()) << '\n'; }
-    catch (const std::exception& error) { std::cerr << error.what() << '\n'; }
-    return 1;
+int main(int argc, char** argv) {
+    return testing::run(argc, argv, {{"pixels", pixels}});
 }

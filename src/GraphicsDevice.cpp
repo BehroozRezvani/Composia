@@ -37,6 +37,7 @@ void GraphicsDevice::recreate() {
     };
     auto driver = forceWarp_ ? D3D_DRIVER_TYPE_WARP : D3D_DRIVER_TYPE_HARDWARE;
     auto result = create(driver);
+    if (driver == D3D_DRIVER_TYPE_HARDWARE) { result = detail::injected(detail::FailurePoint::hardwareDevice, result); }
     if (FAILED(result) && driver == D3D_DRIVER_TYPE_HARDWARE) {
         detail::log(LogLevel::warning, "event=hardware_device_unavailable hresult=" + detail::hex(result) + " fallback=warp");
         baseDevice.reset();
