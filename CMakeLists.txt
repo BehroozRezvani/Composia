@@ -9,6 +9,7 @@ if(NOT WIN32 OR NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR NOT MSVC)
 endif()
 
 option(COMPOSIA_BUILD_EXAMPLES "Build the examples" ${PROJECT_IS_TOP_LEVEL})
+option(COMPOSIA_BUILD_DEMOS "Build the demos in demo/" ${PROJECT_IS_TOP_LEVEL})
 option(COMPOSIA_BUILD_TESTS "Build Composia's tests" ${PROJECT_IS_TOP_LEVEL})
 option(COMPOSIA_INSTALL "Generate Composia's install rules" ${PROJECT_IS_TOP_LEVEL})
 option(COMPOSIA_WARNINGS_AS_ERRORS "Treat warnings in Composia's own code as errors" ${PROJECT_IS_TOP_LEVEL})
@@ -120,4 +121,10 @@ endif()
 if(COMPOSIA_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
+endif()
+
+# The demo branch's demos come after the tests, whose helpers their tests use. A coverage build
+# measures the library alone.
+if(COMPOSIA_BUILD_DEMOS AND NOT COMPOSIA_COVERAGE)
+    add_subdirectory(demo)
 endif()

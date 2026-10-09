@@ -207,8 +207,8 @@ and `COMPOSIA_VERSION`.
 | `examples/inputs` | Text in a composition canvas, hosted EDIT controls and a check box with matching colors, a `Button`, and a drawn slider that is a tab stop with its own UI Automation element |
 | `examples/gpu` | A Direct3D 11 triangle in a `SwapChainSurface` behind a rounded composition clip, presented only on input, while a compositor animation keeps running |
 
-The `demo` branch holds larger demos: a texture and screen capture studio, a virtual
-map, a mail client, and a UI builder.
+On this `demo` branch, [`demo/`](demo/README.md) holds larger demos: a texture and screen
+capture studio, a virtual map, a mail client, and a UI builder.
 
 ## Documentation
 
