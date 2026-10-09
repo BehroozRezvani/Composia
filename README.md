@@ -202,6 +202,62 @@ time and locale formatting, and keeps its sample text as UTF-8 constant data; th
 three choices keep the statically linked release executable near 720 KB, about a
 quarter smaller than the first version.
 
+## UI builder demo
+
+```powershell
+.\outuildelease\composia-builder-demo.exe
+```
+
+A visual form designer built from the framework's primitives: a palette of widgets,
+a design surface, an inspector, and a live preview. It opens with a sample sign-in
+form. **It is a UI exercise**: designs are saved as small text files, nothing is
+generated or executed, and the preview runs inside the demo window.
+
+The palette offers panels, labels, buttons, text fields, checkboxes, sliders, and
+image placeholders. Click an entry to add it to the selected panel (or the form),
+or drag it onto the form; dropping onto a panel nests the widget inside it. Click a
+widget to select it, drag it to move it (dragging onto another panel re-parents it),
+and drag its corner handles to resize it. Moves snap to an 8 DIP grid and to the
+edges of neighbouring widgets; the status-bar toggle turns snapping off. The outline
+lists the tree, and selecting there works the same way.
+
+Each selected widget shows four **anchor pins**, one per edge. Click a pin to anchor
+that edge to the parent at its current margin; click again to release it. Drag a
+pin onto empty parent space to anchor to the parent, or onto a neighbour to anchor
+to the nearer edge of that sibling, so a Cancel button can sit a fixed gap to the
+left of Sign in, or share its bottom edge. The inspector lists each edge's target and
+margin; the target can also be cycled by clicking it, and margins typed directly.
+Anchoring both edges of an axis makes the widget stretch. Moving or resizing an
+anchored widget rewrites its margins, so what you see is always what resolves.
+Anchor cycles are tolerated: the solver ignores one link, marks the widget in red,
+and the inspector explains. Position, size, name, text, checkbox state, and slider
+value are editable; **Delete**, **Duplicate**, **Bring forward**, and **Send backward**
+act on the selection, and the form's own size and title are editable when nothing
+is selected, or by dragging the form's bottom-right corner.
+
+**Preview** (F5) fills the window with the form and instantiates the framework's
+real `Button` and `TextField` controls where the design has them; checkboxes and
+sliders respond to the pointer; clicking a button reports it in the status bar.
+Resize the window to watch the anchors reflow the layout. Preview changes never
+reach the design; Escape returns to editing. **Save** and **Open** use a line-based
+UTF-8 text format (`.cui`), and the title shows unsaved changes. Undo and redo cover
+every edit, with consecutive keystrokes in one field sharing a step. With the form
+focused: arrows nudge by 1 DIP (Shift for 8), Delete removes, Ctrl+D duplicates,
+Ctrl+Z/Ctrl+Y undo and redo, Ctrl+S saves, Ctrl+O opens, Ctrl+N starts over, and
+Ctrl+] / Ctrl+[ change z-order. Add `--warp` for software rendering. The demo
+keeps the Windows 10 baseline.
+
+`demo/builder/BuilderModel` holds the document and has no UI dependencies. A
+widget stores a parent, a position and size for its free edges, and an `Anchor`
+per edge: none, the parent, or a sibling edge, plus an inward margin. `resolve()`
+walks each container, orders siblings by their dependencies, and returns DIP
+rectangles in draw order; `fit()` is the inverse, deriving free coordinates and
+margins from a target rectangle. `History` keeps document snapshots. The window
+paints every widget into the canvas surface on each draw with design-time
+renderings, records hit regions for the chrome, and hit-tests the form spatially
+from the resolved placements. It reuses the mail demo's `TextField` for the
+inspector and for previewed fields.
+
 ## Framework
 
 Link `Composia::UI` from CMake; public headers are in `include/composia`.
@@ -328,6 +384,14 @@ in-memory mailbox and its formatting helpers without windows; `mail-client` and
 `mail-client-warp` (desktop) drive the mail demo through pointer, keyboard, and
 button input: selection, stars, trash and undo, folders, search, scrolling, compose,
 send, reply, forward, drafts, Escape handling, resize, and device replacement.
+`builder-model` (core) checks the UI builder's document: anchored layout across form
+sizes, sibling anchors, fitting, validation, cycles, re-parenting, duplication,
+z-order, the text format, and history coalescing. `builder-editor` and
+`builder-editor-warp` (desktop) drive the designer through pointer, keyboard, and
+field input: selection, palette click and drag, drop into panels, inspector edits,
+undo and redo, snapping, corner resize, pin clicks and drags, margins, form resize,
+save and reopen, the live preview with real controls following a window resize, and
+device replacement.
 
 The Windows CI matrix builds Debug/Release and runs `-L core` (signals, layout,
 and a relocated installed-package consumer). Desktop checks are a separate
