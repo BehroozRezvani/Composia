@@ -78,7 +78,12 @@ public:
     [[nodiscard]] int width() const noexcept { return width_; }
     [[nodiscard]] int height() const noexcept { return height_; }
     [[nodiscard]] const std::wstring& title() const noexcept { return title_; }
-    void resize(int width, int height) noexcept;
+    void resize(int width, int height) noexcept;  // Clamped to the minimum size and maximum_form.
+    // The smallest size a running form can be resized to. It never exceeds the form's size, and the
+    // designer's form cannot be made smaller than it either.
+    [[nodiscard]] int minimum_width() const noexcept { return minimumWidth_; }
+    [[nodiscard]] int minimum_height() const noexcept { return minimumHeight_; }
+    void set_minimum(int width, int height) noexcept;
     void set_title(std::wstring title) { title_ = std::move(title); }
     [[nodiscard]] const std::vector<Widget>& widgets() const noexcept { return widgets_; }
     [[nodiscard]] std::size_t size() const noexcept { return widgets_.size(); }
@@ -116,7 +121,7 @@ private:
 
     std::vector<Widget> widgets_;
     unsigned nextId_{1};
-    int width_{640}, height_{440};
+    int width_{640}, height_{440}, minimumWidth_{minimum_form}, minimumHeight_{minimum_form};
     std::wstring title_{L"Untitled"};
 };
 

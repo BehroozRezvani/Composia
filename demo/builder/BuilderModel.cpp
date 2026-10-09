@@ -145,8 +145,13 @@ std::wstring widen(std::string_view text) {
 }
 
 void Document::resize(int width, int height) noexcept {
-    width_ = std::clamp(width, minimum_form, maximum_form);
-    height_ = std::clamp(height, minimum_form, maximum_form);
+    width_ = std::clamp(width, std::max(minimum_form, minimumWidth_), maximum_form);
+    height_ = std::clamp(height, std::max(minimum_form, minimumHeight_), maximum_form);
+}
+
+void Document::set_minimum(int width, int height) noexcept {
+    minimumWidth_ = std::clamp(width, minimum_form, width_);
+    minimumHeight_ = std::clamp(height, minimum_form, height_);
 }
 
 const Widget* Document::find(unsigned id) const noexcept {
@@ -423,6 +428,7 @@ void Document::solve(unsigned parent, composia::layout::Rect content, std::vecto
 std::string Document::to_text() const {
     std::wstring out{L"composia-ui 1\n"};
     out += L"form " + std::to_wstring(width_) + L" " + std::to_wstring(height_) + L" " + quote(title_) + L"\n";
+    out += L"minimum " + std::to_wstring(minimumWidth_) + L" " + std::to_wstring(minimumHeight_) + L"\n";
     for (const auto& w : widgets_) {
         out += L"widget " + std::to_wstring(w.id) + L" " + std::wstring{kind_token(w.kind)} + L" " + std::to_wstring(w.parent) + L" " +
             std::to_wstring(w.x) + L" " + std::to_wstring(w.y) + L" " + std::to_wstring(w.width) + L" " + std::to_wstring(w.height) + L" " +
@@ -446,6 +452,7 @@ std::optional<Document> Document::from_text(std::string_view utf8) {
     const auto text = widen(utf8);
     Document document;
     bool header{};
+    std::optional<std::pair<int, int>> minimum;
     std::size_t start = 0;
     while (start <= text.size()) {
         const auto end = text.find(L'\n', start);
@@ -464,6 +471,11 @@ std::optional<Document> Document::from_text(std::string_view utf8) {
             if (!width || !height) { return std::nullopt; }
             document.resize(*width, *height);
             document.set_title(t[3]);
+        } else if (t[0] == L"minimum") {
+            const auto width = t.size() == 3 ? parse_int(t[1]) : std::nullopt;
+            const auto height = t.size() == 3 ? parse_int(t[2]) : std::nullopt;
+            if (!width || !height) { return std::nullopt; }
+            minimum = std::pair{*width, *height};  // Applied after the form size, whichever line came first.
         } else if (t[0] == L"widget") {
             if (t.size() != 12) { return std::nullopt; }
             const auto id = parse_int(t[1]), parent = parse_int(t[3]), x = parse_int(t[4]), y = parse_int(t[5]), width = parse_int(t[6]),
@@ -510,6 +522,7 @@ std::optional<Document> Document::from_text(std::string_view utf8) {
         } else { return std::nullopt; }
     }
     if (!header) { return std::nullopt; }
+    if (minimum) { document.set_minimum(minimum->first, minimum->second); }
     for (const auto& widget : document.widgets_) {
         if (widget.parent != 0) {
             const auto parent = document.find(widget.parent);
@@ -528,6 +541,7 @@ std::optional<Document> Document::from_text(std::string_view utf8) {
 Document Document::sample() {
     Document document;
     document.resize(640, 440);
+    document.set_minimum(480, 360);
     document.set_title(L"Sign in");
     const auto place = [&](Kind kind, unsigned parent, std::wstring_view name, std::wstring_view text, int x, int y, int width, int height) {
         const auto id = document.add(kind, parent, x, y);

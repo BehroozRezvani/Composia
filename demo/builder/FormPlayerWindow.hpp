@@ -6,7 +6,11 @@
 
 namespace builder {
 
+// The window size, for WM_GETMINMAXINFO, whose client area is the given DIP size at the window's DPI.
+[[nodiscard]] POINT minimum_track_size(HWND, int widthDip, int heightDip) noexcept;
+
 // The window of a built app: a top-level HWND titled and sized by the design, running its form.
+// It cannot be resized below the design's minimum size.
 class FormPlayerWindow final : public composia::Window {
 public:
     FormPlayerWindow(composia::Application&, Document);

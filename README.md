@@ -234,7 +234,10 @@ Anchor cycles are tolerated: the solver ignores one link, marks the widget in re
 and the inspector explains. Position, size, name, text, checkbox state, and slider
 value are editable; **Delete**, **Duplicate**, **Bring forward**, and **Send backward**
 act on the selection, and the form's own size and title are editable when nothing
-is selected, or by dragging the form's bottom-right corner.
+is selected, or by dragging the form's bottom-right corner. The form also has a
+**minimum size**, outlined on the design surface: a running form cannot be resized
+below it, which keeps anchored layouts from collapsing, and the designer's form
+cannot be made smaller than it either. It never exceeds the form's size.
 
 **Preview** (F5) fills the window with the form and instantiates the framework's
 real `Button` and `TextField` controls where the design has them; checkboxes and
@@ -249,9 +252,10 @@ Ctrl+B builds an app, and Ctrl+] / Ctrl+[ change z-order. Add `--warp` for
 software rendering. The demo keeps the Windows 10 baseline.
 
 **Build app…** (Ctrl+B) asks for a file name and writes a standalone `.exe`: a
-Windows application whose window is titled and sized by the design and whose
-controls are the same real framework controls the preview uses, with the anchors
-reflowing on resize. The status bar then offers **Run app**. No compiler runs: the
+Windows application whose window is titled and sized by the design, refuses to
+shrink below its minimum size, and whose controls are the same real framework
+controls the preview uses, with the anchors reflowing on resize. Previewing in
+the designer honours the same minimum, enlarging the designer window if needed. The status bar then offers **Run app**. No compiler runs: the
 output is a copy of `composia-form-player.exe`, a compiled player built alongside
 the demo, with the design embedded as an `RCDATA` resource through
 `UpdateResource`. The builder carries its own copy of the player as a resource,
@@ -409,13 +413,14 @@ z-order, the text format, and history coalescing. `builder-editor` and
 `builder-editor-warp` (desktop) drive the designer through pointer, keyboard, and
 field input: selection, palette click and drag, drop into panels, inspector edits,
 undo and redo, snapping, corner resize, pin clicks and drags, margins, form resize,
-save and reopen, the live preview with real controls following a window resize, and
-device replacement. `builder-app` and `builder-app-warp` (desktop) build an app from
-the freshly built player, read the embedded design back from the output, run the
-output with `--validate` as a separate process, reject a bad player, run the
-player's window in-process with its real controls following a resize and its
-checkbox and slider responding to clicks, and drive the designer's own Build app
-command including its error path.
+save and reopen, the minimum size constraining the form, the live preview with
+real controls following a window resize, and device replacement. `builder-app` and
+`builder-app-warp` (desktop) build an app from the freshly built player, read the
+embedded design back from the output, run the output with `--validate` as a
+separate process, reject a bad player, run the player's window in-process with its
+real controls following a resize, its refusal to shrink below the minimum size, and
+its checkbox and slider responding to clicks, and drive the designer's own Build
+app command including its error path.
 
 The Windows CI matrix builds Debug/Release and runs `-L core` (signals, layout,
 and a relocated installed-package consumer). Desktop checks are a separate

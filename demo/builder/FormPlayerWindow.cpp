@@ -4,6 +4,17 @@
 
 namespace builder {
 
+POINT minimum_track_size(HWND hwnd, int widthDip, int heightDip) noexcept {
+    const auto dpi = hwnd ? GetDpiForWindow(hwnd) : GetDpiForSystem();
+    RECT rect{0, 0, MulDiv(widthDip, dpi, 96), MulDiv(heightDip, dpi, 96)};
+    if (hwnd) {
+        const auto style = static_cast<DWORD>(GetWindowLongPtrW(hwnd, GWL_STYLE));
+        const auto extended = static_cast<DWORD>(GetWindowLongPtrW(hwnd, GWL_EXSTYLE));
+        AdjustWindowRectExForDpi(&rect, style, FALSE, extended, dpi);
+    }
+    return {rect.right - rect.left, rect.bottom - rect.top};
+}
+
 FormPlayerWindow::FormPlayerWindow(composia::Application& app, Document document)
     : Window(app, document.title().empty() ? std::wstring_view{L"Form"} : std::wstring_view{document.title()}, document.width(), document.height()),
       app_(app), target_(app.compositor(), app.graphics(), hwnd()), view_(*this, std::move(document)) {
@@ -37,9 +48,8 @@ void FormPlayerWindow::on_paint() {
 std::optional<LRESULT> FormPlayerWindow::on_message(UINT message, WPARAM, LPARAM lparam) {
     switch (message) {
     case WM_GETMINMAXINFO: {
-        const auto info = reinterpret_cast<MINMAXINFO*>(lparam);
-        const auto windowDpi = hwnd() ? dpi() : GetDpiForSystem();
-        info->ptMinTrackSize = {MulDiv(240, windowDpi, 96), MulDiv(160, windowDpi, 96)};
+        const auto& document = view_.document();
+        reinterpret_cast<MINMAXINFO*>(lparam)->ptMinTrackSize = minimum_track_size(hwnd(), document.minimum_width(), document.minimum_height());
         return 0;
     }
     case WM_SETCURSOR:

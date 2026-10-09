@@ -1,5 +1,6 @@
 #include "BuilderDemoWindow.hpp"
 #include "AppPackager.hpp"
+#include "FormPlayerWindow.hpp"
 #include <composia/ScopedSurfaceDraw.hpp>
 #include <windowsx.h>
 #include <commdlg.h>
@@ -54,7 +55,7 @@ BuilderDemoWindow::BuilderDemoWindow(Application& app)
       newButton_(*this, L"New"), openButton_(*this, L"Open"), saveButton_(*this, L"Save"), undoButton_(*this, L"Undo"),
       redoButton_(*this, L"Redo"), previewButton_(*this, L"Preview"), stopButton_(*this, L"Stop preview"), buildButton_(*this, L"Build app…"),
       name_(*this, L"Name"), text_(*this, L"Text"), x_(*this, L"X"), y_(*this, L"Y"), width_(*this, L"Width"), height_(*this, L"Height"),
-      value_(*this, L"Value"), marginLeft_(*this, L"0"), marginTop_(*this, L"0"), marginRight_(*this, L"0"), marginBottom_(*this, L"0"),
+      minWidth_(*this, L"Min width"), minHeight_(*this, L"Min height"), value_(*this, L"Value"), marginLeft_(*this, L"0"), marginTop_(*this, L"0"), marginRight_(*this, L"0"), marginBottom_(*this, L"0"),
       deleteButton_(*this, L"Delete"), duplicateButton_(*this, L"Duplicate"), frontButton_(*this, L"Bring forward"), backButton_(*this, L"Send backward"),
       runButton_(*this, L"Run app") {
     connections_[0] = newButton_.on_click([this] { new_document(); });
@@ -119,6 +120,10 @@ BuilderDemoWindow::BuilderDemoWindow(Application& app)
     connections_[30] = value_.on_submit([this] { sync_inspector(); });
     connections_[31] = buildButton_.on_click([this] { build_app(); });
     connections_[32] = runButton_.on_click([this] { run_built(); });
+    connections_[33] = minWidth_.on_change([this] { apply_minimum(false, minWidth_); });
+    connections_[34] = minHeight_.on_change([this] { apply_minimum(true, minHeight_); });
+    connections_[35] = minWidth_.on_submit([this] { sync_inspector(); });
+    connections_[36] = minHeight_.on_submit([this] { sync_inspector(); });
     stopButton_.show(SW_HIDE);
     runButton_.show(SW_HIDE);
     sync_inspector();
@@ -265,6 +270,8 @@ void BuilderDemoWindow::sync_inspector() {
         assign(text_, document.title());
         assign(width_, std::to_wstring(document.width()));
         assign(height_, std::to_wstring(document.height()));
+        assign(minWidth_, std::to_wstring(document.minimum_width()));
+        assign(minHeight_, std::to_wstring(document.minimum_height()));
     }
 }
 
@@ -407,11 +414,31 @@ void BuilderDemoWindow::set_margin(Edge edge, int offset) {
 
 void BuilderDemoWindow::resize_form(int width, int height) {
     if (previewing()) { return; }
-    if (document().width() == width && document().height() == height) { return; }
+    auto clamped = document();
+    clamped.resize(width, height);
+    if (clamped.width() == document().width() && clamped.height() == document().height()) { return; }
     changed("form");
     document().resize(width, height);
     sync_inspector();
     invalidate();
+}
+
+void BuilderDemoWindow::set_minimum(int width, int height) {
+    if (previewing()) { return; }
+    auto clamped = document();
+    clamped.set_minimum(width, height);
+    if (clamped.minimum_width() == document().minimum_width() && clamped.minimum_height() == document().minimum_height()) { return; }
+    changed("minimum");
+    document().set_minimum(width, height);
+    sync_inspector();
+    invalidate();
+}
+
+void BuilderDemoWindow::apply_minimum(bool vertical, TextField& field) {
+    if (syncing_ || previewing()) { return; }
+    const auto value = builder::parse_int(field.text());
+    if (!value || *value < builder::Document::minimum_form) { return; }
+    set_minimum(vertical ? document().minimum_width() : *value, vertical ? *value : document().minimum_height());
 }
 
 void BuilderDemoWindow::apply_position(bool vertical, TextField& field) {
@@ -540,6 +567,19 @@ void BuilderDemoWindow::start_preview() {
     if (previewing()) { return; }
     end_drag(true);
     preview_ = std::make_unique<builder::FormView>(*this, document());
+    {
+        // The workspace must be able to show the form at its minimum size.
+        const auto client = client_pixels();
+        const auto windowDpi = dpi();
+        const int neededWidth = MulDiv(document().minimum_width(), windowDpi, 96);
+        const int neededHeight = MulDiv(document().minimum_height() + static_cast<int>(topBar + statusBar), windowDpi, 96);
+        if (client.cx < neededWidth || client.cy < neededHeight) {
+            RECT frame{};
+            THROW_IF_WIN32_BOOL_FALSE(GetWindowRect(hwnd(), &frame));
+            THROW_IF_WIN32_BOOL_FALSE(SetWindowPos(hwnd(), nullptr, 0, 0, frame.right - frame.left + std::max(0L, neededWidth - client.cx),
+                frame.bottom - frame.top + std::max(0L, neededHeight - client.cy), SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE));
+        }
+    }
     previewClick_ = preview_->on_click([this](const builder::Widget& widget) { notify(L"Clicked \"" + widget.text + L"\""); });
     previewChange_ = preview_->on_change([this](const builder::Widget& widget) {
         notify(widget.kind == Kind::checkbox ? widget.name + (widget.checked ? L" checked" : L" unchecked") : widget.name + L" = " + std::to_wstring(widget.value));
@@ -676,6 +716,8 @@ void BuilderDemoWindow::arrange() {
         y += 44;
         rows_.size = y;
         y += 44;
+        rows_.minimum = y;
+        y += 64;
     }
     rows_.bottom = y;
     const float x0 = inspector_.x + 16, w = inspector_.width - 32, fieldX = x0 + 76, fieldW = std::max(1.0f, w - 76), half = std::max(1.0f, (fieldW - 8) / 2);
@@ -686,6 +728,8 @@ void BuilderDemoWindow::arrange() {
     y_.set_bounds({fieldX + half + 8, rows_.position + 2, half, fieldHeight});
     width_.set_bounds({fieldX, rows_.size + 2, half, fieldHeight});
     height_.set_bounds({fieldX + half + 8, rows_.size + 2, half, fieldHeight});
+    minWidth_.set_bounds({fieldX, rows_.minimum + 2, half, fieldHeight});
+    minHeight_.set_bounds({fieldX + half + 8, rows_.minimum + 2, half, fieldHeight});
     value_.set_bounds({fieldX, rows_.extra + 2, 80, fieldHeight});
     visible(name_, showWidget);
     visible(text_, showWidget || showForm);
@@ -693,6 +737,8 @@ void BuilderDemoWindow::arrange() {
     visible(y_, showWidget);
     visible(width_, showWidget || showForm);
     visible(height_, showWidget || showForm);
+    visible(minWidth_, showForm);
+    visible(minHeight_, showForm);
     visible(value_, showWidget && widget->kind == Kind::slider);
     for (std::size_t index = 0; index != builder::edges.size(); ++index) {
         const auto edge = builder::edges[index];
@@ -818,6 +864,14 @@ void BuilderDemoWindow::draw_form(FormPainter& p) {
                     if (gx > form_.x && gy > form_.y) { p.fill({gx - 0.5f, gy - 0.5f, 1, 1}, gridDot); }
                 }
             }
+        }
+        const auto minWidth = static_cast<float>(document().minimum_width()), minHeight = static_cast<float>(document().minimum_height());
+        if (minWidth < form_.width || minHeight < form_.height) {
+            p.stroke({form_.x, form_.y, minWidth, minHeight}, palette::border, 1);
+            const auto label = L"min " + std::to_wstring(document().minimum_width()) + L" × " + std::to_wstring(document().minimum_height());
+            const float labelWidth = p.measure(label, {.size = 10}) + 8;
+            p.text(label, {form_.x + minWidth - labelWidth - 2, form_.y + minHeight - 16, labelWidth, 14}, inkFaint,
+                {.size = 10, .align = DWRITE_TEXT_ALIGNMENT_TRAILING});
         }
         p.text(document().title(), {form_.x, form_.y - 22, form_.width, 18}, inkMuted, {.size = 12, .weight = DWRITE_FONT_WEIGHT_SEMI_BOLD});
         p.text(std::to_wstring(document().width()) + L" × " + std::to_wstring(document().height()), {form_.x, form_.y - 22, form_.width, 18}, inkFaint,
@@ -945,6 +999,8 @@ void BuilderDemoWindow::draw_inspector(FormPainter& p) {
         p.text(L"The window your widgets live in", {x0, rows_.header + 28, w, 18}, inkFaint, {.size = 12});
         label(L"Title", rows_.text);
         label(L"Size", rows_.size);
+        label(L"Min size", rows_.minimum);
+        p.text(L"The app window will not shrink below this, and neither will this form.", {x0, rows_.minimum + 38, w, 18}, inkFaint, {.size = 11});
         p.text(L"Add widgets from the palette, then select one to position it, resize it from its corners, and anchor its edges. "
             L"Drag a pin onto empty form space to anchor that edge to the form, or onto a neighbour to anchor to it. "
             L"Anchored edges keep their margin when the form changes size. Preview with F5 and resize the window to test it.",
@@ -1010,13 +1066,14 @@ void BuilderDemoWindow::draw_status(FormPainter& p) {
     p.fill({0, bar.y, size.x, 1}, divider);
     const auto hint = previewing() ? std::wstring{L"Preview"} : L"Select a widget on the form, drag its corners to resize it, and drag its pins to anchor edges";
     const auto message = status_.empty() ? hint : status_;
-    const float messageWidth = std::clamp(p.measure(message, {.size = 12}) + 4, 1.0f, std::max(1.0f, size.x - 420));
+    const float messageWidth = std::clamp(p.measure(message, {.size = 12}) + 4, 1.0f, std::max(1.0f, size.x - 500));
     p.text(message, {16, bar.y + 5, messageWidth, 18}, status_.empty() ? inkMuted : ink, {.size = 12});
     runButton_.set_bounds({16 + messageWidth + 10, bar.y + 3, 80, 22});
     const auto& active = this->active();
-    const auto summary = std::to_wstring(static_cast<int>(std::lround(form_.width))) + L" × " + std::to_wstring(static_cast<int>(std::lround(form_.height))) + L"   ·   " + std::to_wstring(active.size()) +
-        (active.size() == 1 ? L" widget" : L" widgets");
-    p.text(summary, {size.x - 400, bar.y + 5, 236, 18}, inkFaint, {.size = 12, .align = DWRITE_TEXT_ALIGNMENT_TRAILING});
+    const auto summary = std::to_wstring(static_cast<int>(std::lround(form_.width))) + L" × " + std::to_wstring(static_cast<int>(std::lround(form_.height))) +
+        (previewing() ? std::wstring{} : L"   ·   min " + std::to_wstring(active.minimum_width()) + L" × " + std::to_wstring(active.minimum_height())) +
+        L"   ·   " + std::to_wstring(active.size()) + (active.size() == 1 ? L" widget" : L" widgets");
+    p.text(summary, {size.x - 480, bar.y + 5, 316, 18}, inkFaint, {.size = 12, .align = DWRITE_TEXT_ALIGNMENT_TRAILING});
     if (!previewing()) {
         const layout::Rect toggle{size.x - 150, bar.y + 4, 134, 20};
         const layout::Rect box{toggle.x, toggle.y + 3, 14, 14};
@@ -1260,7 +1317,13 @@ std::optional<LRESULT> BuilderDemoWindow::on_message(UINT message, WPARAM wparam
     case WM_GETMINMAXINFO: {
         const auto info = reinterpret_cast<MINMAXINFO*>(lparam);
         const auto windowDpi = hwnd() ? dpi() : GetDpiForSystem();
-        info->ptMinTrackSize = {MulDiv(1100, windowDpi, 96), MulDiv(700, windowDpi, 96)};
+        int width = 1100, height = 700;
+        if (preview_) {
+            // Previewing honours the form's minimum size, as the built app will.
+            width = std::max(width, preview_->document().minimum_width());
+            height = std::max(height, preview_->document().minimum_height() + static_cast<int>(topBar + statusBar));
+        }
+        info->ptMinTrackSize = {MulDiv(width, windowDpi, 96), MulDiv(height, windowDpi, 96)};
         return 0;
     }
     case WM_GETDLGCODE:

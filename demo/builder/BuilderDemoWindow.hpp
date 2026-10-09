@@ -53,6 +53,8 @@ public:
     [[nodiscard]] TextField& y_field() noexcept { return y_; }
     [[nodiscard]] TextField& width_field() noexcept { return width_; }
     [[nodiscard]] TextField& height_field() noexcept { return height_; }
+    [[nodiscard]] TextField& minimum_width_field() noexcept { return minWidth_; }
+    [[nodiscard]] TextField& minimum_height_field() noexcept { return minHeight_; }
     [[nodiscard]] TextField& value_field() noexcept { return value_; }
     [[nodiscard]] TextField& margin_field(builder::Edge) noexcept;
     [[nodiscard]] composia::Button& undo_button() noexcept { return undoButton_; }
@@ -81,6 +83,7 @@ public:
     void cycle_anchor(builder::Edge);  // none, parent, then each sibling.
     void set_margin(builder::Edge, int offset);
     void resize_form(int width, int height);
+    void set_minimum(int width, int height);
     void undo();
     void redo();
     void new_document();
@@ -108,7 +111,7 @@ private:
         bool moved{}, recorded{};
     };
     struct InspectorRows {
-        float header{}, name{}, text{}, position{}, size{}, extra{}, anchors{}, actions{}, bottom{};
+        float header{}, name{}, text{}, position{}, size{}, minimum{}, extra{}, anchors{}, actions{}, bottom{};
         bool widget{};
         builder::Kind kind{};
     };
@@ -134,6 +137,7 @@ private:
     void apply_geometry(builder::Edge, TextField&);
     void apply_position(bool vertical, TextField&);
     void apply_size(bool vertical, TextField&);
+    void apply_minimum(bool vertical, TextField&);
     void begin_drag(DragKind, unsigned id, unsigned index, composia::numerics::float2 point);
     void update_drag(composia::numerics::float2 point);
     void end_drag(bool cancel);
@@ -170,7 +174,7 @@ private:
     unsigned drawCount_{};
     // Declaration order is creation order, which sets the Tab order.
     composia::Button newButton_, openButton_, saveButton_, undoButton_, redoButton_, previewButton_, stopButton_, buildButton_;
-    TextField name_, text_, x_, y_, width_, height_, value_, marginLeft_, marginTop_, marginRight_, marginBottom_;
+    TextField name_, text_, x_, y_, width_, height_, minWidth_, minHeight_, value_, marginLeft_, marginTop_, marginRight_, marginBottom_;
     composia::Button deleteButton_, duplicateButton_, frontButton_, backButton_, runButton_;
-    std::array<composia::Connection, 36> connections_;
+    std::array<composia::Connection, 40> connections_;
 };

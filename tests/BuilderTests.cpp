@@ -35,6 +35,27 @@ unsigned by_name(const Document& document, std::wstring_view name) {
 void model() {
     auto document = Document::sample();
     require(document.size() >= 10 && document.width() == 640 && document.height() == 440, "Sample form is unexpectedly small");
+    require(document.minimum_width() == 480 && document.minimum_height() == 360, "Sample minimum size is wrong");
+    {
+        Document form;
+        require(form.minimum_width() == Document::minimum_form && form.minimum_height() == Document::minimum_form, "A new form should start at the smallest allowed minimum");
+        form.set_minimum(500, 100);
+        require(form.minimum_width() == 500 && form.minimum_height() == Document::minimum_form, "Minimum should clamp to the allowed range");
+        form.set_minimum(900, 900);
+        require(form.minimum_width() == form.width() && form.minimum_height() == form.height(), "Minimum cannot exceed the form size");
+        form.set_minimum(500, 400);
+        form.resize(300, 300);
+        require(form.width() == 500 && form.height() == 400, "The form cannot shrink below its minimum");
+        form.resize(800, 600);
+        require(form.width() == 800 && form.height() == 600 && form.minimum_width() == 500, "Growing the form should keep the minimum");
+        const auto reloaded = Document::from_text(form.to_text());
+        require(reloaded && reloaded->minimum_width() == 500 && reloaded->minimum_height() == 400, "Minimum size did not survive the text format");
+        const auto legacy = Document::from_text("composia-ui 1\nform 300 200 \"old\"\n");
+        require(legacy && legacy->minimum_width() == Document::minimum_form && legacy->minimum_height() == Document::minimum_form, "Files without a minimum should load");
+        const auto reordered = Document::from_text("composia-ui 1\nminimum 280 190\nform 300 200 \"old\"\n");
+        require(reordered && reordered->minimum_width() == 280 && reordered->minimum_height() == 190, "A minimum before the form line should still apply");
+        require(!Document::from_text("composia-ui 1\nform 300 200 \"old\"\nminimum 10\n").has_value(), "A malformed minimum line was accepted");
+    }
     const auto panel = by_name(document, L"account"), email = by_name(document, L"email"), signIn = by_name(document, L"signIn"),
         cancel = by_name(document, L"cancel"), footer = by_name(document, L"footer"), logo = by_name(document, L"logo");
     require(document.find(email)->parent == panel && document.depth(email) == 1 && document.is_ancestor(panel, email), "Sample nesting is wrong");
@@ -262,6 +283,19 @@ void editor(bool warp) {
             drag(cornerHandle, 16, 24);
             require(document.width() == 736 && document.height() == 464, "Dragging the form corner did not resize it");
             require(close_to(form_bounds(signIn).x + form_bounds(signIn).width, 736 - 32), "Anchored button did not keep its margin when the form grew");
+            require(window.minimum_width_field().text() == L"480" && window.minimum_height_field().text() == L"360", "Minimum size fields are not synced");
+            type(window.minimum_width_field(), L"700");
+            require(document.minimum_width() == 700 && document.minimum_height() == 360, "Minimum width field did not apply");
+            type(window.width_field(), L"600");
+            require(document.width() == 700, "The width field shrank the form below its minimum");
+            drag(region(BuilderDemoWindow::Hit::form_corner), -60, -60);
+            require(document.width() == 700 && document.height() == 408, "Dragging the corner shrank the form below its minimum");
+            type(window.minimum_height_field(), L"900");
+            require(document.minimum_height() == 408, "Minimum height exceeded the form height");
+            window.undo();
+            require(document.minimum_height() == 360, "Undo did not restore the minimum");
+            type(window.minimum_width_field(), L"160");
+            require(document.minimum_width() == 160, "Minimum width could not be lowered");
             const auto emailBefore = bounds(email);
             window.select(email);
             drag(emailBefore, 0, 0);
@@ -475,6 +509,13 @@ void app(const std::filesystem::path& player, bool warp) {
             require(grown.cx > client.cx && close_to(right_edge(*window.view().button(signIn), window), static_cast<float>(grown.cx) - 32 * scale(window), 2 * scale(window)),
                 "The button did not follow the resized window");
             require(close_to(window.view().widget_bounds(email)->width, static_cast<float>(grown.cx) / scale(window) - 64 - 48, 2), "The field did not stretch with the panel");
+            THROW_IF_WIN32_BOOL_FALSE(SetWindowPos(window.hwnd(), nullptr, 0, 0, static_cast<int>(300 * scale(window)), static_cast<int>(200 * scale(window)), SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE));
+            paint();
+            const auto shrunk = window.client_pixels();
+            require(close_to(static_cast<float>(shrunk.cx) / scale(window), 480, 2) && close_to(static_cast<float>(shrunk.cy) / scale(window), 360, 2),
+                "The window shrank below the design's minimum size");
+            require(close_to(right_edge(*window.view().button(signIn), window), static_cast<float>(shrunk.cx) - 32 * scale(window), 2 * scale(window)),
+                "The button did not follow the window down to the minimum");
             const bool checked = form.find(remember)->checked;
             click(region(builder::FormView::Interactive::checkbox, remember));
             require(form.find(remember)->checked != checked, "Clicking the checkbox did not toggle it");
