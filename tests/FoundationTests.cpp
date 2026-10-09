@@ -2,6 +2,7 @@
 #include <composia/Application.hpp>
 #include <composia/Button.hpp>
 #include <composia/CompositionWindowTarget.hpp>
+#include <composia/Log.hpp>
 #include <composia/NativeControl.hpp>
 #include <composia/ScopedSurfaceDraw.hpp>
 #include <composia/ScreenCapture.hpp>
@@ -19,6 +20,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 // Checks the mechanisms Window provides to every control and to content drawn into a window:
@@ -313,6 +315,15 @@ void focus(bool warp) {
 }
 
 void render(bool warp) {
+    // Composia's diagnostic events reach the log handler; this one records them. It is set before
+    // the Application exists and removed after it is gone.
+    std::vector<std::pair<composia::LogLevel, std::string>> logged;
+    const auto record = [&](composia::LogLevel level, std::string_view message) { logged.emplace_back(level, std::string{message}); };
+    const auto was_logged = [&](composia::LogLevel level, std::string_view prefix) {
+        return std::ranges::any_of(logged, [&](const auto& entry) { return entry.first == level && entry.second.starts_with(prefix); });
+    };
+    composia::set_log_handler(record);
+    const auto unhook = wil::scope_exit([] { composia::set_log_handler(nullptr); });
     composia::Application app{warp};
     {
         Probe window{app, L"Render"};
@@ -355,6 +366,12 @@ void render(bool warp) {
             });
         } catch (...) { require(false, "render did not retry after an injected device loss"); }
         require(painted == 3, "The retry did not paint");
+        // A failing log handler does not interrupt the operation it reports.
+        composia::set_log_handler([](composia::LogLevel, std::string_view) { throw std::runtime_error("log handler failure"); });
+        const auto generation = app.graphics().generation();
+        app.graphics().recreate();
+        composia::set_log_handler(record);
+        require(app.graphics().generation() == generation + 1, "A throwing log handler interrupted device replacement");
         {
             Probe other{app, L"Other"};
             require(rejects(E_INVALIDARG, [&] { (void)target.render(other, painter); }), "render accepted a window it was not created for");
@@ -414,6 +431,9 @@ void render(bool warp) {
         require(app.run() == 0, "Render loop failed");
     }
     app.close();
+    require(was_logged(composia::LogLevel::info, "event=graphics_device_created generation=1 driver="), "Device creation was not logged");
+    require(was_logged(composia::LogLevel::warning, "event=draw_device_loss hresult=0x887A0005"), "The injected device loss was not logged");
+    require(!logged.empty() && logged.back() == std::pair{composia::LogLevel::info, std::string{"event=application_shutdown"}}, "Shutdown was not logged last");
 }
 
 // Reads the composited result through a capture of the target's visual: partial repaints change

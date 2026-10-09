@@ -1,8 +1,8 @@
 #include "SmokeTest.hpp"
 #include "DemoWindow.hpp"
 #include <composia/ScopedSurfaceDraw.hpp>
-#include <spdlog/spdlog.h>
 #include <cmath>
+#include <iostream>
 #include <stdexcept>
 
 namespace {
@@ -57,7 +57,7 @@ void SmokeTest::tick() {
         window_.redraw();
         THROW_IF_WIN32_BOOL_FALSE(SetWindowPos(window_.hwnd(), nullptr, 0, 0, 880, 620,
             SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE));
-        spdlog::info("event=smoke_scope_unwind_pass");
+        std::cout << "event=smoke_scope_unwind_pass\n";
         break;
     }
     case 1: {
@@ -67,7 +67,7 @@ void SmokeTest::tick() {
         require(std::abs(logical.x * scale - static_cast<float>(pixels.cx)) < 0.1f, "DPI width mismatch");
         require(std::abs(logical.y * scale - static_cast<float>(pixels.cy)) < 0.1f, "DPI height mismatch");
         ShowWindow(window_.hwnd(), SW_MINIMIZE);
-        spdlog::info("event=smoke_resize_pass dpi={}", window_.dpi());
+        std::cout << "event=smoke_resize_pass dpi=" << window_.dpi() << '\n';
         break;
     }
     case 2:
@@ -81,7 +81,7 @@ void SmokeTest::tick() {
             window_.redraw();
         });
         require(graphics.generation() == generation_ + 1, "Draw failure did not recreate the device");
-        spdlog::info("event=smoke_draw_recovery_pass");
+        std::cout << "event=smoke_draw_recovery_pass\n";
         break;
     case 3:
         generation_ = graphics.generation();
@@ -92,7 +92,7 @@ void SmokeTest::tick() {
         require(graphics.generation() == generation_ + 1, "Idle device notification was not handled");
         require(window_.draw_count() > draws_, "Device replacement did not redraw the surface");
         require(*animationCompleted_, "Composition animation did not complete while the message loop ran");
-        spdlog::info("event=smoke_pass generation={} draws={} animation_completed=true", graphics.generation(), window_.draw_count());
+        std::cout << "event=smoke_pass generation=" << graphics.generation() << " draws=" << window_.draw_count() << " animation_completed=true\n";
         THROW_IF_WIN32_BOOL_FALSE(PostMessageW(window_.hwnd(), WM_CLOSE, 0, 0));
         break;
     default:

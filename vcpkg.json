@@ -6,7 +6,6 @@
   "dependencies": [
     "wil",
     "cppwinrt",
-    "spdlog",
     { "name": "directxtk", "default-features": false }
   ]
 }

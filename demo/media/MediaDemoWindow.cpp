@@ -5,7 +5,7 @@
 #include <shellapi.h>
 #include <shobjidl_core.h>
 #include <windows.graphics.directx.direct3d11.interop.h>
-#include <spdlog/spdlog.h>
+#include "../DemoLog.hpp"
 #include <algorithm>
 #include <array>
 
@@ -155,7 +155,7 @@ void MediaDemoWindow::tick() {
         }
         if (FAILED(video_.error())) {
             mediaError_ = video_.error();
-            spdlog::warn("event=video_failed hresult=0x{:08X}", static_cast<unsigned>(mediaError_));
+            demo::write_log("warning", "event=video_failed hresult=" + demo::hex(mediaError_));
             reset_media();
             caption(L"Could not play this video", L"Try another local file with a codec installed on this PC.");
             return;
@@ -262,7 +262,7 @@ void MediaDemoWindow::cancel_picker() noexcept {
 
 void MediaDemoWindow::capture_failed(HRESULT error) {
     mediaError_ = error;
-    spdlog::warn("event=capture_failed hresult=0x{:08X}", static_cast<unsigned>(error));
+    demo::write_log("warning", "event=capture_failed hresult=" + demo::hex(error));
     reset_media();
     caption(L"Capture unavailable", L"Try selecting another window or display.");
 }

@@ -1,7 +1,8 @@
 #include <composia/GraphicsDevice.hpp>
 #include <windows.ui.composition.interop.h>
-#include <spdlog/spdlog.h>
+#include <string>
 #include "FailureInjection.hpp"
+#include "Logging.hpp"
 
 namespace composia {
 namespace abi = ABI::Windows::UI::Composition;
@@ -37,7 +38,7 @@ void GraphicsDevice::recreate() {
     auto driver = forceWarp_ ? D3D_DRIVER_TYPE_WARP : D3D_DRIVER_TYPE_HARDWARE;
     auto result = create(driver);
     if (FAILED(result) && driver == D3D_DRIVER_TYPE_HARDWARE) {
-        spdlog::warn("event=hardware_device_unavailable hresult=0x{:08X} fallback=warp", static_cast<unsigned>(result));
+        detail::log(LogLevel::warning, "event=hardware_device_unavailable hresult=" + detail::hex(result) + " fallback=warp");
         baseDevice.reset();
         context.reset();
         driver = D3D_DRIVER_TYPE_WARP;
@@ -77,8 +78,8 @@ void GraphicsDevice::recreate() {
     d2dContext_ = std::move(d2dContext);
     registered_ = true;
     ++generation_;
-    spdlog::info("event=graphics_device_created generation={} driver={}", generation_,
-        driver == D3D_DRIVER_TYPE_WARP ? "warp" : "hardware");
+    detail::log(LogLevel::info, "event=graphics_device_created generation=" + std::to_string(generation_) +
+        " driver=" + (driver == D3D_DRIVER_TYPE_WARP ? "warp" : "hardware"));
     recreated_.emit(generation_);
 }
 

@@ -1,6 +1,6 @@
 #include <composia/Application.hpp>
+#include "Logging.hpp"
 #include <DispatcherQueue.h>
-#include <spdlog/spdlog.h>
 #include <algorithm>
 #include <atomic>
 #include <stdexcept>
@@ -88,7 +88,7 @@ void Application::close() {
     graphics_.reset();
     dispatcher_ = nullptr;
     closed_ = true;
-    spdlog::info("event=application_shutdown");
+    detail::log(LogLevel::info, "event=application_shutdown");
     rethrow_callback_error();
 }
 
@@ -108,7 +108,7 @@ void Application::render(const std::function<void()>& draw) {
             if (attempt != 0 || !graphics().is_device_loss(error)) {
                 throw;
             }
-            spdlog::warn("event=draw_device_loss hresult=0x{:08X}", static_cast<unsigned>(error));
+            detail::log(LogLevel::warning, "event=draw_device_loss hresult=" + detail::hex(error));
             graphics().recreate();
         }
     }
@@ -171,8 +171,7 @@ int Application::run() {
         const auto wait = MsgWaitForMultipleObjectsEx(1, handles, INFINITE, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
         THROW_LAST_ERROR_IF(wait == WAIT_FAILED);
         if (wait == WAIT_OBJECT_0) {
-            spdlog::warn("event=device_removed hresult=0x{:08X}",
-                static_cast<unsigned>(graphics().d3d_device()->GetDeviceRemovedReason()));
+            detail::log(LogLevel::warning, "event=device_removed hresult=" + detail::hex(graphics().d3d_device()->GetDeviceRemovedReason()));
             graphics().recreate();
         }
         MSG message{};

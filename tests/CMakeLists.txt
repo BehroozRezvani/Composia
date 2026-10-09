@@ -70,7 +70,7 @@ set_tests_properties(surface-pixels PROPERTIES TIMEOUT 30 RUN_SERIAL TRUE LABELS
 composia_test_target(composia-desktop-tests DesktopTests.cpp)
 target_sources(composia-desktop-tests PRIVATE SmokeTest.cpp ${PROJECT_SOURCE_DIR}/demo/DemoWindow.cpp)
 target_include_directories(composia-desktop-tests PRIVATE ${PROJECT_SOURCE_DIR}/demo)
-target_link_libraries(composia-desktop-tests PRIVATE spdlog::spdlog Microsoft::DirectXTK)
+target_link_libraries(composia-desktop-tests PRIVATE Microsoft::DirectXTK)
 add_test(NAME desktop-smoke COMMAND composia-desktop-tests)
 add_test(NAME warp-smoke COMMAND composia-desktop-tests --warp)
 set_tests_properties(desktop-smoke warp-smoke PROPERTIES TIMEOUT 30 RUN_SERIAL TRUE LABELS desktop)

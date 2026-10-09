@@ -32,12 +32,14 @@ ctest --preset debug
 .\out\build\debug\composia-demo.exe
 ```
 
-vcpkg supplies WIL, generated C++/WinRT SDK projections, spdlog, and DirectX
-Toolkit 11 (whose vcpkg package is `directxtk`). The application/framework compile
-with clang-cl; vcpkg builds ABI-compatible static dependencies using the MSVC
-toolchain and the static CRT (`x64-windows-static`), and the project sets
-`CMAKE_MSVC_RUNTIME_LIBRARY` to match. The executables import only Windows system
-DLLs; no Visual C++ redistributable is needed. The baseline matches the submodule
+vcpkg supplies WIL and generated C++/WinRT SDK projections, which the library's
+public headers use, and DirectX Toolkit 11 (whose vcpkg package is `directxtk`),
+which only the demo uses. The application/framework compile with clang-cl; vcpkg
+builds ABI-compatible static dependencies using the MSVC toolchain and the static
+CRT (`x64-windows-static`), and the project sets `CMAKE_MSVC_RUNTIME_LIBRARY` to
+match. The executables import only Windows system DLLs; no Visual C++
+redistributable is needed. `builtin-baseline` in `vcpkg.json` pins the package
+versions; the submodule supplies the vcpkg tool and must contain that baseline
 commit.
 
 ## Texture studio demo
@@ -202,8 +204,7 @@ provider; the audit message in the sample inbox lists what a product version
 would need. `demo/mail/MailModel` holds the mailbox and formatting helpers and
 has no UI dependencies. The demo deliberately avoids `std::format` and the CRT's
 time and locale formatting, and keeps its sample text as UTF-8 constant data; those
-three choices keep the statically linked release executable near 720 KB, about a
-quarter smaller than the first version.
+three choices keep the statically linked release executable small, about 475 KB.
 
 ## Framework
 
@@ -243,6 +244,7 @@ Installed targets carry their dependencies.
 | `NativeControl` | Hosts standard Win32 controls (EDIT, BUTTON, COMBOBOX, ...) with DIP bounds, DPI-aware fonts, colors, and notifications, built on the public notification route |
 | `Button` | Composition-rendered child HWND, pointer/keyboard input, and UI Automation Invoke, built only on the mechanisms above |
 | `Layout` | DIP points and rectangles, hit testing, and horizontal/vertical stack placement |
+| `Log` | An optional handler for the library's diagnostic events; `OutputDebugString` otherwise |
 
 `demo/main.cpp` only initializes logging and starts the application/window.
 `demo/DemoWindow.cpp` demonstrates drawing and scene assembly. The moving tile
@@ -369,6 +371,14 @@ replacement prepares the device and removal subscription before changing
 Composition; a preparation failure preserves the previous published state. Raw device
 access does not transfer ownership or extend a drawing scope's validity.
 
+Composia reports its diagnostic events (graphics device creation and the fallback to
+WARP, device loss and removal, and shutdown) as `event=name key=value` text, at an
+info or warning level. They go to `OutputDebugString` unless `set_log_handler` in
+`composia/Log.hpp` routes them elsewhere, such as an application's own log; set it
+before creating the `Application` to see every event. Composia depends on no logging
+library. The demos write these events, with their own, to log files through
+`demo/DemoLog.hpp`.
+
 ## Text input and native controls
 
 Two paths exist for text input. The recommended one reuses the system's EDIT
@@ -467,8 +477,8 @@ the tile's motion.
 hardware-preferred and forced-WARP desktop checks. Desktop checks briefly show
 windows and require a Windows desktop. CTest retains output in
 `out/build/<preset>/Testing/Temporary/LastTest.log`; `build.ps1 -Test` also writes
-JUnit results in `out/build/<preset>/test-results-*.xml`. Normal runs write
-`composia.log` in the working directory.
+JUnit results in `out/build/<preset>/test-results-*.xml`. The demos write their
+log files (`composia.log`, `composia-mail.log`, and so on) in the working directory.
 Smoke-test code lives in separate test executables. `mail-model` (core) checks the
 in-memory mailbox and its formatting helpers without windows; `mail-client` and
 `mail-client-warp` (desktop) drive the mail demo through pointer, keyboard, and
@@ -610,6 +620,11 @@ members, and require `find_package(Composia 0.3)`. Behavior changes:
   buttons, and group boxes while colors are set.
 - `Button` no longer caches brushes across frames; its header still includes
   `d2d1_1.h`.
+- spdlog is no longer a dependency of the library or of the installed package, which
+  also drops fmt. Composia's diagnostic events go to `OutputDebugString` unless a
+  handler is set with `set_log_handler`; an application that saw them through
+  spdlog's default logger can forward them to spdlog from that handler. Release
+  executables are 230 to 275 KB smaller.
 
 ## License
 
