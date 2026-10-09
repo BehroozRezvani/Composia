@@ -5,7 +5,7 @@ Composition, Direct2D/DirectWrite drawing, Direct3D 11 interop, and reusable
 platform integration (input state, focus, accessibility, native controls), without
 prescribing an application architecture. It requires neither an HWND per UI
 element nor continuous rendering. No custom IDL, XAML, UWP application, or Windows
-App SDK is needed. The optional `Button` and `Layout` helpers and the demos are
+App SDK is needed. The optional `Button` and `Layout` helpers and the examples are
 built on the public API.
 
 ## Build and run
@@ -16,7 +16,7 @@ Put clang-cl, CMake, and Ninja on `PATH`. From PowerShell:
 
 ```powershell
 .\scripts\build.ps1 -Preset release -Test
-.\out\build\release\composia-demo.exe
+.\out\build\release\composia-inputs-example.exe
 ```
 
 The script loads the Visual Studio developer environment, initializes the pinned
@@ -29,7 +29,7 @@ git submodule update --init --recursive
 cmake --preset debug
 cmake --build --preset debug
 ctest --preset debug
-.\out\build\debug\composia-demo.exe
+.\out\build\debug\composia-inputs-example.exe
 ```
 
 vcpkg supplies WIL and generated C++/WinRT SDK projections, which the library's
@@ -41,100 +41,54 @@ redistributable is needed. `builtin-baseline` in `vcpkg.json` pins the package
 versions; the submodule supplies the vcpkg tool and must contain that baseline
 commit.
 
-## Texture studio demo
-
-```powershell
-.\out\build\release\composia-media-demo.exe
-.\out\build\release\composia-media-demo.exe "C:\Videos\clip.mp4"
-```
-
-The demo starts with an animated GPU landscape. **Capture…** opens the Windows
-picker to select a window or display for live Windows Graphics Capture (WGC).
-The captured content appears beneath composed text, with the GPU landscape in
-picture-in-picture. **Stop capture** ends the session and returns to the landscape;
-closing the captured window also ends capture. Windows' capture indicator stays
-enabled. Canceling the picker keeps the current content. If you close the demo
-while the system picker is open, dismiss the picker to finish exiting.
-
-You can also open or drop a local video. **Play / pause** controls the video, or
-the landscape when no video is open; it is disabled during screen capture.
-**GPU only** stops either source and returns to the landscape. Videos loop;
-supported formats depend on the codecs installed on the PC. Add `--warp` to use
-software rendering.
-
-This demo needs a recent Windows 11 runtime and a graphics device supporting
-composition textures. It checks support at runtime and displays an explanation
-when unavailable. The ordinary demo keeps the framework's Windows 10 baseline; on
-Windows 10, Direct3D content reaches the visual tree through `SwapChainSurface`
-instead, as `examples/gpu` shows (see [GPU content](#gpu-content)).
+## Direct3D textures and screen capture
 
 `TextureSurface` uses the SDK's
 [`ICompositorInterop2::CreateCompositionTexture`](https://learn.microsoft.com/en-us/windows/win32/api/windows.ui.composition.interop/nf-windows-ui-composition-interop-icompositorinterop2-createcompositiontexture)
-to wrap an `ID3D11Texture2D` as a `CompositionTexture`, then attach it to a surface
-brush and sprite visual. The landscape is rendered with a D3D11 pixel shader;
-WinRT `MediaPlayer` copies decoded video frames into another set of D3D11 textures
-with `CopyFrameToVideoSurface`. Neither rendering path reads pixels back to the
-CPU. DirectWrite text, translucent plates, rounded clips, and animated visuals
-remain separate layers.
+to wrap an `ID3D11Texture2D` as a `CompositionTexture`, which a surface brush and
+sprite visual then show without a copy. It needs a recent Windows 11 runtime and a
+graphics device supporting composition textures, which `TextureSurface::supported`
+reports. On Windows 10, Direct3D content reaches the visual tree through
+`SwapChainSurface` instead (see [GPU content](#gpu-content)).
 
-Each stream rotates three shared textures. Before writing, the demo checks
-`TextureSurface::available()`, which polls the compositor's availability fence;
-it skips a frame when all buffers are busy. Consumers must stop referencing a
-texture and observe its availability before changing its pixels. Availability
-does not synchronize other application threads writing the same resource.
-Recreate these textures after graphics-device replacement; the demo restores
-both playing and paused content. Preview updates use a 16 ms UI timer and
-pause while minimized; an active WGC session continues until stopped.
-Shader compilation, media playback, and file-picker
-dependencies are confined to `demo/media`.
+Before writing a texture, check `TextureSurface::available()`, which polls the
+compositor's availability fence: stop referencing a texture and observe its
+availability before changing its pixels, and rotate several textures to avoid
+waiting. Availability does not synchronize other application threads writing the
+same resource. Recreate these textures after a graphics-device replacement.
 
 `ScreenCapture` wraps the SDK's
 [`Windows.Graphics.Capture`](https://learn.microsoft.com/en-us/windows/apps/develop/media-authoring-processing/screen-capture)
 frame pool and session. It accepts a `GraphicsCaptureItem` from the system picker
 or desktop interop, polls a free-threaded frame pool, and adapts its buffers when
-the target resizes. The demo copies each acquired frame on the GPU into a shared
-composition texture before returning the capture buffer to WGC. This copy keeps
-WGC's buffer lifetime independent of the compositor's availability fence; captured
-textures are not held after their frame is closed. Device replacement rebuilds
-capture resources for the selected target.
+the target resizes. To show captured content, copy each acquired frame on the GPU
+into a texture of your own before closing the frame; that keeps the capture's buffer
+lifetime independent of the compositor's availability fence. After a graphics-device
+replacement, call `recreate` with the new device.
 
 Call `start`, `next_frame`, `recreate`, and `close` on the UI thread. Close every
 returned frame before polling again, recreating, or stopping capture. Native item,
-frame-pool, and session accessors remain available. Target-closed callbacks only
-update shared atomic state; they never access a window. The demo also polls picker
-completion on the UI thread. Normal window closure waits for the picker to finish
-and discards its result, since canceling the async operation does not reliably
-dismiss the Windows picker UI.
+frame-pool, and session accessors remain available. The target-closed callback only
+updates shared atomic state, which `target_closed()` reports; it never accesses a
+window. Capture is an SDR BGRA source: it does not record files, capture audio, or
+tone-map HDR displays. `ScreenCapture::supported()` reports whether Windows Graphics
+Capture is available.
 
-Capture is an SDR BGRA preview: it does not record files, capture audio, or tone-map
-HDR displays. Screen-capture controls are disabled when WGC is unsupported.
+## Virtual surfaces
 
-## Virtual atlas demo
-
-```powershell
-.\out\build\release\composia-virtual-demo.exe
-```
-
-A scrollable, procedural map on a **1,048,576 × 1,048,576** pixel
-[`CompositionVirtualDrawingSurface`](https://learn.microsoft.com/en-us/uwp/api/windows.ui.composition.compositionvirtualdrawingsurface).
-An ordinary BGRA bitmap of that size would require 4 TiB. The demo draws only
-512-pixel tiles covering the viewport plus one tile of overscan, then calls
-`Trim` with the region to retain. Scrolling away releases the old regions;
-returning redraws them. No document-sized texture or CPU bitmap is created.
-The status bar reports cached tiles and retained pixel bytes; this is an estimate
+A [`CompositionVirtualDrawingSurface`](https://learn.microsoft.com/en-us/uwp/api/windows.ui.composition.compositionvirtualdrawingsurface)
+can be far larger than any bitmap: a 1,048,576 × 1,048,576 pixel surface would need
+4 TiB as an ordinary BGRA bitmap. `VirtualSurface` draws only the tiles covering a
+viewport plus one tile of overscan, then calls `Trim` with the region to retain, so
+scrolling away releases old regions and returning redraws them. `cached_tiles()` and
+`retained_pixel_bytes()` report the retained content; the byte count is an estimate
 of BGRA content, **not a measurement of GPU memory**, which includes driver
 allocation granularity and compositor overhead.
-
-Drag to pan, use either native scrollbar, or scroll with the mouse wheel
-(Shift for horizontal). Ctrl+wheel zooms around the pointer; the zoom buttons
-use the viewport center. Home/End jump to opposite corners, arrow keys move by
-a line, and Page Up/Down move by a viewport. Click the map to give it keyboard
-focus. Add `--warp` for software rendering. The demo keeps the Windows 10 baseline.
 
 `VirtualSurface` supplies the reusable cache for maps, document pages, and image
 editors. Its painter receives a tile-local, 96-DPI drawing context and the tile's
 rectangle in document pixels. Fetch/decode or generate only the relevant content
-inside the callback; the sample generates map tiles without external data.
+inside the callback.
 
 ```cpp
 composia::VirtualSurface document{app.graphics(), {1000000, 1000000}};
@@ -147,7 +101,7 @@ auto brush = app.compositor().CreateSurfaceBrush(document.surface());
 
 The size and viewport use document pixels, independent of window DPI. Use a
 surface brush with `Stretch(None)`, zero alignment ratios, scale for zoom, and
-negative viewport-origin offset, as in `demo/virtual`. `invalidate(rect)` dirties
+negative viewport-origin offset. `invalidate(rect)` dirties
 intersecting tiles; the next `update` repaints them. `clear()` trims all backing
 regions. `resize()` clears content and changes the logical dimensions. Device
 generation changes invalidate the cache automatically on the next update.
@@ -159,59 +113,20 @@ cached tiles before returning to managed updates.
 Dimensions must be positive and at most 2²⁴ pixels. Tile size is configurable
 from 64 to 2048 pixels; the default cache budget is 256 tiles. Oversized viewports
 are rejected before changing the retained region, rather than allocating an
-unbounded number of tiles. The demo limits zoom-out to fit this budget. It scales
-the cached raster when zooming; a production map viewer or document reader can
-add resolution levels and asynchronous loading for its own content.
+unbounded number of tiles; an application that zooms out must keep its viewport
+within this budget. A map viewer or document reader can add resolution levels and
+asynchronous loading for its own content.
 
 `ScopedSurfaceDraw` also accepts an update `RECT` in physical surface pixels.
 Its ordinary context uses whole-surface DIPs, with the update origin and atlas
 offset included in the transform. `VirtualSurface` deliberately changes that
 transform to tile-local pixels to preserve precision at distant coordinates.
 
-## Mail client demo
-
-```powershell
-.\out\build\release\composia-mail-demo.exe
-```
-
-A three-pane mail client built only from the framework's primitives: folders,
-a message list, a reading pane, and a compose form, over an in-memory mailbox of
-fictional messages. **It is a UI exercise.** There is no account, sign-in,
-storage, or network code; sending a message only appends it to the Sent folder
-for the lifetime of the process, and attachments are labels.
-
-The list scrolls with the wheel, Page Up/Down, or the keyboard. Clicking a row
-opens it and marks it read; stars toggle from the row or the header; **Archive**
-and **Delete** move messages and offer **Undo** in the status bar; deleting from
-Trash is permanent. Search filters the current folder as you type. **Compose**,
-**Reply**, and **Forward** open an editable form; **Send** files the message under
-Sent, **Save draft** keeps it under Drafts, and Escape saves a non-empty draft.
-Open a draft with Enter or a click to continue editing it. With the list focused:
-C composes, R replies, F forwards, E archives, S stars, U marks unread, Delete
-trashes, Up/Down and Home/End move, Ctrl+F focuses search, and Ctrl+Z undoes.
-Add `--warp` for software rendering. The demo keeps the Windows 10 baseline.
-
-The chrome, folders, rows, header, and status bar are drawn into the window's
-canvas surface on each paint; each paint also records the DIP rectangles of the
-clickable regions, which pointer messages hit-test against. Buttons are the
-framework's accessible `Button` controls. `demo/mail/TextField` is sample code
-for a composition-rendered, editable text box: a child HWND that draws its text
-into its own surface and positions a blinking caret visual with a composition
-animation, so blinking never redraws text. It supports typing, Backspace/Delete
-(with Ctrl for words), arrows, Home/End, Enter, Ctrl+V paste, wheel scrolling of
-multiline content, and pointer caret placement, and it hands Tab to the parent's
-dialog navigation. It has no selection, IME composition, or UI Automation
-provider; the audit message in the sample inbox lists what a product version
-would need. `demo/mail/MailModel` holds the mailbox and formatting helpers and
-has no UI dependencies. The demo deliberately avoids `std::format` and the CRT's
-time and locale formatting, and keeps its sample text as UTF-8 constant data; those
-three choices keep the statically linked release executable small, about 475 KB.
-
 ## Framework
 
 Link `Composia::UI` from CMake; public headers are in `include/composia`.
 
-The demo and tests are optional (`COMPOSIA_BUILD_DEMO` and
+The examples and tests are optional (`COMPOSIA_BUILD_EXAMPLES` and
 `COMPOSIA_BUILD_TESTS`). Both default off when included with `add_subdirectory`.
 To install and consume the library:
 
@@ -247,13 +162,6 @@ Installed targets carry their dependencies.
 | `Button` | Composition-rendered child HWND, pointer/keyboard input, and UI Automation Invoke, built only on the mechanisms above |
 | `Layout` | DIP points and rectangles, hit testing, and horizontal/vertical stack placement |
 | `Log` | An optional handler for the library's diagnostic events; `OutputDebugString` otherwise |
-
-`demo/main.cpp` only initializes logging and starts the application/window.
-`demo/DemoWindow.cpp` demonstrates drawing and scene assembly. The moving tile
-uses vector keyframes; the status dot uses scalar opacity and implicit offset
-animations; an expression centers the tile's container. Composition runs these
-animations independently of the UI message loop. The ordinary demo has no
-rendering timer.
 
 Resize events invalidate the canvas and coalesce into paint work. Text layouts
 are retained across redraws and device replacement; solid brushes come from the
@@ -307,8 +215,8 @@ drawing to the area, and `ScopedSurfaceDraw::update_bounds()` reports it so a
 painter can skip anything outside. A resize, a DPI change, or a replaced graphics
 device repaints everything. A target renders only the window it was created for.
 `ScopedSurfaceDraw::solid_brush` hands out brushes owned by the scope, created once
-per color and released when it finishes. `Button` and the demos are built on these
-public mechanisms only.
+per color and released when it finishes. `Button` is built on these public
+mechanisms only.
 
 Elements drawn inside one HWND need no window of their own: they share the window's
 pointer messages, capture, invalidation, and DIP conversions. Two things stay per
@@ -339,8 +247,8 @@ Create one `Application` on the UI thread and pass it to each `Window` construct
 `Application::run()` serves all registered windows and exits when the last top-level HWND
 closes. Destroy window objects and Composition objects, then call `app.close()`
 to observe shutdown errors. All framework operations and surface updates belong
-on that thread. The demo embeds a
-PerMonitorV2 manifest; consumers should embed the same DPI declaration. Layout
+on that thread. Applications should embed a PerMonitorV2 DPI awareness manifest,
+as `resources/composia.manifest` declares. Layout
 uses DIPs, surfaces use physical pixels, and the root applies the DPI scale.
 
 After native window destruction, `hwnd()` returns null and `dpi()` returns zero.
@@ -378,8 +286,7 @@ WARP, device loss and removal, and shutdown) as `event=name key=value` text, at 
 info or warning level. They go to `OutputDebugString` unless `set_log_handler` in
 `composia/Log.hpp` routes them elsewhere, such as an application's own log; set it
 before creating the `Application` to see every event. Composia depends on no logging
-library. The demos write these events, with their own, to log files through
-`demo/DemoLog.hpp`.
+library.
 
 ## Text input and native controls
 
@@ -425,15 +332,14 @@ silences hosted controls; return `std::nullopt` for messages it does not handle.
 Child HWNDs always draw above the parent's composition content, so hosted controls
 sit on top of a `CompositionWindowTarget` canvas and cannot be clipped, transformed,
 or animated by Composition. Embed a common-controls v6 manifest dependency, as
-`demo/app.manifest` does, to get the themed look.
+`resources/composia.manifest` does, to get the themed look.
 
-The other path is a composition-rendered field such as `demo/mail/TextField`,
-for when rendering must be custom. It is sample code: it handles typing, editing
-keys, paste, scrolling, and caret placement, but has no selection, IME composition,
-or accessibility. A product-quality custom field needs those: an `Accessible` with
-the Value pattern exposes the text, but screen readers also need the Text pattern
-for the caret, selection, and moving through the text, which Composia does not
-provide.
+The other path is a composition-rendered field, for when rendering must be custom:
+a child `Window` that draws its text and caret and handles keyboard input itself. A
+product-quality custom field needs selection, IME composition, and accessibility:
+an `Accessible` with the Value pattern exposes the text, but screen readers also
+need the Text pattern for the caret, selection, and moving through the text, which
+Composia does not provide.
 
 `examples/inputs/main.cpp` is a standalone program using only the public headers:
 text drawn into a composition canvas, two hosted EDIT controls and a native check
@@ -514,8 +420,7 @@ capture/cancellation, Space/Enter activation, Tab/Shift+Tab focus, disabled stat
 `Accessible` with name, button role, focus/enabled properties, Invoke, and
 focus/invocation events.
 UI Automation invocation is marshaled to the application queue; retained providers
-reject calls after the control is destroyed. The demo's buttons change and reset
-the tile's motion.
+reject calls after the control is destroyed.
 
 ## Validation
 
@@ -523,13 +428,8 @@ the tile's motion.
 hardware-preferred and forced-WARP desktop checks. Desktop checks briefly show
 windows and require a Windows desktop. CTest retains output in
 `out/build/<preset>/Testing/Temporary/LastTest.log`; `build.ps1 -Test` also writes
-JUnit results in `out/build/<preset>/test-results-*.xml`. The demos write their
-log files (`composia.log`, `composia-mail.log`, and so on) in the working directory.
-Smoke-test code lives in separate test executables. `mail-model` (core) checks the
-in-memory mailbox and its formatting helpers without windows; `mail-client` and
-`mail-client-warp` (desktop) drive the mail demo through pointer, keyboard, and
-button input: selection, stars, trash and undo, folders, search, scrolling, compose,
-send, reply, forward, drafts, Escape handling, resize, and device replacement.
+JUnit results in `out/build/<preset>/test-results-*.xml`. The checks use only the
+public API; shared helpers live in `tests/support`.
 
 The Windows CI matrix builds Debug/Release and runs `-L core`: signals, layout,
 text measurement, and a relocated installed-package consumer that compiles and
@@ -597,29 +497,23 @@ providers. A separate MTA UI Automation client discovers and invokes the button.
 Monitor tests move a window across all attached monitors and check child
 HWND/Composition sizing; their output records monitor count and observed DPIs.
 
-Texture checks run with hardware-preferred and forced-WARP devices. Media checks
-verify changing GPU and decoded video pixels, opaque alpha, pause/resume, resize,
-playing and paused device replacement, Unicode file paths, and missing-file
-recovery. The small [synthetic video fixture](tests/assets/README.md) is generated
-locally; tests need no network media. Pixel readback is test-only. The six texture
-and media checks report a CTest skip when composition textures are unsupported;
-a skipped check is not evidence of media playback on that machine.
+Texture checks run with hardware-preferred and forced-WARP devices and report a
+CTest skip when composition textures are unsupported.
 
-Four WGC checks capture an owned test window and its monitor using hardware-preferred
-and forced-WARP devices. They verify known changing pixels in the texture submitted
-to the compositor, target resize, device replacement, stop/restart, target closure, and closing
-the preview during active capture. Monitor checks read back only a pixel inside the
-owned test window; captured desktop images are not saved. These checks skip only
-when WGC or composition textures report unsupported. The system picker requires
-interactive verification; automated capture tests select their owned target through
-the SDK's desktop interop.
+Four capture checks use `ScreenCapture` on an owned test window and on its monitor,
+with hardware-preferred and forced-WARP devices. They verify known changing pixels
+in captured frames, a target resize, device replacement, stop and restart, and the
+target closing. Monitor checks read back only a pixel inside the owned test window;
+captured desktop images are not saved. These checks skip only when WGC is
+unsupported. The system picker requires interactive verification; automated capture
+tests select their owned target through the SDK's desktop interop.
 
 Virtual-surface checks verify sparse-cache bounds across 80 distant viewports,
 pixel contents after trimming, tile reuse and dirty-region redraw, callback
 failure recovery, resize, and graphics replacement on hardware and WARP.
 They also check the maximum logical extent, partial-update offsets at five
-DPIs, and the demo's scrolling, zoom, panning, resize, and recovery. These tests
-verify the retained region and rendering; they do not measure driver VRAM usage.
+DPIs, and the rejection of invalid sizes, tile sizes, budgets, and rectangles. These
+tests verify the retained region and rendering; they do not measure driver VRAM usage.
 
 Verified locally on Windows 11 build 26300 with clang-cl 21.1.1 and SDK
 10.0.26100.0, with one 96-DPI monitor. Failure-injection checkpoints are compiled
@@ -681,6 +575,9 @@ members, and require `find_package(Composia 0.3)`. Behavior changes:
   type, and the installed package never required it. Applications that want it
   add `directxtk` to their own manifest and use it with Composia's device.
 - `SwapChainSurface` is new: Direct3D 11 content in the visual tree on Windows 10.
+- The demos are no longer on `main`; they live on the `demo` branch.
+  `COMPOSIA_BUILD_DEMO` is now `COMPOSIA_BUILD_EXAMPLES`, which builds the two
+  examples, and the application manifest moved to `resources/composia.manifest`.
 
 ## License
 
