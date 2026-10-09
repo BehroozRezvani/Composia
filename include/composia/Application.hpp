@@ -1,5 +1,6 @@
 #pragma once
 
+#include <composia/Appearance.hpp>
 #include <composia/GraphicsDevice.hpp>
 #include <composia/Window.hpp>
 #include <winrt/Windows.System.h>
@@ -40,6 +41,11 @@ public:
     [[nodiscard]] GraphicsDevice& graphics() const;
     [[nodiscard]] const composition::Compositor& compositor() const noexcept { return compositor_; }
     [[nodiscard]] const winrt::Windows::System::DispatcherQueueController& dispatcher() const noexcept { return dispatcher_; }
+    // The system appearance as of the last change Windows reported. When a settings change
+    // alters it, every window's on_appearance_changed runs and the window is invalidated, then the
+    // on_appearance_changed subscribers run. Keep the Connection for as long as the callback should run.
+    [[nodiscard]] const Appearance& appearance() const noexcept { return appearance_; }
+    Connection on_appearance_changed(std::function<void(const Appearance&)> callback) { return appearanceChanged_.connect(std::move(callback)); }
 
 private:
     friend class Window;
@@ -51,6 +57,8 @@ private:
     void remember_focus() const noexcept;
     void verify_thread() const;
     void notify_graphics_recreated();
+    void refresh_appearance();
+    void watch_appearance() noexcept;
     void shutdown() noexcept;
 
     // The thread's single-threaded apartment, for the Application's lifetime.
@@ -65,6 +73,11 @@ private:
     std::exception_ptr callbackError_;
     struct CallbackState;
     std::shared_ptr<CallbackState> callbacks_;
+    static bool enqueue(const std::shared_ptr<CallbackState>&, std::function<void()> callback);
+    struct AppearanceWatch;
+    std::unique_ptr<AppearanceWatch> appearanceWatch_;
+    Appearance appearance_;
+    Signal<const Appearance&> appearanceChanged_;
     Connection graphicsConnection_;
     winrt::Windows::Foundation::IAsyncAction shutdownAction_{nullptr};
     DWORD thread_ = GetCurrentThreadId();

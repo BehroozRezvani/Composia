@@ -29,6 +29,18 @@ constexpr COLORREF fieldText = RGB(234, 242, 244), fieldBackground = RGB(24, 35,
 IDWriteFactory7* text_factory(Application& app) { return app.graphics().text_factory().get(); }
 std::wstring percent_text(float value) { return std::to_wstring(std::lround(value * 100.0f)) + L"%"; }
 
+// The example's own button look, given to Button as its painter: a rounded accent button on the
+// canvas. The canvas color fills the corners, since a child window cannot show its parent.
+void paint_accent_button(ScopedSurfaceDraw& draw, numerics::float2 size, const Button::State& state) {
+    const auto dc = draw.context().get();
+    dc->Clear(D2D1::ColorF(canvasColor));
+    const UINT32 fill = !state.enabled ? 0x35434B : state.pressed ? 0x3DAB93 : state.hovered ? 0xA2F5DF : accentColor;
+    const auto bounds = D2D1::RoundedRect({2, 2, std::max(2.0f, size.x - 2), std::max(2.0f, size.y - 2)}, 8, 8);
+    dc->FillRoundedRectangle(bounds, draw.solid_brush(fill));
+    if (state.focused) { dc->DrawRoundedRectangle(bounds, draw.solid_brush(0xFFFFFF), 2); }
+    dc->DrawTextLayout({0, 0}, state.label.layout().get(), draw.solid_brush(state.enabled ? canvasColor : mutedColor));
+}
+
 // A slider drawn into its own child window. One HWND makes it a tab stop that the dialog
 // navigation reaches, gives it keyboard focus, and lets it carry a UI Automation element; the
 // track, fill, and thumb inside it are drawn, not windows.
@@ -161,7 +173,7 @@ public:
           name_(*this, L"EDIT", WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL),
           notes_(*this, L"EDIT", WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN),
           loud_(*this, L"BUTTON", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX, L"Shout"),
-          greet_(*this, L"Say hello"),
+          greet_(*this, L"Say hello", paint_accent_button),
           volume_(*this, L"Volume", 0.42f) {
         name_.send(EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"Your name"));
         name_.set_colors(fieldText, fieldBackground);

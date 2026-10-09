@@ -70,6 +70,13 @@ target_include_directories(composia-application-tests PRIVATE ${PROJECT_SOURCE_D
 composia_add_scenarios(composia-application-tests application TIMEOUT 20
     SCENARIOS transaction repeated failed sequential hardware-fallback shutdown callback-error wrong-thread)
 
+# The system appearance, its changes, the dark title bar, and Button's painters.
+composia_test_target(composia-appearance-tests AppearanceTests.cpp composia-testing)
+target_compile_definitions(composia-appearance-tests PRIVATE COMPOSIA_TESTING)
+target_include_directories(composia-appearance-tests PRIVATE ${PROJECT_SOURCE_DIR}/src)
+target_link_libraries(composia-appearance-tests PRIVATE dwmapi)
+composia_add_scenarios(composia-appearance-tests appearance WARP SCENARIOS system changes title-bar button-painter button-default)
+
 # Window and message loop lifetime.
 composia_test_target(composia-window-tests WindowTests.cpp)
 composia_add_scenarios(composia-window-tests window TIMEOUT 15

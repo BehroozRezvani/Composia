@@ -2,6 +2,7 @@
 #include <composia/Application.hpp>
 #include "WindowHelpers.hpp"
 #include <UIAutomation.h>
+#include <dwmapi.h>
 #include <algorithm>
 #include <cmath>
 #include <climits>
@@ -199,6 +200,16 @@ void Window::set_automation_provider(IRawElementProviderSimple* provider) noexce
     automationProvider_ = provider;
 }
 
+void Window::set_dark_title_bar(bool dark) {
+    const auto handle = require_hwnd();
+    THROW_HR_IF(E_INVALIDARG, !topLevel_);
+    const BOOL value = dark ? TRUE : FALSE;
+    // Windows 10 before version 2004 knows DWMWA_USE_IMMERSIVE_DARK_MODE as 19.
+    if (FAILED(DwmSetWindowAttribute(handle, DWMWA_USE_IMMERSIVE_DARK_MODE, &value, sizeof(value)))) {
+        THROW_IF_FAILED(DwmSetWindowAttribute(handle, 19, &value, sizeof(value)));
+    }
+}
+
 void Window::set_notification_handler(HWND control, NotificationHandler* handler) {
     if (!handler) {
         if (control) { RemovePropW(control, handlerProperty); }
@@ -354,6 +365,14 @@ void Window::track(UINT message, WPARAM wparam, LPARAM lparam) {
         break;
     case WM_ENABLE:
         propagate_enabled();
+        break;
+    case WM_SETTINGCHANGE:
+    case WM_SYSCOLORCHANGE:
+    case WM_THEMECHANGED:
+    case WM_DWMCOLORIZATIONCOLORCHANGED:
+        // Windows announces appearance changes to top-level windows. The application reads the
+        // settings again and tells every window only if they changed.
+        if (topLevel_) { application_.refresh_appearance(); }
         break;
     case WM_DESTROY: {
         hovered_ = tracking_ = false;

@@ -60,7 +60,8 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int showCommand) {
 }
 ```
 
-[`examples/hello`](examples/hello/main.cpp) adds text, a `Button`, and error handling;
+[`examples/hello`](examples/hello/main.cpp) adds text, a `Button`, error handling, and the
+system's light, dark, or high contrast appearance;
 [`examples/inputs`](examples/inputs/main.cpp) shows native controls and accessibility, and
 [`examples/gpu`](examples/gpu/main.cpp) Direct3D content. Larger demos are on the `demo`
 branch.
@@ -119,7 +120,8 @@ declarations in your own manifest.
 
 | Header | Provides |
 | --- | --- |
-| `Application.hpp` | The UI thread's message loop, compositor, and graphics device recovery |
+| `Application.hpp` | The UI thread's message loop, compositor, graphics device recovery, and system appearance |
+| `Appearance.hpp` | Dark mode, high contrast, accent color, text scale, and system colors |
 | `Window.hpp` | An HWND with input, focus, enabled state, invalidation, and DPI tracking |
 | `CompositionWindowTarget.hpp` | A window's visual tree and its drawing surface |
 | `ScopedSurfaceDraw.hpp` | Direct2D drawing into a Composition surface |
@@ -131,7 +133,7 @@ declarations in your own manifest.
 | `TextLayout.hpp` | DirectWrite text layout and measurement |
 | `NativeControl.hpp` | Standard Win32 controls hosted in a window |
 | `Accessible.hpp` | A UI Automation element for a window |
-| `Button.hpp` | A composition-drawn, accessible push button |
+| `Button.hpp` | An accessible push button whose look a painter supplies |
 | `AnimationHelpers.hpp` | Visual and animation shortcuts |
 | `Layout.hpp` | DIP geometry and stack placement |
 | `Signal.hpp` | Signals and connections |
