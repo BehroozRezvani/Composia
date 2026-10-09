@@ -86,6 +86,56 @@ SIZE Window::client_pixels() const {
     return {rect.right - rect.left, rect.bottom - rect.top};
 }
 
+void Window::focus() { SetFocus(require_hwnd()); }
+bool Window::focused() const noexcept { return hwnd_ && GetFocus() == hwnd_.get(); }
+void Window::set_enabled(bool value) { EnableWindow(require_hwnd(), value); }
+
+bool Window::enabled() const noexcept {
+    if (!hwnd_) { return false; }
+    for (auto current = hwnd_.get(); current; current = GetParent(current)) {
+        if (!IsWindowEnabled(current)) { return false; }
+        if (!(GetWindowLongPtrW(current, GWL_STYLE) & WS_CHILD)) { break; }
+    }
+    return true;
+}
+
+void Window::capture_pointer() {
+    SetCapture(require_hwnd());
+    captured_ = true;
+}
+
+void Window::release_pointer() noexcept {
+    if (!captured_) { return; }
+    captured_ = false;
+    if (hwnd_ && GetCapture() == hwnd_.get()) { ReleaseCapture(); }
+}
+
+float Window::scale() const noexcept {
+    const auto value = dpi();
+    return value ? static_cast<float>(value) / 96.0f : 1.0f;
+}
+
+layout::Point Window::to_dips(POINT pixels) const noexcept {
+    const auto factor = scale();
+    return {static_cast<float>(pixels.x) / factor, static_cast<float>(pixels.y) / factor};
+}
+
+layout::Point Window::pointer_position(LPARAM lparam) const noexcept {
+    return to_dips({static_cast<short>(LOWORD(lparam)), static_cast<short>(HIWORD(lparam))});
+}
+
+layout::Point Window::pointer_position_from_screen(LPARAM lparam) const {
+    POINT point{static_cast<short>(LOWORD(lparam)), static_cast<short>(HIWORD(lparam))};
+    THROW_IF_WIN32_BOOL_FALSE(ScreenToClient(require_hwnd(), &point));
+    return to_dips(point);
+}
+
+layout::Rect Window::client_bounds() const {
+    const auto pixels = client_pixels();
+    const auto factor = scale();
+    return {0, 0, static_cast<float>(pixels.cx) / factor, static_cast<float>(pixels.cy) / factor};
+}
+
 void Window::rethrow_callback_error() {
     if (callbackError_) {
         std::rethrow_exception(callbackError_);
@@ -120,7 +170,55 @@ LRESULT CALLBACK Window::window_proc(HWND handle, UINT message, WPARAM wparam, L
     }
 }
 
+// Keeps the hover, capture, focus, and enabled state current before on_message sees the message,
+// so overrides can rely on it whether or not they handle the message themselves.
+void Window::track(UINT message, WPARAM wparam, LPARAM lparam) {
+    switch (message) {
+    case WM_MOUSEMOVE:
+        if (!tracking_ && hwnd_) {
+            TRACKMOUSEEVENT tracking{sizeof(TRACKMOUSEEVENT), TME_LEAVE, hwnd_.get(), 0};
+            if (TrackMouseEvent(&tracking)) { tracking_ = true; }
+        }
+        if (!hovered_) { hovered_ = true; on_hover(true); }
+        break;
+    case WM_MOUSELEAVE:
+        tracking_ = false;
+        if (hovered_) { hovered_ = false; on_hover(false); }
+        break;
+    case WM_SETFOCUS:
+        on_focus(true);
+        break;
+    case WM_KILLFOCUS:
+        on_focus(false);
+        break;
+    case WM_CAPTURECHANGED:
+        if (captured_ && reinterpret_cast<HWND>(lparam) != hwnd_.get()) {
+            captured_ = false;
+            on_capture_lost();
+        }
+        break;
+    case WM_CANCELMODE:
+        if (captured_) {
+            captured_ = false;
+            ReleaseCapture();
+            on_capture_lost();
+        }
+        break;
+    case WM_ENABLE:
+        on_enabled(wparam != 0);
+        break;
+    case WM_DESTROY:
+        hovered_ = tracking_ = false;
+        if (captured_) {
+            captured_ = false;
+            ReleaseCapture();
+        }
+        break;
+    }
+}
+
 LRESULT Window::dispatch(HWND handle, UINT message, WPARAM wparam, LPARAM lparam) {
+    track(message, wparam, lparam);
     if (auto result = on_message(message, wparam, lparam)) {
         return *result;
     }

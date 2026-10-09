@@ -1,5 +1,7 @@
 #include <composia/CompositionWindowTarget.hpp>
+#include <composia/Application.hpp>
 #include <composia/GraphicsDevice.hpp>
+#include <composia/ScopedSurfaceDraw.hpp>
 #include <windows.ui.composition.interop.h>
 
 namespace composia {
@@ -43,6 +45,22 @@ void CompositionWindowTarget::resize(SIZE pixels, UINT dpi) {
     root_.Size(logicalSize_);
     root_.Scale({scale, scale, 1.0f});
     canvas_.Size(logicalSize_);
+}
+
+bool CompositionWindowTarget::render(Window& window, const std::function<void(ScopedSurfaceDraw&, numerics::float2)>& paint) {
+    const auto pixels = window.client_pixels();
+    if (pixels.cx <= 0 || pixels.cy <= 0 || IsIconic(window.hwnd())) {
+        return false;
+    }
+    auto& application = window.application();
+    application.render([&] {
+        const auto dpi = window.dpi();
+        resize(pixels, dpi);
+        ScopedSurfaceDraw draw{surface_, application.graphics(), dpi};
+        paint(draw, logicalSize_);
+        draw.finish();
+    });
+    return true;
 }
 
 }

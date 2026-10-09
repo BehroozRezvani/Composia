@@ -227,17 +227,17 @@ Installed targets carry their dependencies.
 | Module | Responsibility |
 | --- | --- |
 | `Application` | STA, dispatcher queue, compositor, message loop, and graphics recovery |
-| `Window` | Owning HWND, exception-safe message dispatch, resize and per-monitor DPI events |
+| `Window` | Owning HWND, exception-safe message dispatch, resize and per-monitor DPI events, pointer hover and capture, focus, and enabled state |
 | `GraphicsDevice` | D3D11 device5, D2D device6/context6, DirectWrite factory7, and Composition graphics device |
-| `CompositionWindowTarget` | Desktop HWND bridge, visual root, canvas surface/brush, and pixel/DIP sizing |
-| `ScopedSurfaceDraw` | Balanced surface BeginDraw/EndDraw with DPI and atlas-offset translation |
+| `CompositionWindowTarget` | Desktop HWND bridge, visual root, canvas surface/brush, pixel/DIP sizing, and one-call client rendering |
+| `ScopedSurfaceDraw` | Balanced surface BeginDraw/EndDraw with DPI and atlas-offset translation, and scope-owned solid brushes |
 | `VirtualSurface` | Sparse drawing surface, bounded viewport tile cache, trimming, dirty regions, and recovery |
 | `TextureSurface` | Direct D3D11 texture composition, capability check, and availability fence |
 | `ScreenCapture` | WGC session, captured-frame polling, target resize, and device replacement |
 | `AnimationHelpers` | Containers/sprites, implicit offset, vector/scalar keyframes, and expression layout |
 | `TextLayout` | Reusable DirectWrite format/layout with incremental bounds updates |
 | `Button` | Composition-rendered child HWND, pointer/keyboard input, and UI Automation Invoke |
-| `Layout` | DIP rectangles, hit testing, and horizontal/vertical stack placement |
+| `Layout` | DIP points and rectangles, hit testing, and horizontal/vertical stack placement |
 
 `demo/main.cpp` only initializes logging and starts the application/window.
 `demo/DemoWindow.cpp` demonstrates drawing and scene assembly. The moving tile
@@ -247,9 +247,31 @@ animations independently of the UI message loop. The ordinary demo has no
 rendering timer.
 
 Resize events invalidate the canvas and coalesce into paint work. Text layouts
-are retained across redraws and device replacement; drawing brushes are cached
-until the graphics-recreated notification. `Window.hpp` includes only native
-windowing support; Composition and graphics headers are separate.
+are retained across redraws and device replacement; solid brushes come from the
+draw scope, so nothing device-dependent is cached across frames. `Window.hpp`
+includes only native windowing support; Composition and graphics headers are
+separate.
+
+`Window` tracks the state every control and application window needs, so that
+plumbing is not repeated: `hovered()` with `on_hover`; `capture_pointer()` and
+`release_pointer()` with `on_capture_lost`, raised when another window takes the
+capture or `WM_CANCELMODE` cancels it, never for an explicit release; `focus()`
+and `focused()` with `on_focus`; and `set_enabled()` and `enabled()` with
+`on_enabled`, where `enabled()` is false while any ancestor is disabled.
+`pointer_position()` converts a client-relative mouse message to DIPs,
+`pointer_position_from_screen()` does the same for wheel messages, `scale()` is
+the DPI factor, and `client_bounds()` is the client area in DIPs. The tracking
+runs before `on_message`, so an override can handle a raw message and still read
+the state. Painted elements that share one HWND use these directly; nothing
+requires an HWND per element.
+
+`CompositionWindowTarget::render` paints a window in one call: it sizes the
+surface to the client area at the window's DPI, opens a draw scope through
+`Application::render` (one retry after device loss), and passes the scope and
+the logical size to the callback, skipping minimized or empty windows.
+`ScopedSurfaceDraw::solid_brush` hands out brushes owned by the scope, created
+once per color and released when it finishes. `Button` and the demo are built on
+these public mechanisms only.
 
 Create one `Application` on the UI thread and pass it to each `Window` constructor.
 `Application::run()` serves all registered windows and exits when the last top-level HWND
@@ -337,7 +359,13 @@ only checks that do not open desktop windows.
 
 The checks exercise real HWND attachment, vector/text drawing, exception-unwind
 cleanup, resize, current-monitor DPI sizing, minimize/restore, native animation
-completion, and redraw after graphics replacement. Device loss is injected as
+completion, and redraw after graphics replacement. `foundation-pointer`,
+`foundation-focus`, and `foundation-render` (with WARP variants) check the
+window mechanisms: DIP conversion of pointer and screen coordinates, hover entry
+and leave, capture released explicitly, taken by another window, or cancelled,
+focus and enabled notifications including disabled ancestors, the rendering
+helper's sizing, minimized skip, device replacement, and injected device-loss
+retry, scope-owned brushes, and rejection of destroyed windows. Device loss is injected as
 an HRESULT and a removal-event signal; these checks do not reset the GPU or
 qualify driver/TDR recovery. Pixel readback checks cover text, color, atlas offsets,
 and 96/120/144/168/192 DPI before and after recovery. Multiple-window lifetime,

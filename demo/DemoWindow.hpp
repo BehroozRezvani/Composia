@@ -17,11 +17,10 @@ public:
 protected:
     void on_resize() override;
     void on_paint() override;
-    void on_graphics_recreated() override;
     std::optional<LRESULT> on_message(UINT, WPARAM, LPARAM) override;
 
 private:
-    void draw_canvas();
+    void draw_canvas(composia::ScopedSurfaceDraw&, composia::numerics::float2 size);
 
     composia::Application& app_;
     composia::CompositionWindowTarget target_;
@@ -30,7 +29,6 @@ private:
     composia::composition::SpriteVisual tile_{nullptr};
     composia::composition::SpriteVisual indicator_{nullptr};
     std::vector<composia::TextLayout> labels_;
-    wil::com_ptr<ID2D1SolidColorBrush> brush_;
     composia::Button motionButton_;
     composia::Button resetButton_;
     composia::Connection motionClick_;

@@ -5,6 +5,10 @@
 
 namespace composia::layout {
 
+struct Point {
+    float x{}, y{};
+};
+
 struct Rect {
     float x{}, y{}, width{}, height{};
     [[nodiscard]] bool contains(float px, float py) const noexcept {

@@ -29,6 +29,7 @@ ScopedSurfaceDraw::ScopedSurfaceDraw(const composition::CompositionDrawingSurfac
 
 ScopedSurfaceDraw::~ScopedSurfaceDraw() noexcept {
     if (drawing_) {
+        brushes_.clear();
         const auto result = interop_->EndDraw();
         context_.reset();
         LOG_IF_FAILED(result);
@@ -38,10 +39,22 @@ ScopedSurfaceDraw::~ScopedSurfaceDraw() noexcept {
 void ScopedSurfaceDraw::finish() {
     if (drawing_) {
         drawing_ = false;
+        brushes_.clear();
         const auto result = interop_->EndDraw();
         context_.reset();
         THROW_IF_FAILED(result);
     }
+}
+
+ID2D1SolidColorBrush* ScopedSurfaceDraw::solid_brush(const D2D1_COLOR_F& color) {
+    THROW_HR_IF(E_NOT_VALID_STATE, !context_);
+    for (const auto& [existing, brush] : brushes_) {
+        if (existing.r == color.r && existing.g == color.g && existing.b == color.b && existing.a == color.a) { return brush.get(); }
+    }
+    wil::com_ptr<ID2D1SolidColorBrush> brush;
+    THROW_IF_FAILED(context_->CreateSolidColorBrush(color, brush.put()));
+    brushes_.emplace_back(color, brush);
+    return brush.get();
 }
 
 }

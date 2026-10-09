@@ -24,7 +24,10 @@ public:
 private:
     void on_resize() override;
     void on_paint() override;
-    void on_graphics_recreated() override;
+    void on_hover(bool) override;
+    void on_focus(bool) override;
+    void on_capture_lost() override;
+    void on_enabled(bool) override;
     std::optional<LRESULT> on_message(UINT, WPARAM, LPARAM) override;
     bool hit_test(LPARAM) const;
     void disconnect_provider() noexcept;
@@ -32,11 +35,10 @@ private:
 
     CompositionWindowTarget target_;
     TextLayout text_;
-    wil::com_ptr<ID2D1SolidColorBrush> brush_;
     std::shared_ptr<detail::ButtonState> state_;
     wil::com_ptr<IRawElementProviderSimple> provider_;
     Signal<> clicked_;
-    bool hovered_{};
+    bool inside_{};
     bool mousePressed_{};
     bool keyPressed_{};
 };

@@ -47,26 +47,21 @@ DemoWindow::DemoWindow(Application& app)
 }
 
 void DemoWindow::redraw() {
-    const auto pixels = client_pixels();
-    if (pixels.cx <= 0 || pixels.cy <= 0 || IsIconic(hwnd())) {
+    const auto bounds = client_bounds();
+    if (bounds.width <= 0 || bounds.height <= 0 || IsIconic(hwnd())) {
         return;
     }
-    app_.render([&] {
-        target_.resize(pixels, dpi());
-        const auto size = target_.logical_size();
-        scene_.Size({size.x, std::max(1.0f, size.y - 270)});
-        const auto buttons = layout::stack({32, 116, std::max(0.0f, size.x - 64), 44},
-            std::array{160.0f, 100.0f}, 12, layout::Axis::horizontal);
-        motionButton_.set_bounds(buttons[0]);
-        resetButton_.set_bounds(buttons[1]);
-        indicator_.Offset({size.x - 42.0f, 42.0f, 0.0f});
-        draw_canvas();
-    });
+    scene_.Size({bounds.width, std::max(1.0f, bounds.height - 270)});
+    const auto buttons = layout::stack({32, 116, std::max(0.0f, bounds.width - 64), 44},
+        std::array{160.0f, 100.0f}, 12, layout::Axis::horizontal);
+    motionButton_.set_bounds(buttons[0]);
+    resetButton_.set_bounds(buttons[1]);
+    indicator_.Offset({bounds.width - 42.0f, 42.0f, 0.0f});
+    target_.render(*this, [&](ScopedSurfaceDraw& draw, numerics::float2 size) { draw_canvas(draw, size); });
 }
 
 void DemoWindow::on_resize() { invalidate(); }
 void DemoWindow::on_paint() { redraw(); }
-void DemoWindow::on_graphics_recreated() { brush_.reset(); }
 
 std::optional<LRESULT> DemoWindow::on_message(UINT message, WPARAM, LPARAM lparam) {
     if (message == WM_GETMINMAXINFO) {
@@ -78,26 +73,21 @@ std::optional<LRESULT> DemoWindow::on_message(UINT message, WPARAM, LPARAM lpara
     return std::nullopt;
 }
 
-void DemoWindow::draw_canvas() {
-    ScopedSurfaceDraw draw(target_.surface(), app_.graphics(), dpi());
+void DemoWindow::draw_canvas(ScopedSurfaceDraw& draw, numerics::float2 size) {
     const auto dc = draw.context().get();
-    const auto size = target_.logical_size();
     dc->Clear(D2D1::ColorF(0x101923));
 
-    if (!brush_) { THROW_IF_FAILED(dc->CreateSolidColorBrush(D2D1::ColorF(0x24333F), brush_.put())); }
-    const auto brush = brush_.get();
-    brush->SetColor(D2D1::ColorF(0x24333F));
+    const auto dots = draw.solid_brush(0x24333F);
     for (float x = 32.0f; x < size.x; x += 32.0f) {
         for (float y = 120.0f; y < size.y - 88.0f; y += 32.0f) {
-            dc->FillEllipse(D2D1::Ellipse({x, y}, 1.0f, 1.0f), brush);
+            dc->FillEllipse(D2D1::Ellipse({x, y}, 1.0f, 1.0f), dots);
         }
     }
 
     const auto text = [&](std::size_t index, float y, float height, UINT32 color) {
         auto& label = labels_[index];
         label.resize(std::max(1.0f, size.x - 64.0f), height);
-        brush->SetColor(D2D1::ColorF(color));
-        dc->DrawTextLayout({32, y}, label.layout().get(), brush);
+        dc->DrawTextLayout({32, y}, label.layout().get(), draw.solid_brush(color));
     };
 
     text(0, 31, 24, 0x6FE6C8);
@@ -105,14 +95,12 @@ void DemoWindow::draw_canvas() {
 
     const DirectX::SimpleMath::Vector2 center{size.x * 0.5f, 166 + scene_.Size().y * 0.5f};
     const auto radius = std::clamp(scene_.Size().y * 0.5f - 20.0f, 60.0f, 142.0f);
-    brush->SetColor(D2D1::ColorF(0x314C57));
-    dc->DrawEllipse(D2D1::Ellipse({center.x, center.y}, radius, radius), brush, 1.0f);
-    dc->DrawEllipse(D2D1::Ellipse({center.x, center.y}, radius + 15, radius + 15), brush, 0.5f);
+    const auto ring = draw.solid_brush(0x314C57);
+    dc->DrawEllipse(D2D1::Ellipse({center.x, center.y}, radius, radius), ring, 1.0f);
+    dc->DrawEllipse(D2D1::Ellipse({center.x, center.y}, radius + 15, radius + 15), ring, 0.5f);
 
-    brush->SetColor(D2D1::ColorF(0x31404A));
-    dc->DrawLine({32.0f, size.y - 88.0f}, {size.x - 32.0f, size.y - 88.0f}, brush);
+    dc->DrawLine({32.0f, size.y - 88.0f}, {size.x - 32.0f, size.y - 88.0f}, draw.solid_brush(0x31404A));
     text(2, size.y - 69, 25, 0xEAF2F4);
     text(3, size.y - 41, 25, 0x93A9B5);
-    draw.finish();
     ++drawCount_;
 }

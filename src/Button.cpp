@@ -2,7 +2,6 @@
 #include <composia/Application.hpp>
 #include <composia/ScopedSurfaceDraw.hpp>
 #include <UIAutomation.h>
-#include <windowsx.h>
 #include <algorithm>
 #include <mutex>
 #include <string>
@@ -137,8 +136,8 @@ void Button::disconnect_provider() noexcept {
     if (provider_) { LOG_IF_FAILED(UiaDisconnectProvider(provider_.get())); provider_.reset(); }
 }
 
-void Button::enabled(bool value) { EnableWindow(require_hwnd(), value); }
-bool Button::enabled() const noexcept { return effectively_enabled(hwnd()); }
+void Button::enabled(bool value) { set_enabled(value); }
+bool Button::enabled() const noexcept { return Window::enabled(); }
 
 void Button::invoke() {
     (void)require_hwnd();
@@ -150,43 +149,51 @@ void Button::invoke() {
 }
 
 void Button::on_resize() { invalidate(); }
-void Button::on_graphics_recreated() { brush_.reset(); }
+void Button::on_hover(bool) { invalidate(); }
+
+void Button::on_focus(bool focused) {
+    { std::lock_guard lock{state_->mutex}; state_->focused = focused; }
+    if (!focused) { cancel_press(); return; }
+    invalidate();
+    if (provider_ && UiaClientsAreListening()) { LOG_IF_FAILED(UiaRaiseAutomationEvent(provider_.get(), UIA_AutomationFocusChangedEventId)); }
+}
+
+void Button::on_capture_lost() {
+    mousePressed_ = false;
+    invalidate();
+}
+
+void Button::on_enabled(bool value) {
+    if (!value) { cancel_press(); }
+    invalidate();
+    enabled_event(provider_.get(), !value, value);
+}
 
 void Button::on_paint() {
-    const auto pixels = client_pixels();
-    if (pixels.cx <= 0 || pixels.cy <= 0) { return; }
-    application().render([&] {
-        target_.resize(pixels, dpi());
-        ScopedSurfaceDraw draw{target_.surface(), application().graphics(), dpi()};
+    target_.render(*this, [&](ScopedSurfaceDraw& draw, numerics::float2 size) {
         const auto dc = draw.context().get();
-        const auto size = target_.logical_size();
         dc->Clear(D2D1::ColorF(0x101923));
-        if (!brush_) { THROW_IF_FAILED(dc->CreateSolidColorBrush(D2D1::ColorF(0x6FE6C8), brush_.put())); }
-        const bool pressed = keyPressed_ || (mousePressed_ && hovered_);
-        const UINT32 fill = !enabled() ? 0x35434B : pressed ? 0x3DAB93 : hovered_ ? 0xA2F5DF : 0x6FE6C8;
-        brush_->SetColor(D2D1::ColorF(fill));
+        const bool pressed = keyPressed_ || (mousePressed_ && inside_);
+        const UINT32 fill = !enabled() ? 0x35434B : pressed ? 0x3DAB93 : hovered() ? 0xA2F5DF : 0x6FE6C8;
         const auto bounds = D2D1::RoundedRect({2, 2, std::max(2.0f, size.x - 2), std::max(2.0f, size.y - 2)}, 8, 8);
-        dc->FillRoundedRectangle(bounds, brush_.get());
-        if (GetFocus() == hwnd()) {
-            brush_->SetColor(D2D1::ColorF(D2D1::ColorF::White));
-            dc->DrawRoundedRectangle(bounds, brush_.get(), 2);
+        dc->FillRoundedRectangle(bounds, draw.solid_brush(fill));
+        if (focused()) {
+            dc->DrawRoundedRectangle(bounds, draw.solid_brush(D2D1::ColorF(D2D1::ColorF::White)), 2);
         }
         text_.resize(std::max(1.0f, size.x), std::max(1.0f, size.y));
-        brush_->SetColor(D2D1::ColorF(enabled() ? 0x101923 : 0x93A9B5));
-        dc->DrawTextLayout({0, 0}, text_.layout().get(), brush_.get());
-        draw.finish();
+        dc->DrawTextLayout({0, 0}, text_.layout().get(), draw.solid_brush(enabled() ? 0x101923 : 0x93A9B5));
     });
 }
 
 bool Button::hit_test(LPARAM position) const {
-    const auto size = client_pixels();
-    const layout::Rect bounds{0, 0, static_cast<float>(size.cx), static_cast<float>(size.cy)};
-    return bounds.contains(static_cast<float>(GET_X_LPARAM(position)), static_cast<float>(GET_Y_LPARAM(position)));
+    const auto bounds = client_bounds();
+    const auto point = pointer_position(position);
+    return bounds.contains(point.x, point.y);
 }
 
 void Button::cancel_press() {
     mousePressed_ = keyPressed_ = false;
-    if (GetCapture() == hwnd()) { ReleaseCapture(); }
+    release_pointer();
     invalidate();
 }
 
@@ -199,22 +206,17 @@ std::optional<LRESULT> Button::on_message(UINT message, WPARAM wparam, LPARAM lp
         break;
     case WM_GETDLGCODE:
         return DLGC_BUTTON | ((wparam == VK_SPACE || wparam == VK_RETURN) ? DLGC_WANTMESSAGE : 0);
-    case WM_MOUSEMOVE: {
-        const auto inside = hit_test(lparam);
-        if (hovered_ != inside) { hovered_ = inside; invalidate(); }
-        TRACKMOUSEEVENT tracking{sizeof(TRACKMOUSEEVENT), TME_LEAVE, hwnd(), 0};
-        THROW_IF_WIN32_BOOL_FALSE(TrackMouseEvent(&tracking));
-        return 0;
-    }
-    case WM_MOUSELEAVE:
-        hovered_ = false;
-        invalidate();
+    case WM_MOUSEMOVE:
+        if (mousePressed_) {
+            const auto inside = hit_test(lparam);
+            if (inside != inside_) { inside_ = inside; invalidate(); }
+        }
         return 0;
     case WM_LBUTTONDOWN:
         if (enabled() && hit_test(lparam)) {
-            SetFocus(hwnd());
-            SetCapture(hwnd());
-            hovered_ = mousePressed_ = true;
+            focus();
+            capture_pointer();
+            inside_ = mousePressed_ = true;
             invalidate();
         }
         return 0;
@@ -224,15 +226,12 @@ std::optional<LRESULT> Button::on_message(UINT message, WPARAM wparam, LPARAM lp
         if (activate) { invoke(); }
         return 0;
     }
-    case WM_CAPTURECHANGED:
-        mousePressed_ = false;
+    case WM_CANCELMODE:
+        keyPressed_ = false;
         invalidate();
         return 0;
-    case WM_CANCELMODE:
-        cancel_press();
-        return 0;
     case WM_KEYDOWN:
-        if (enabled() && GetFocus() == hwnd() && !(lparam & (1LL << 30))) {
+        if (enabled() && focused() && !(lparam & (1LL << 30))) {
             if (wparam == VK_SPACE) { keyPressed_ = true; invalidate(); return 0; }
             if (wparam == VK_RETURN) { invoke(); return 0; }
         }
@@ -249,23 +248,6 @@ std::optional<LRESULT> Button::on_message(UINT message, WPARAM wparam, LPARAM lp
     case WM_CHAR:
         if (wparam == VK_SPACE || wparam == VK_RETURN) { return 0; }
         break;
-    case WM_SETFOCUS:
-    case WM_KILLFOCUS: {
-        { std::lock_guard lock{state_->mutex}; state_->focused = message == WM_SETFOCUS; }
-        if (message == WM_KILLFOCUS) { cancel_press(); }
-        else {
-            invalidate();
-            if (provider_ && UiaClientsAreListening()) { LOG_IF_FAILED(UiaRaiseAutomationEvent(provider_.get(), UIA_AutomationFocusChangedEventId)); }
-        }
-        return 0;
-    }
-    case WM_ENABLE: {
-        const bool value = wparam != 0;
-        if (!value) { cancel_press(); }
-        invalidate();
-        enabled_event(provider_.get(), !value, value);
-        return 0;
-    }
     case WM_DESTROY:
         disconnect_provider();
         return 0;
