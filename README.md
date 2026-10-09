@@ -33,8 +33,7 @@ ctest --preset debug
 ```
 
 vcpkg supplies WIL and generated C++/WinRT SDK projections, which the library's
-public headers use, and DirectX Toolkit 11 (whose vcpkg package is `directxtk`),
-which only the demo uses. The application/framework compile with clang-cl; vcpkg
+public headers use; nothing else comes from vcpkg. The application/framework compile with clang-cl; vcpkg
 builds ABI-compatible static dependencies using the MSVC toolchain and the static
 CRT (`x64-windows-static`), and the project sets `CMAKE_MSVC_RUNTIME_LIBRARY` to
 match. The executables import only Windows system DLLs; no Visual C++
@@ -65,7 +64,9 @@ software rendering.
 
 This demo needs a recent Windows 11 runtime and a graphics device supporting
 composition textures. It checks support at runtime and displays an explanation
-when unavailable. The ordinary demo keeps the framework's Windows 10 baseline.
+when unavailable. The ordinary demo keeps the framework's Windows 10 baseline; on
+Windows 10, Direct3D content reaches the visual tree through `SwapChainSurface`
+instead, as `examples/gpu` shows (see [GPU content](#gpu-content)).
 
 `TextureSurface` uses the SDK's
 [`ICompositorInterop2::CreateCompositionTexture`](https://learn.microsoft.com/en-us/windows/win32/api/windows.ui.composition.interop/nf-windows-ui-composition-interop-icompositorinterop2-createcompositiontexture)
@@ -236,7 +237,8 @@ Installed targets carry their dependencies.
 | `CompositionWindowTarget` | Desktop HWND bridge, visual root, canvas surface/brush, pixel/DIP sizing, and one-call client rendering that updates only the invalidated area |
 | `ScopedSurfaceDraw` | Balanced surface BeginDraw/EndDraw with DPI and atlas-offset translation, an update clip, and scope-owned solid brushes |
 | `VirtualSurface` | Sparse drawing surface, bounded viewport tile cache, trimming, dirty regions, and recovery |
-| `TextureSurface` | Direct D3D11 texture composition, capability check, and availability fence |
+| `TextureSurface` | Direct D3D11 texture composition, capability check, and availability fence (Windows 11) |
+| `SwapChainSurface` | A swap chain for Composition: Direct3D 11 frames in the visual tree on Windows 10 and later, presented on demand and rebuilt after device replacement |
 | `ScreenCapture` | WGC session, captured-frame polling, target resize, and device replacement |
 | `AnimationHelpers` | Containers/sprites, implicit offset, vector/scalar keyframes, and expression layout |
 | `TextLayout` | Reusable DirectWrite format/layout with a chosen family and locale, incremental bounds updates, and measurement |
@@ -444,6 +446,50 @@ signal to show keyboard help.
 .\out\build\release\composia-inputs-example.exe
 ```
 
+## GPU content
+
+Composia composes; it does not render 3D or run a render loop. An application draws
+with Direct3D 11, through `app.graphics().d3d_device()` and `d3d_context()` and any
+library it likes, into one of two surfaces that sit in the visual tree, where
+Composition clips, transforms, animates, and composes them like any other visual:
+
+- `TextureSurface` wraps an `ID3D11Texture2D` as a composition texture, with no copy
+  and an availability fence. It needs a recent Windows 11 runtime and driver support,
+  which `TextureSurface::supported` reports.
+- `SwapChainSurface` is a DXGI swap chain made for Composition, for Windows 10 and
+  later. Put its `brush()` on a sprite visual sized to it in DIPs, resize it in pixels
+  with the visual, and call `present` with a callback that draws into the back
+  buffer.
+
+Neither surface runs a render loop or a frame clock. Composition keeps showing the
+last frame and runs its own animations without new frames, so an application
+presents only when its content changes: after input, new data such as a decoded
+video frame, a resize, or a device replacement. Content that changes continuously
+brings its own timing, such as its video source's frame events. Swap chains, textures,
+and every other Direct3D object belong to the device that made them: after a graphics
+device replacement, `SwapChainSurface` rebuilds its swap chain, empty, on the next
+`present` or `resize`, and Composia's repaint of every window after recovery is the
+moment to present again and to rebuild the application's own Direct3D objects.
+
+```cpp
+composia::SwapChainSurface frame{app, {1280, 720}};
+sprite.Brush(frame.brush());
+frame.present([&](ID3D11RenderTargetView* target, ID3D11Texture2D*) {
+    const float clear[]{0.1f, 0.1f, 0.1f, 1};
+    app.graphics().d3d_context()->ClearRenderTargetView(target, clear);
+    // Draw the scene into target here.
+});
+```
+
+`examples/gpu/main.cpp` draws a triangle with Direct3D 11 into a `SwapChainSurface`
+behind a rounded composition clip. Dragging or the arrow keys turn it, each change
+presents one frame, and a frame counter shows that nothing presents while a
+compositor animation keeps running.
+
+```powershell
+.\out\build\release\composia-gpu-example.exe
+```
+
 ## Controls
 
 ```cpp
@@ -517,6 +563,11 @@ with a WARP variant) cover the window mechanisms:
 - `foundation-partial`: captures the target's visual with Windows Graphics Capture
   and checks the composited pixels after partial repaints, inside and outside the
   repainted areas. It reports a CTest skip when capture is unavailable.
+- `foundation-swapchain`: checks, through the same capture, the composited pixels
+  of a `SwapChainSurface` after its first present, a resize, a graphics device
+  replacement (which must rebuild the swap chain), and an injected device loss
+  during `present`; that its last frame stays on screen while only the canvas
+  changes; and that invalid sizes, alpha modes, and renderers are rejected.
 - `foundation-accessible`: an `Accessible` on a plain window in-process: properties
   including the automation ID and localized control type, focus and enabled
   reporting, focusability while disabled, renaming, `WM_GETOBJECT` routing, the
@@ -588,7 +639,8 @@ These behaviors are not verified by the checks above:
   follows documented Windows behavior (no leave until the capture ends) rather
   than an observed mouse drag, and focus restoration is driven by
   `SetActiveWindow` and `WM_SYSCOMMAND` minimize and restore rather than Alt+Tab.
-- Windows 10, and hosted controls without a common-controls v6 manifest.
+- Windows 10, including `SwapChainSurface`, which exists for it but ran only on
+  this Windows 11 machine, and hosted controls without a common-controls v6 manifest.
 - Whether the update clip is ever needed: on this machine, drawing outside a
   partial update's rectangle did not reach the surface even without the clip, so
   the clip guards against a behavior the checks could not produce.
@@ -625,6 +677,10 @@ members, and require `find_package(Composia 0.3)`. Behavior changes:
   handler is set with `set_log_handler`; an application that saw them through
   spdlog's default logger can forward them to spdlog from that handler. Release
   executables are 230 to 275 KB smaller.
+- DirectX Toolkit is no longer a dependency; only the demo used it, for one vector
+  type, and the installed package never required it. Applications that want it
+  add `directxtk` to their own manifest and use it with Composia's device.
+- `SwapChainSurface` is new: Direct3D 11 content in the visual tree on Windows 10.
 
 ## License
 

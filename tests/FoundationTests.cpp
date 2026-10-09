@@ -6,6 +6,7 @@
 #include <composia/NativeControl.hpp>
 #include <composia/ScopedSurfaceDraw.hpp>
 #include <composia/ScreenCapture.hpp>
+#include <composia/SwapChainSurface.hpp>
 #include <commctrl.h>
 #include <uxtheme.h>
 #include <UIAutomation.h>
@@ -497,6 +498,129 @@ int partial(bool warp) {
     app.close();
     return 0;
 }
+
+// A swap chain in the visual tree: presented frames appear in the composited result, through a
+// resize, a device replacement, and an injected device loss, and they stay there without being
+// presented again.
+int swapchain(bool warp) {
+    if (!composia::ScreenCapture::supported()) {
+        std::cout << "skipped: Windows Graphics Capture is unavailable\n";
+        return skipped;
+    }
+    composia::Application app{warp};
+    {
+        Probe window{app, L"Swap chain"};
+        composia::CompositionWindowTarget target{app.compositor(), app.graphics(), window.hwnd()};
+        UINT32 canvas = 0x000000;
+        window.paint = [&] {
+            (void)target.render(window, [&](composia::ScopedSurfaceDraw& draw, composia::numerics::float2) { draw.context()->Clear(D2D1::ColorF(canvas)); });
+        };
+        window.show();
+        UpdateWindow(window.hwnd());
+        const auto scale = window.scale();
+
+        require(rejects(E_INVALIDARG, [&] { composia::SwapChainSurface invalid{app, {0, 10}}; }), "An empty swap chain was accepted");
+        require(rejects(E_INVALIDARG, [&] { composia::SwapChainSurface invalid{app, {10, 10}, DXGI_ALPHA_MODE_STRAIGHT}; }),
+            "An alpha mode Composition does not support was accepted");
+        {
+            composia::SwapChainSurface translucent{app, {10, 10}, DXGI_ALPHA_MODE_PREMULTIPLIED};
+            translucent.present([&](ID3D11RenderTargetView* view, ID3D11Texture2D*) {
+                const float clear[]{0, 0, 0, 0};
+                app.graphics().d3d_context()->ClearRenderTargetView(view, clear);
+            });
+        }
+
+        composia::SwapChainSurface chain{app, {160, 100}};
+        require(rejects(E_INVALIDARG, [&] { chain.resize({-1, 5}); }), "A negative swap chain size was accepted");
+        require(rejects(E_INVALIDARG, [&] { chain.present({}); }), "A missing renderer was accepted");
+        auto sprite = app.compositor().CreateSpriteVisual();
+        sprite.Offset({20, 20, 0});
+        sprite.Brush(chain.brush());
+        const auto place = [&] {
+            const auto size = chain.size();
+            sprite.Size({static_cast<float>(size.cx) / scale, static_cast<float>(size.cy) / scale});
+        };
+        place();
+        target.root().Children().InsertAtTop(sprite);
+        unsigned presents{};
+        const auto fill = [&](float red, float green, float blue) {
+            chain.present([&](ID3D11RenderTargetView* view, ID3D11Texture2D*) {
+                ++presents;
+                const float color[]{red, green, blue, 1};
+                app.graphics().d3d_context()->ClearRenderTargetView(view, color);
+            });
+        };
+        fill(1, 0, 0);
+
+        composia::ScreenCapture capture;
+        capture.start(composia::capture::GraphicsCaptureItem::CreateFromVisual(target.root()), app.graphics().d3d_device().get());
+        const auto logical = target.logical_size();
+        // In DIPs: inside the first size, inside only the grown size, and on the canvas.
+        const composia::layout::Point inside{20 + 40 / scale, 20 + 40 / scale}, grown{20 + 180 / scale, 20 + 110 / scale},
+            outside{logical.x - 10, logical.y - 10};
+        const auto is = [](Pixel pixel, UINT32 rgb) {
+            return std::abs(pixel.r - static_cast<int>((rgb >> 16) & 0xFF)) < 12 && std::abs(pixel.g - static_cast<int>((rgb >> 8) & 0xFF)) < 12 &&
+                std::abs(pixel.b - static_cast<int>(rgb & 0xFF)) < 12;
+        };
+        int stage{}, polls{};
+        unsigned framesShown{};
+        window.timer = [&] {
+            require(++polls < 300, "Captured frames never showed the expected swap chain content");
+            auto frame = capture.next_frame();
+            if (!frame) { return; }
+            const auto close = wil::scope_exit([&] { frame.Close(); });
+            const auto size = frame.ContentSize();
+            const auto sample = [&](composia::layout::Point point) {
+                return read_pixel(app, frame, static_cast<UINT>(point.x / logical.x * static_cast<float>(size.Width)),
+                    static_cast<UINT>(point.y / logical.y * static_cast<float>(size.Height)));
+            };
+            if (stage == 0 && is(sample(inside), 0xFF0000) && is(sample(outside), 0x000000)) {
+                chain.resize({200, 120});
+                place();
+                fill(0, 1, 0);
+                stage = 1;
+            } else if (stage == 1 && is(sample(grown), 0x00FF00)) {
+                require(is(sample(inside), 0x00FF00), "The resized swap chain was not filled");
+                // Swap chains belong to their device; a replacement rebuilds this one on the next present.
+                const auto previous = chain.swap_chain().get();
+                app.graphics().recreate();
+                capture.recreate(app.graphics().d3d_device().get());
+                fill(0, 0, 1);
+                require(chain.swap_chain().get() != previous, "A replaced device kept the old swap chain");
+                stage = 2;
+            } else if (stage == 2 && is(sample(inside), 0x0000FF)) {
+                const auto generation = app.graphics().generation();
+                bool injected{};
+                chain.present([&](ID3D11RenderTargetView* view, ID3D11Texture2D*) {
+                    if (!injected) { injected = true; throw winrt::hresult_error(DXGI_ERROR_DEVICE_REMOVED); }
+                    ++presents;
+                    const float magenta[]{1, 0, 1, 1};
+                    app.graphics().d3d_context()->ClearRenderTargetView(view, magenta);
+                });
+                require(app.graphics().generation() == generation + 1, "A device loss while presenting did not replace the device");
+                capture.recreate(app.graphics().d3d_device().get());
+                stage = 3;
+            } else if (stage == 3 && is(sample(inside), 0xFF00FF)) {
+                // Change only the canvas: the swap chain keeps its last frame without another present.
+                framesShown = presents;
+                canvas = 0x404040;
+                window.invalidate();
+                stage = 4;
+            } else if (stage == 4 && is(sample(outside), 0x404040)) {
+                require(is(sample(inside), 0xFF00FF) && presents == framesShown, "The swap chain content needed another present to stay visible");
+                std::cout << "swap chain frames composited through resize, device replacement, and device loss; presents=" << presents << '\n';
+                stage = 5;
+                THROW_IF_WIN32_BOOL_FALSE(DestroyWindow(window.hwnd()));
+            }
+        };
+        THROW_LAST_ERROR_IF(SetTimer(window.hwnd(), 1, 30, nullptr) == 0);
+        require(app.run() == 0, "Swap chain loop failed");
+        require(stage == 5, "The swap chain stages did not complete");
+        capture.close();
+    }
+    app.close();
+    return 0;
+}
 }
 
 void accessible(bool warp) {
@@ -777,6 +901,7 @@ int main(int argc, char** argv) {
         else if (name == "focus") { focus(warp); }
         else if (name == "render") { render(warp); }
         else if (name == "partial") { return partial(warp); }
+        else if (name == "swapchain") { return swapchain(warp); }
         else if (name == "accessible") { accessible(warp); }
         else if (name == "native") { native(warp); }
         else { throw std::runtime_error("Unknown test"); }

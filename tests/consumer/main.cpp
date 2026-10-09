@@ -8,6 +8,8 @@
 #include <composia/Button.hpp>
 #include <composia/TextureSurface.hpp>
 #include <composia/ScreenCapture.hpp>
+#include <composia/SwapChainSurface.hpp>
+#include <composia/Log.hpp>
 #include <composia/VirtualSurface.hpp>
 
 int main(int argc, char**) {
@@ -28,6 +30,8 @@ int main(int argc, char**) {
             composia::Accessible accessible{panel, {.name = L"Panel"}};
             composia::TextLayout text{app.graphics().text_factory().get(), L"Text", 12};
             (void)text.metrics();
+            composia::SwapChainSurface frame{app, {16, 16}};
+            composia::set_log_handler(nullptr);
         }
         app.close();
     }

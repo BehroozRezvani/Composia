@@ -253,7 +253,7 @@ Theo)", 12 * 24h + 1h},
     {Folder::inbox, "Lumen CI", "builds@ci.lumen.example", team, "Weekly dependency report",
      R"(Dependency report for the week.
 
-Updates available: cppwinrt (patch), directxtk (no change), wil (patch).
+Updates available: cppwinrt (patch), wil (patch).
 Vulnerabilities: none reported for pinned versions.
 
 Open the vcpkg baseline PR to apply the patch updates.

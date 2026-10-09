@@ -1,7 +1,6 @@
 #include "DemoWindow.hpp"
 #include <composia/AnimationHelpers.hpp>
 #include <composia/ScopedSurfaceDraw.hpp>
-#include <SimpleMath.h>
 #include <algorithm>
 #include <array>
 #include <string_view>
@@ -93,7 +92,7 @@ void DemoWindow::draw_canvas(ScopedSurfaceDraw& draw, numerics::float2 size) {
     text(0, 31, 24, 0x6FE6C8);
     text(1, 65, 47, 0xEAF2F4);
 
-    const DirectX::SimpleMath::Vector2 center{size.x * 0.5f, 166 + scene_.Size().y * 0.5f};
+    const D2D1_POINT_2F center{size.x * 0.5f, 166 + scene_.Size().y * 0.5f};
     const auto radius = std::clamp(scene_.Size().y * 0.5f - 20.0f, 60.0f, 142.0f);
     const auto ring = draw.solid_brush(0x314C57);
     dc->DrawEllipse(D2D1::Ellipse({center.x, center.y}, radius, radius), ring, 1.0f);
