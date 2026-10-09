@@ -1,4 +1,5 @@
 #include "MailDemoWindow.hpp"
+#include "../DemoButton.hpp"
 #include <composia/ScopedSurfaceDraw.hpp>
 #include <windowsx.h>
 #include <algorithm>
@@ -144,9 +145,9 @@ private:
 
 MailDemoWindow::MailDemoWindow(Application& app)
     : Window(app, L"Lumen Mail", 1240, 800), app_(app), target_(app.compositor(), app.graphics(), hwnd()),
-      mailbox_(mail::Mailbox::sample(mail::Clock::now())), composeButton_(*this, L"Compose"), replyButton_(*this, L"Reply"),
-      forwardButton_(*this, L"Forward"), archiveButton_(*this, L"Archive"), deleteButton_(*this, L"Delete"),
-      sendButton_(*this, L"Send"), draftButton_(*this, L"Save draft"), discardButton_(*this, L"Discard"), undoButton_(*this, L"Undo"),
+      mailbox_(mail::Mailbox::sample(mail::Clock::now())), composeButton_(*this, L"Compose", demo::paint_button), replyButton_(*this, L"Reply", demo::paint_button),
+      forwardButton_(*this, L"Forward", demo::paint_button), archiveButton_(*this, L"Archive", demo::paint_button), deleteButton_(*this, L"Delete", demo::paint_button),
+      sendButton_(*this, L"Send", demo::paint_button), draftButton_(*this, L"Save draft", demo::paint_button), discardButton_(*this, L"Discard", demo::paint_button), undoButton_(*this, L"Undo", demo::paint_button),
       search_(*this, L"Search mail"), to_(*this, L"Recipients"), subject_(*this, L"Subject"), body_(*this, L"Write your message", true) {
     connections_[0] = composeButton_.on_click([this] { compose(); });
     connections_[1] = replyButton_.on_click([this] { reply(); });

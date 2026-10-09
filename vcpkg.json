@@ -5,7 +5,7 @@
   "homepage": "https://github.com/BehroozRezvani/Composia",
   "license": "MIT",
   "supports": "windows & !uwp",
-  "builtin-baseline": "19780d9cdf84d0944cf9a318666703b89ab6629c",
+  "builtin-baseline": "0699a19d0c6386247ce50d4dedbb8217d484d536",
   "dependencies": [
     "wil",
     "cppwinrt"

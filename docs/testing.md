@@ -4,7 +4,7 @@ Composia's tests drive the real platform: real HWNDs, the real compositor, and D
 both a hardware device and WARP. Where a result is visible, they read back pixels: from a
 drawing surface, from a captured frame of a window's visual tree, or from a hosted control
 through `PrintWindow`. They use only the public API, except where the test library injects
-failures (see [Failure injection](#failure-injection)).
+failures or a stand-in system appearance (see [Test hooks](#test-hooks)).
 
 ## Running the tests
 
@@ -40,6 +40,7 @@ Tests are named `<area>-<scenario>`; a `-warp` suffix runs the same scenario on 
 | --- | --- |
 | `core-signal`, `core-layout`, `core-text` | Signal connection lifetimes, nested and reentrant emission, and failing subscribers; stack layout, shortening, and invalid input; text measurement, wrapping, font family, weight, and locale, and invalid arguments |
 | `application-*` | Device replacement that fails at each step and changes nothing; repeated recovery and its notifications; a persistent device loss; applications one after another on a thread, also after a failed start; the fallback to WARP; shutdown ordering; posted callback errors; calls from another thread |
+| `appearance-*` | `Appearance::current()` against the system's settings; changes reaching every window and subscriber, only when the appearance changed and only through top-level windows, with errors reported; the dark title bar; what a `Button` painter receives, `set_painter`, and `set_label`; and the default look's pixels in light, dark, and high contrast, pressed and not |
 | `window-*` | Destroyed windows and parents rejecting every operation; several top-level windows; errors from a secondary window; the `WM_QUIT` exit code; a handler's error kept for `rethrow_callback_error` |
 | `smoke-lifecycle` | A window's first paint, coalesced resizes, drawing scopes unwound by exceptions, DPI sizing, minimize and restore, device loss while drawing and while idle, and a composition animation that completes without a render loop |
 | `foundation-pointer` | DIP conversions; hover, including during capture; capture released, taken, cancelled, and released on destroy; the hover and capture hooks and signals, also on a plain `Window` |
@@ -59,12 +60,15 @@ Tests are named `<area>-<scenario>`; a `-warp` suffix runs the same scenario on 
 | `package-consumer` | The installed package, moved elsewhere, consumed with `find_package`: every header, the version macros, and the embedded manifest |
 | `subproject-consumer` | The source tree added to another build with `add_subdirectory`, using that build's DLL runtime library, with no tests or examples |
 
-## Failure injection
+## Test hooks
 
 Some failures cannot be caused from outside: a device replacement failing halfway, or no
-hardware device at all. `src/FailureInjection.hpp` defines failure points that only the
-`composia-testing` library compiles in, and only the `application-*` tests link it; the
-library that is installed never carries them. Device loss itself is injected as an
+hardware device at all. `src/TestHooks.hpp` defines failure points that only the
+`composia-testing` library compiles in, and only the `application-*` and `appearance-*` tests
+link it; the library that is installed never carries them. The same library lets the
+`appearance-*` tests stand in a chosen appearance for the system's, since changing the real
+settings would change the desktop. The `UISettings` events that also report changes are not
+triggered by any test. Device loss itself is injected as an
 `HRESULT` from a drawing callback or by signaling the removal event: the tests do not reset
 a GPU or qualify driver recovery.
 
@@ -80,11 +84,11 @@ each function's coverage in `coverage-functions.txt`. It warns about a library s
 no test links, since such a file would be missing from the report rather than shown as
 uncovered.
 
-On the machine below, the tests run 280 of the library's 281 functions and 99.4% of its
-lines. The function left is the `NativeControl` constructor's cleanup after a failure that
-follows creating the control. The lines left are failure-only cleanup, two destructors'
-error logging, and the window constructor's correction for a monitor whose DPI differs from
-the system DPI.
+On the machine below, the tests run 301 of the library's 305 functions and 98.7% of its
+lines. The functions left are the `NativeControl` constructor's cleanup after a failure that
+follows creating the control, and the handler for `UISettings` change events, which runs only
+when the real settings change. The other lines left are failure-only cleanup and error logging,
+and the window constructor's correction for a monitor whose DPI differs from the system DPI.
 
 ## Continuous integration
 
@@ -110,4 +114,7 @@ and one 96-DPI monitor, on hardware and on WARP. The checks do not establish:
   target through the SDK's desktop interop.
 - Whether the update clip is ever needed: on this machine, drawing outside a partial
   update's rectangle did not reach the surface even without it.
+- Real appearance changes. The change path is driven with a stand-in appearance and the
+  messages Windows sends; switching the real dark mode, contrast theme, accent, or text size,
+  and the `UISettings` events that report some of them, are not exercised.
 - Consumers built with MSVC (`cl.exe`) rather than clang-cl.

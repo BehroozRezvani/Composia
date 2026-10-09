@@ -12,8 +12,9 @@ Build them with the library, from the repository root:
 
 They are built into `out\build\<preset>\demo`. `COMPOSIA_BUILD_DEMOS` turns them off. Each
 writes a log file of its own and Composia's events (`composia.log`, `composia-mail.log`, and
-so on) in its working directory, through `DemoLog.hpp`. Add `--warp` to any of them for
-software rendering.
+so on) in its working directory, through `DemoLog.hpp`. Every `Button` they create draws the
+demos' rounded accent look through `DemoButton.hpp`, the painter Button takes. Add `--warp`
+to any of them for software rendering.
 
 ## Composition demo
 

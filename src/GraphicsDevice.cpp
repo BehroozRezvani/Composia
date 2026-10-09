@@ -1,7 +1,7 @@
 #include <composia/GraphicsDevice.hpp>
 #include <windows.ui.composition.interop.h>
 #include <string>
-#include "FailureInjection.hpp"
+#include "TestHooks.hpp"
 #include "Logging.hpp"
 
 namespace composia {

@@ -1,6 +1,7 @@
 #include <composia/Application.hpp>
 #include "Logging.hpp"
 #include <DispatcherQueue.h>
+#include <winrt/Windows.UI.ViewManagement.h>
 #include <algorithm>
 #include <atomic>
 #include <stdexcept>
@@ -12,6 +13,13 @@ struct Application::CallbackState {
     std::atomic_bool accepting{true};
     winrt::Windows::System::DispatcherQueue queue{nullptr};
     std::exception_ptr error;
+};
+
+// UISettings reports color and text size changes, which no window message announces reliably.
+struct Application::AppearanceWatch {
+    winrt::Windows::UI::ViewManagement::UISettings settings{nullptr};
+    winrt::Windows::UI::ViewManagement::UISettings::ColorValuesChanged_revoker colors;
+    winrt::Windows::UI::ViewManagement::UISettings::TextScaleFactorChanged_revoker textScale;
 };
 
 Application::Apartment::Apartment() { winrt::init_apartment(winrt::apartment_type::single_threaded); }
@@ -34,6 +42,8 @@ Application::Application(bool forceWarp) {
         compositor_ = composition::Compositor{};
         graphics_ = std::make_unique<GraphicsDevice>(compositor_, forceWarp);
         graphicsConnection_ = graphics_->on_recreated([this](auto) { notify_graphics_recreated(); });
+        appearance_ = Appearance::current();
+        watch_appearance();
     } catch (...) {
         shutdown();
         throw;
@@ -60,8 +70,9 @@ GraphicsDevice& Application::graphics() const {
     return *graphics_;
 }
 
-bool Application::post(std::function<void()> callback) {
-    const auto state = callbacks_;
+bool Application::post(std::function<void()> callback) { return enqueue(callbacks_, std::move(callback)); }
+
+bool Application::enqueue(const std::shared_ptr<CallbackState>& state, std::function<void()> callback) {
     if (!state || !state->accepting.load()) { return false; }
     return state->queue.TryEnqueue([state, callback = std::move(callback)] {
         if (!state->accepting.load()) { return; }
@@ -78,6 +89,7 @@ void Application::close() {
     closing_ = true;
     const auto clearClosing = wil::scope_exit([&] { closing_ = false; });
     if (callbacks_) { callbacks_->accepting.store(false); }
+    appearanceWatch_.reset();
     std::optional<WPARAM> quitCode;
     const auto restoreQuit = wil::scope_exit([&] { if (quitCode) { PostQuitMessage(static_cast<int>(*quitCode)); } });
     if (dispatcher_) {
@@ -168,6 +180,46 @@ void Application::notify_graphics_recreated() {
             } catch (...) { if (!firstError) { firstError = std::current_exception(); } }
         }
     }
+    if (firstError) { std::rethrow_exception(firstError); }
+}
+
+// UISettings raises its events on a worker thread; the refresh runs on the UI thread, while the
+// application still accepts callbacks.
+void Application::watch_appearance() noexcept {
+    try {
+        auto watch = std::make_unique<AppearanceWatch>();
+        watch->settings = winrt::Windows::UI::ViewManagement::UISettings{};
+        const auto changed = [state = std::weak_ptr{callbacks_}, this](const auto&, const auto&) {
+            if (const auto alive = state.lock()) { (void)enqueue(alive, [this] { refresh_appearance(); }); }
+        };
+        watch->colors = watch->settings.ColorValuesChanged(winrt::auto_revoke, changed);
+        watch->textScale = watch->settings.TextScaleFactorChanged(winrt::auto_revoke, changed);
+        appearanceWatch_ = std::move(watch);
+    } catch (...) {
+        detail::log(LogLevel::warning, "event=appearance_events_unavailable");
+    }
+}
+
+// Reads the appearance again and, when it changed, tells every window and then the subscribers.
+void Application::refresh_appearance() {
+    if (closing_ || closed_) { return; }
+    const auto now = Appearance::current();
+    if (now == appearance_) { return; }
+    appearance_ = now;
+    detail::log(LogLevel::info, std::string{"event=appearance_changed dark="} + (now.dark ? "1" : "0") +
+        " high_contrast=" + (now.highContrast ? "1" : "0"));
+    const auto snapshot = windows_;
+    std::exception_ptr firstError;
+    const auto live = [&](Window* window) { return std::ranges::find(windows_, window) != windows_.end() && window->hwnd(); };
+    for (auto window : snapshot) {
+        if (!live(window)) { continue; }
+        try {
+            window->on_appearance_changed();
+            if (live(window)) { window->invalidate(); }
+        } catch (...) { if (!firstError) { firstError = std::current_exception(); } }
+    }
+    try { appearanceChanged_.emit(appearance_); }
+    catch (...) { if (!firstError) { firstError = std::current_exception(); } }
     if (firstError) { std::rethrow_exception(firstError); }
 }
 

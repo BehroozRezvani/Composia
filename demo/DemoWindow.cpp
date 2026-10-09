@@ -1,4 +1,5 @@
 #include "DemoWindow.hpp"
+#include "DemoButton.hpp"
 #include <composia/AnimationHelpers.hpp>
 #include "DemoAnimations.hpp"
 #include <composia/ScopedSurfaceDraw.hpp>
@@ -10,7 +11,7 @@ using namespace composia;
 
 DemoWindow::DemoWindow(Application& app)
     : Window(app, L"Composia", 960, 640), app_(app), target_(app.compositor(), app.graphics(), hwnd()),
-      motionButton_(*this, L"Change motion"), resetButton_(*this, L"Reset") {
+      motionButton_(*this, L"Change motion", demo::paint_button), resetButton_(*this, L"Reset", demo::paint_button) {
     scene_ = animations::container(app.compositor(), {960, 370});
     scene_.Offset({0, 166, 0});
     target_.root().Children().InsertAtTop(scene_);

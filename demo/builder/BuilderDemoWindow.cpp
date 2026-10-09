@@ -1,4 +1,5 @@
 #include "BuilderDemoWindow.hpp"
+#include "../DemoButton.hpp"
 #include "AppPackager.hpp"
 #include "FormPlayerWindow.hpp"
 #include <composia/ScopedSurfaceDraw.hpp>
@@ -52,12 +53,12 @@ bool shift_down() noexcept { return GetKeyState(VK_SHIFT) < 0; }
 BuilderDemoWindow::BuilderDemoWindow(Application& app)
     : Window(app, L"Composia | UI builder", 1380, 880), app_(app), target_(app.compositor(), app.graphics(), hwnd()),
       history_(builder::Document::sample()),
-      newButton_(*this, L"New"), openButton_(*this, L"Open"), saveButton_(*this, L"Save"), undoButton_(*this, L"Undo"),
-      redoButton_(*this, L"Redo"), previewButton_(*this, L"Preview"), stopButton_(*this, L"Stop preview"), buildButton_(*this, L"Build app…"),
+      newButton_(*this, L"New", demo::paint_button), openButton_(*this, L"Open", demo::paint_button), saveButton_(*this, L"Save", demo::paint_button), undoButton_(*this, L"Undo", demo::paint_button),
+      redoButton_(*this, L"Redo", demo::paint_button), previewButton_(*this, L"Preview", demo::paint_button), stopButton_(*this, L"Stop preview", demo::paint_button), buildButton_(*this, L"Build app…", demo::paint_button),
       name_(*this, L"Name"), text_(*this, L"Text"), x_(*this, L"X"), y_(*this, L"Y"), width_(*this, L"Width"), height_(*this, L"Height"),
       minWidth_(*this, L"Min width"), minHeight_(*this, L"Min height"), value_(*this, L"Value"), marginLeft_(*this, L"0"), marginTop_(*this, L"0"), marginRight_(*this, L"0"), marginBottom_(*this, L"0"),
-      deleteButton_(*this, L"Delete"), duplicateButton_(*this, L"Duplicate"), frontButton_(*this, L"Bring forward"), backButton_(*this, L"Send backward"),
-      runButton_(*this, L"Run app") {
+      deleteButton_(*this, L"Delete", demo::paint_button), duplicateButton_(*this, L"Duplicate", demo::paint_button), frontButton_(*this, L"Bring forward", demo::paint_button), backButton_(*this, L"Send backward", demo::paint_button),
+      runButton_(*this, L"Run app", demo::paint_button) {
     connections_[0] = newButton_.on_click([this] { new_document(); });
     connections_[1] = openButton_.on_click([this] { open(); });
     connections_[2] = saveButton_.on_click([this] { save(); });

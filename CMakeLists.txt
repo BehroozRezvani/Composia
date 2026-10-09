@@ -40,6 +40,7 @@ set(COMPOSIA_MANIFEST ${PROJECT_SOURCE_DIR}/resources/composia.manifest CACHE IN
 set(COMPOSIA_SOURCES
     Accessible.cpp
     AnimationHelpers.cpp
+    Appearance.cpp
     Application.cpp
     Button.cpp
     CompositionWindowTarget.cpp
@@ -88,7 +89,7 @@ function(composia_add_library target)
     target_compile_options(${target} PRIVATE $<$<CXX_COMPILER_ID:Clang>:/clang:-mcx16>)
     target_link_libraries(${target}
         PUBLIC WIL::WIL Microsoft::CppWinRT
-        PRIVATE d3d11 dxgi d2d1 dwrite windowsapp CoreMessaging user32 gdi32 ole32 oleaut32 uiautomationcore comctl32 uxtheme
+        PRIVATE d3d11 dxgi d2d1 dwrite windowsapp CoreMessaging user32 gdi32 ole32 oleaut32 uiautomationcore comctl32 uxtheme dwmapi
     )
     if(COMPOSIA_COVERAGE)
         target_compile_options(${target} PRIVATE -fprofile-instr-generate -fcoverage-mapping)

@@ -1,4 +1,5 @@
 #include "FormView.hpp"
+#include "../DemoButton.hpp"
 #include <algorithm>
 #include <cmath>
 
@@ -10,7 +11,7 @@ FormView::FormView(composia::Window& host, Document document) : host_(host), doc
     for (const auto& placed : document_.resolve()) {
         const auto& widget = *document_.find(placed.id);
         if (widget.kind == Kind::button) {
-            auto button = std::make_unique<composia::Button>(host_, widget.text);
+            auto button = std::make_unique<composia::Button>(host_, widget.text, demo::paint_button);
             clicks_.push_back(button->on_click([this, id = widget.id] {
                 if (const auto widget = document_.find(id)) { clicked_.emit(*widget); }
             }));

@@ -1,6 +1,6 @@
 #include <composia/Application.hpp>
 #include <composia/Log.hpp>
-#include "FailureInjection.hpp"
+#include "TestHooks.hpp"
 #include "support/TestSupport.hpp"
 #include <algorithm>
 #include <stdexcept>
@@ -10,7 +10,7 @@
 #include <vector>
 
 // The Application and its graphics device: device replacement, with failures injected at the
-// points FailureInjection.hpp defines (a replacement either completes or changes nothing), the
+// points TestHooks.hpp defines (a replacement either completes or changes nothing), the
 // fallback to WARP, shutdown, callback errors, and the UI thread rule.
 using namespace composia;
 using testing::require;

@@ -41,6 +41,14 @@ documented and tested, and the package can be installed or added to another buil
   and notifications.
 - `SwapChainSurface`: Direct3D 11 frames in the visual tree on Windows 10 and later.
 - `TextLayout` takes a font family and a locale and measures text (`metrics()`).
+- `Appearance` reports the system's dark mode, high contrast, accent color, text scale,
+  animation setting, and system colors. `Application::appearance()` holds it; when Windows
+  reports a change, every window's `on_appearance_changed` runs, every window is
+  invalidated, and `Application::on_appearance_changed` subscribers run.
+- `Window::set_dark_title_bar` draws a top-level window's frame dark or light.
+- `Button` takes a painter that draws it from its state (`Button::State`), with
+  `set_painter`, `set_label`, `label()`, and `pressed()`. `Button::paint_default` is the look
+  without a painter.
 - `set_log_handler` and `LogLevel` in `composia/Log.hpp`.
 - `composia/Version.hpp`, generated from the project version.
 - The package installs the application manifest and defines `COMPOSIA_MANIFEST`.
@@ -58,7 +66,10 @@ documented and tested, and the package can be installed or added to another buil
 - `on_enabled` also reports changes caused by an ancestor, so a disabled owner window
   disables and redraws its Composia controls.
 - `hovered()` follows the pointer position while the window has captured it.
-- `Button` draws with scope-owned brushes instead of caching them across frames.
+- `Button` no longer has a fixed dark look. Without a painter it is a flat button in the
+  system's light, dark, or high contrast colors, with a 14 point Segoe UI label; give it a
+  painter for any other look, as `examples/inputs` does. It draws with scope-owned brushes
+  instead of caching them across frames.
 - Inside another build (`add_subdirectory` or FetchContent), Composia uses that build's
   runtime library, does not use `/WX`, and builds no tests, examples, or install rules.
 - Debug libraries are named `composiad.lib` and embed their debug information.

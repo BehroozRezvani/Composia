@@ -10,6 +10,7 @@ public headers in `include/composia` document every function; the examples in
 - [Content inside one window](#content-inside-one-window)
 - [Accessibility](#accessibility)
 - [Text input and native controls](#text-input-and-native-controls)
+- [System appearance](#system-appearance)
 - [Button](#button)
 - [GPU content](#gpu-content)
 - [Virtual surfaces](#virtual-surfaces)
@@ -51,8 +52,9 @@ surfaces use physical pixels, and each window's visual tree applies the DPI scal
 `Window` owns an HWND: a top-level window, or a child when given a parent HWND. Child
 windows are tab stops. Derive from it and override the hooks you need: `on_paint`,
 `on_resize` (which also runs after a DPI change), `on_hover`, `on_focus`,
-`on_capture_lost`, `on_enabled`, `on_graphics_recreated`, and `on_message` for any raw
-message. `on_message` runs first; returning a result stops further processing.
+`on_capture_lost`, `on_enabled`, `on_graphics_recreated`, `on_appearance_changed`, and
+`on_message` for any raw message. `on_message` runs first; returning a result stops further
+processing.
 
 The window tracks the state every control needs, before `on_message` sees the message,
 so an override can handle a raw message and still read the state:
@@ -209,6 +211,30 @@ own. An `Accessible` with the Value pattern exposes the text, but screen readers
 the Text pattern for the caret, selection, and moving through the text, which Composia
 does not provide.
 
+## System appearance
+
+Composia leaves the look of an application to the application, and tells it what Windows
+asks for. `Application::appearance()` is an `Appearance`:
+
+- `dark`: the app mode in Settings is dark.
+- `highContrast`: a contrast theme is on. Draw with `colors` and nothing else then; users who
+  turn it on rely on those colors to read the screen.
+- `accent`, `textScale` (the accessibility text size, 1 to 2.25), and `animations` (whether
+  animation effects are on).
+- `colors`: the system colors, such as `window`, `windowText`, `buttonFace`, `highlight`, and
+  `grayText`, as 0xRRGGBB like every color `ScopedSurfaceDraw::solid_brush` takes.
+
+When the user changes a setting, Windows tells the top-level windows, and `UISettings` reports
+changes to colors and text size. The application reads the settings again and, only if they
+changed, runs every window's `on_appearance_changed`, invalidates every window, and then runs
+the `Application::on_appearance_changed` subscribers. A window that paints from
+`appearance()` is therefore repainted with the new settings without code of its own.
+
+The title bar and frame belong to Windows. `Window::set_dark_title_bar(bool)` draws them dark
+or light; Composia does not follow the system by itself, so call it with
+`appearance().dark`, in the constructor and in `on_appearance_changed`, as `examples/hello`
+does. With "Show accent color on title bars" on, Windows draws the accent instead.
+
 ## Button
 
 ```cpp
@@ -217,10 +243,28 @@ close.set_bounds({24, 24, 160, 44});
 auto clicked = close.on_click([&] { PostMessageW(window.hwnd(), WM_CLOSE, 0, 0); });
 ```
 
-`Button` is a composition-drawn child window built only on the public mechanisms above.
-It handles pointer capture and cancellation, Space and Enter, Tab and Shift+Tab focus, its
-enabled state (including a disabled parent), and a focus outline. Its `Accessible` has
-the button role and the Invoke pattern, with focus and invocation events.
+`Button` is a child window built only on the public mechanisms above. It owns the behavior:
+pointer capture and cancellation, Space and Enter, Tab and Shift+Tab focus, its enabled state
+(including a disabled parent), and an `Accessible` with the button role and the Invoke pattern.
+`set_label` changes the label and the UI Automation name.
+
+How it looks is up to its painter, a function that draws the whole client area from a
+`Button::State`: the label, already laid out and centered, the appearance, and whether the
+button is hovered, pressed, focused, and enabled. A child window cannot show its parent through
+it, so the painter fills every pixel, including any corners outside a rounded shape:
+
+```cpp
+composia::Button save{window, L"Save", [](composia::ScopedSurfaceDraw& draw, composia::numerics::float2,
+                                         const composia::Button::State& state) {
+    draw.context()->Clear(D2D1::ColorF(state.pressed ? 0x005A9E : 0x0078D4));
+    draw.context()->DrawTextLayout({0, 0}, state.label.layout().get(), draw.solid_brush(0xFFFFFF));
+}};
+```
+
+Without a painter, `Button::paint_default` draws a flat button with a border and a focus
+outline in neutral light or dark colors, or in the system colors under high contrast; a painter
+can call it and draw over it. `set_painter` replaces the painter. `examples/inputs` gives its
+button its own rounded look.
 
 ## GPU content
 
@@ -349,7 +393,7 @@ Destructors never throw; they log what they cannot report.
 ## Diagnostics
 
 Composia reports its diagnostic events, such as graphics device creation and the fallback
-to WARP, device loss and removal, and shutdown, as `event=name key=value` text at an info
+to WARP, device loss and removal, appearance changes, and shutdown, as `event=name key=value` text at an info
 or warning level. They go to `OutputDebugString` unless `set_log_handler` in
 `composia/Log.hpp` routes them elsewhere, such as an application's own log. Set the handler
 before creating the `Application` to see every event; Composia depends on no logging

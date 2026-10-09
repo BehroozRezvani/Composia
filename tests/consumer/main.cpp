@@ -1,6 +1,7 @@
 // Every public header, compiled and linked from an installed, relocated package.
 #include <composia/Accessible.hpp>
 #include <composia/AnimationHelpers.hpp>
+#include <composia/Appearance.hpp>
 #include <composia/Application.hpp>
 #include <composia/Button.hpp>
 #include <composia/Composition.hpp>
@@ -40,6 +41,14 @@ int main(int argc, char**) {
             composia::CompositionWindowTarget target{app.compositor(), app.graphics(), window.hwnd()};
             target.root().Children().InsertAtTop(composia::animations::sprite(app.compositor(), {10, 10}, {255, 0, 0, 0}));
             composia::Button button{window, L"Action"};
+            // The painter in docs/guide.md.
+            composia::Button save{window, L"Save", [](composia::ScopedSurfaceDraw& draw, composia::numerics::float2,
+                                                     const composia::Button::State& state) {
+                draw.context()->Clear(D2D1::ColorF(state.pressed ? 0x005A9E : 0x0078D4));
+                draw.context()->DrawTextLayout({0, 0}, state.label.layout().get(), draw.solid_brush(0xFFFFFF));
+            }};
+            window.set_dark_title_bar(app.appearance().dark);
+            auto appearance = app.on_appearance_changed([](const composia::Appearance&) {});
             button.set_bounds({10, 10, 160, 44});
             composia::NativeControl check{window, L"BUTTON", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX, L"Option"};
             check.set_colors(RGB(255, 255, 255), RGB(0, 0, 0));

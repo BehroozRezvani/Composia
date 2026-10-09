@@ -98,9 +98,19 @@ public:
     // must belong to the calling thread. Remove the route before the handler is destroyed.
     static void set_notification_handler(HWND control, NotificationHandler* handler);
 
+    // Draws the title bar and frame of a top-level window dark or light, through DWM; child
+    // windows throw E_INVALIDARG. Composia does not follow the system by itself: pass
+    // application().appearance().dark to follow it, from on_appearance_changed as well. Windows
+    // repaints the frame when it next draws it, so call it before showing the window. With "Show
+    // accent color on title bars" on, Windows draws the accent color instead.
+    void set_dark_title_bar(bool dark);
+
 protected:
     [[nodiscard]] HWND require_hwnd() const;
     virtual void on_graphics_recreated() {}
+    // Runs when the system appearance changes (see Application::appearance), before the window
+    // is invalidated.
+    virtual void on_appearance_changed() {}
     virtual void on_resize() {}
     virtual void on_paint() {}
     virtual void on_hover(bool) {}

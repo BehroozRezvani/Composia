@@ -1,4 +1,5 @@
 #include "MediaDemoWindow.hpp"
+#include "../DemoButton.hpp"
 #include <composia/AnimationHelpers.hpp>
 #include "../DemoAnimations.hpp"
 #include <composia/ScopedSurfaceDraw.hpp>
@@ -18,9 +19,9 @@ constexpr UINT_PTR frameTimer = 20;
 
 MediaDemoWindow::MediaDemoWindow(Application& app)
     : Window(app, L"Composia — Texture studio", 1120, 800),
-      target_(app.compositor(), app.graphics(), hwnd()), captureButton_(*this, L"Capture…"),
-      stopButton_(*this, L"Stop capture"), openButton_(*this, L"Open video"),
-      pauseButton_(*this, L"Play / pause"), resetButton_(*this, L"GPU only") {
+      target_(app.compositor(), app.graphics(), hwnd()), captureButton_(*this, L"Capture…", demo::paint_button),
+      stopButton_(*this, L"Stop capture", demo::paint_button), openButton_(*this, L"Open video", demo::paint_button),
+      pauseButton_(*this, L"Play / pause", demo::paint_button), resetButton_(*this, L"GPU only", demo::paint_button) {
     const auto compositor = app.compositor();
     auto background = animations::sprite(compositor, {1120, 800}, {255, 12, 18, 29});
     background.RelativeSizeAdjustment({1, 1});
