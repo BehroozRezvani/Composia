@@ -17,6 +17,13 @@ add_library(composia-mail-sample STATIC mail/MailModel.cpp mail/MailSample.cpp m
 target_link_libraries(composia-mail-sample PUBLIC Composia::UI)
 target_include_directories(composia-mail-sample PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/mail)
 composia_demo_options(composia-mail-sample)
+# The UI builder reuses the mail demo's editable TextField.
+add_library(composia-builder-sample STATIC
+    builder/BuilderModel.cpp builder/FormPainter.cpp builder/FormView.cpp builder/FormPlayerWindow.cpp
+    builder/AppPackager.cpp builder/BuilderDemoWindow.cpp mail/TextField.cpp)
+target_link_libraries(composia-builder-sample PUBLIC Composia::UI PRIVATE comdlg32 shell32)
+target_include_directories(composia-builder-sample PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/builder ${CMAKE_CURRENT_SOURCE_DIR}/mail)
+composia_demo_options(composia-builder-sample)
 
 # The programs.
 add_executable(composia-demo WIN32 main.cpp DemoWindow.cpp ${COMPOSIA_MANIFEST})
@@ -31,6 +38,23 @@ composia_demo_options(composia-media-demo)
 add_executable(composia-mail-demo WIN32 mail/main.cpp ${COMPOSIA_MANIFEST})
 target_link_libraries(composia-mail-demo PRIVATE composia-mail-sample)
 composia_demo_options(composia-mail-demo)
+# The form player is the program the UI builder stamps a design into; the tests run it too.
+add_executable(composia-form-player WIN32 builder/player_main.cpp ${COMPOSIA_MANIFEST})
+target_link_libraries(composia-form-player PRIVATE composia-builder-sample shell32)
+composia_demo_options(composia-form-player)
+# The builder embeds the player as a resource, so "Build app" needs nothing beside the executable.
+enable_language(RC)
+set(embeddedPlayer ${CMAKE_CURRENT_BINARY_DIR}/embedded/composia-form-player.exe)
+add_custom_command(OUTPUT ${embeddedPlayer}
+    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:composia-form-player> ${embeddedPlayer}
+    DEPENDS composia-form-player COMMENT "Embedding the form player" VERBATIM)
+file(TO_NATIVE_PATH "${embeddedPlayer}" embeddedPlayerNative)
+string(REPLACE "\\" "\\\\" embeddedPlayerEscaped "${embeddedPlayerNative}")
+file(GENERATE OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/embedded/player.rc CONTENT "COMPOSIA_PLAYER RCDATA \"${embeddedPlayerEscaped}\"\n")
+set_source_files_properties(${CMAKE_CURRENT_BINARY_DIR}/embedded/player.rc PROPERTIES OBJECT_DEPENDS ${embeddedPlayer} GENERATED TRUE)
+add_executable(composia-builder-demo WIN32 builder/main.cpp ${COMPOSIA_MANIFEST} ${CMAKE_CURRENT_BINARY_DIR}/embedded/player.rc)
+target_link_libraries(composia-builder-demo PRIVATE composia-builder-sample)
+composia_demo_options(composia-builder-demo)
 
 if(COMPOSIA_BUILD_TESTS)
     # The tests take the same scenario and --warp arguments as the library's tests.
@@ -72,4 +96,13 @@ if(COMPOSIA_BUILD_TESTS)
     add_test(NAME media-capture-monitor-warp COMMAND composia-media-capture-tests --warp --monitor)
     set_tests_properties(media-capture-window media-capture-window-warp media-capture-monitor media-capture-monitor-warp
         PROPERTIES TIMEOUT 40 RUN_SERIAL TRUE LABELS desktop SKIP_RETURN_CODE 77)
+
+    composia_demo_test(composia-builder-tests BuilderTests.cpp composia-builder-sample)
+    add_test(NAME builder-model COMMAND composia-builder-tests model)
+    set_tests_properties(builder-model PROPERTIES TIMEOUT 10 LABELS core)
+    add_test(NAME builder-editor COMMAND composia-builder-tests editor)
+    add_test(NAME builder-editor-warp COMMAND composia-builder-tests editor --warp)
+    add_test(NAME builder-app COMMAND composia-builder-tests app $<TARGET_FILE:composia-form-player>)
+    add_test(NAME builder-app-warp COMMAND composia-builder-tests app $<TARGET_FILE:composia-form-player> --warp)
+    set_tests_properties(builder-editor builder-editor-warp builder-app builder-app-warp PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE LABELS desktop)
 endif()
