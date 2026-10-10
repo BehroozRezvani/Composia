@@ -4,6 +4,9 @@ This guide explains how Composia's parts work together and what each one expects
 public headers in `include/composia` document every function; the examples in
 `examples/` show the pieces in use.
 
+For splitters and moving child panes, follow the [shared-pane update contract](resizing.md).
+It covers composition window creation, coordinated painting, and buffered native text fields.
+
 - [The application and its thread](#the-application-and-its-thread)
 - [Windows](#windows)
 - [Drawing](#drawing)

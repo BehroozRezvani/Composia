@@ -48,6 +48,7 @@ public:
     // when the client area is empty, the window is minimized, or no visible area needs painting.
     bool render(Window&, const Painter& paint);
     // A fill under the canvas and children, including newly exposed space during a resize.
+    // Adds an outer pixel-space container if needed; root() remains the DIP content root.
     void set_background(winrt::Windows::UI::Color);
     // The client area in DIPs as of the last resize.
     [[nodiscard]] numerics::float2 logical_size() const noexcept { return logicalSize_; }
@@ -59,6 +60,7 @@ public:
 
 private:
     struct Host;
+    void ensure_frame();
     std::unique_ptr<Host> host_;
     composition::ContainerVisual frame_{nullptr};
     composition::CompositionColorBrush background_{nullptr};

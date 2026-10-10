@@ -32,7 +32,8 @@ public:
     // Runs a drawing operation; if it fails with device loss, replaces the graphics device and
     // runs it once more. Other failures, and a second device loss, propagate.
     void render(const std::function<void()>& draw);
-    // Submits a complete visual update without waiting for the message queue to become idle.
+    // Submits prepared composition changes without waiting for an idle queue. Does not paint;
+    // use update() to finish layout and painting first. Deferred while an update is in progress.
     void commit();
     // Runs layout, invalidates root, paints pending regions in its same-thread subtree, and
     // commits once. Nested updates join the outer operation; commit() inside it is deferred.

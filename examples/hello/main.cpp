@@ -13,8 +13,8 @@
 class HelloWindow final : public composia::Window {
 public:
     explicit HelloWindow(composia::Application& app)
-        : Window(app, L"Hello, Composia", 480, 240),
-          target_(app.compositor(), app.graphics(), hwnd()),
+        : Window(app, L"Hello, Composia", 480, 240, Content::composition),
+          target_(*this, composia::CompositionWindowTarget::Hosting::shared),
           greeting_(app.graphics().text_factory().get(), L"Hello from Windows Composition", 24),
           close_(*this, L"Close") {
         clicked_ = close_.on_click([this] { PostMessageW(hwnd(), WM_CLOSE, 0, 0); });
@@ -29,8 +29,7 @@ private:
         close_.set_bounds({std::max(24.0f, bounds.width - 184), std::max(80.0f, bounds.height - 68), 160, 44});
     }
     void on_resize() override {
-        arrange();
-        invalidate();
+        application().update(*this, [this] { arrange(); });
     }
     // The window is repainted after this, so only the frame needs updating here.
     void on_appearance_changed() override { set_dark_title_bar(application().appearance().dark); }

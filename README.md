@@ -15,7 +15,7 @@ prescribing an application architecture.
 Composia is not a UI toolkit: it has one `Button`, a stack layout helper, and no data
 binding, styling, or designer.
 
-For resizable panes, use [shared composition targets and coordinated updates](docs/Resizing.md).
+For resizable panes, use [shared composition targets and coordinated updates](docs/resizing.md).
 They keep pane placement, clipping and painting together; native EDIT controls can opt into
 buffered painting while panes move around them.
 
@@ -38,10 +38,11 @@ buffered painting while panes move around them.
 class HelloWindow final : public composia::Window {
 public:
     explicit HelloWindow(composia::Application& app)
-        : Window(app, L"Hello, Composia", 480, 240), target_(app.compositor(), app.graphics(), hwnd()) {}
+        : Window(app, L"Hello, Composia", 480, 240, Content::composition),
+          target_(*this, composia::CompositionWindowTarget::Hosting::shared) {}
 
 private:
-    void on_resize() override { invalidate(); }
+    void on_resize() override { application().update(*this, [] {}); }
     void on_paint() override {
         target_.render(*this, [](composia::ScopedSurfaceDraw& draw, composia::numerics::float2 size) {
             draw.context()->Clear(D2D1::ColorF(0x101923));

@@ -140,7 +140,10 @@ bool CompositionWindowTarget::hosts_children(HWND hwnd) noexcept {
 
 CompositionWindowTarget::CompositionWindowTarget(Window& window, Hosting hosting)
     : CompositionWindowTarget(window.application().compositor(), window.application().graphics(), checked_window(window, hosting)) {
-    if (hosting == Hosting::shared) { host_ = std::make_unique<Host>(*this, window); }
+    if (hosting == Hosting::shared) {
+        ensure_frame();
+        host_ = std::make_unique<Host>(*this, window);
+    }
 }
 
 CompositionWindowTarget::CompositionWindowTarget(const composition::Compositor& compositor,
@@ -149,10 +152,7 @@ CompositionWindowTarget::CompositionWindowTarget(const composition::Compositor& 
         ->CreateDesktopWindowTarget(hwnd, FALSE,
             reinterpret_cast<ABI::Windows::UI::Composition::Desktop::IDesktopWindowTarget**>(winrt::put_abi(target_))));
     root_ = compositor.CreateContainerVisual();
-    frame_ = compositor.CreateContainerVisual();
-    frame_.RelativeSizeAdjustment({1, 1});
-    frame_.Children().InsertAtTop(root_);
-    target_.Root(frame_);
+    target_.Root(root_);
     surface_ = graphics.composition_device().CreateDrawingSurface({1, 1},
         winrt::Windows::Graphics::DirectX::DirectXPixelFormat::B8G8R8A8UIntNormalized,
         winrt::Windows::Graphics::DirectX::DirectXAlphaMode::Premultiplied);
@@ -173,7 +173,25 @@ CompositionWindowTarget::~CompositionWindowTarget() {
     }
 }
 
+void CompositionWindowTarget::ensure_frame() {
+    if (frame_) { return; }
+    const auto frame = root_.Compositor().CreateContainerVisual();
+    frame.RelativeSizeAdjustment({1, 1});
+    target_.Root(nullptr);
+    auto rollback = wil::scope_exit([&] {
+        try {
+            if (root_.Parent() == frame) { frame.Children().Remove(root_); }
+            target_.Root(root_);
+        } catch (...) { LOG_CAUGHT_EXCEPTION(); }
+    });
+    frame.Children().InsertAtTop(root_);
+    target_.Root(frame);
+    frame_ = frame;
+    rollback.release();
+}
+
 void CompositionWindowTarget::set_background(winrt::Windows::UI::Color color) {
+    ensure_frame();
     if (!background_) {
         const auto compositor = frame_.Compositor();
         background_ = compositor.CreateColorBrush(color);
