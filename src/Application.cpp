@@ -39,7 +39,12 @@ Application::Application(bool forceWarp) {
     try {
         callbacks_ = std::make_shared<CallbackState>();
         callbacks_->queue = dispatcher_.DispatcherQueue();
-        compositor_ = composition::Compositor{};
+        controller_ = winrt::Windows::UI::Composition::Core::CompositorController{};
+        compositor_ = controller_.Compositor();
+        commitNeeded_ = controller_.CommitNeeded([state = std::weak_ptr{callbacks_}](const auto& controller, const auto&) {
+            // Framework requests can arrive off-thread; composition is committed on the UI queue.
+            if (const auto callbacks = state.lock()) { (void)enqueue(callbacks, [controller] { controller.Commit(); }); }
+        });
         graphics_ = std::make_unique<GraphicsDevice>(compositor_, forceWarp);
         graphicsConnection_ = graphics_->on_recreated([this](auto) { notify_graphics_recreated(); });
         appearance_ = Appearance::current();
@@ -89,6 +94,7 @@ void Application::close() {
     closing_ = true;
     const auto clearClosing = wil::scope_exit([&] { closing_ = false; });
     if (callbacks_) { callbacks_->accepting.store(false); }
+    if (controller_ && commitNeeded_.value) { controller_.CommitNeeded(std::exchange(commitNeeded_, {})); }
     appearanceWatch_.reset();
     std::optional<WPARAM> quitCode;
     const auto restoreQuit = wil::scope_exit([&] { if (quitCode) { PostQuitMessage(static_cast<int>(*quitCode)); } });
@@ -106,12 +112,18 @@ void Application::close() {
         shutdownAction_.GetResults();
     }
     graphicsConnection_.disconnect();
-    if (compositor_) { compositor_.Close(); compositor_ = nullptr; }
+    if (controller_) { controller_.Close(); controller_ = nullptr; compositor_ = nullptr; }
     graphics_.reset();
     dispatcher_ = nullptr;
     closed_ = true;
     detail::log(LogLevel::info, "event=application_shutdown");
     rethrow_callback_error();
+}
+
+void Application::commit() {
+    verify_thread();
+    if (closing_ || closed_) { throw std::logic_error("Application is closing"); }
+    controller_.Commit();
 }
 
 void Application::render(const std::function<void()>& draw) {
@@ -229,6 +241,7 @@ int Application::run() {
     for (;;) {
         rethrow_callback_error();
         if (!has_windows()) { return 0; }
+        commit();
         const HANDLE handles[]{graphics().removed_event()};
         const auto wait = MsgWaitForMultipleObjectsEx(1, handles, INFINITE, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
         THROW_LAST_ERROR_IF(wait == WAIT_FAILED);
@@ -251,6 +264,7 @@ int Application::run() {
                 }
             }
             if (!handled) { TranslateMessage(&message); DispatchMessageW(&message); }
+            commit();
             remember_focus();
             rethrow_callback_error();
         }

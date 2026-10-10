@@ -427,6 +427,56 @@ void render(bool warp) {
     require(!logged.empty() && logged.back() == std::pair{composia::LogLevel::info, std::string{"event=application_shutdown"}}, "Shutdown was not logged last");
 }
 
+// A continuous input handler can prevent the dispatcher from running. Explicit commits must
+// still present the surface and its visual geometry together, without pumping that queue.
+int commit(bool warp) {
+    if (!composia::ScreenCapture::supported()) { return skipped; }
+    composia::Application app{warp};
+    {
+        Probe window{app, L"Explicit composition commit"};
+        composia::CompositionWindowTarget target{app.compositor(), app.graphics(), window.hwnd()};
+        window.show();
+        target.resize(window.client_pixels(), window.dpi());
+        const auto marker = app.compositor().CreateSpriteVisual();
+        marker.Size({16, 16});
+        marker.Brush(app.compositor().CreateColorBrush({255, 255, 255, 255}));
+        target.root().Children().InsertAtTop(marker);
+        composia::ScreenCapture capture;
+        capture.start(composia::capture::GraphicsCaptureItem::CreateFromVisual(target.root()), app.graphics().d3d_device().get());
+        float x = 20;
+        for (const auto color : {0xCC2200u, 0x00AA44u, 0x2244CCu}) {
+            require(target.render(window, [&](composia::ScopedSurfaceDraw& draw, composia::numerics::float2) {
+                draw.context()->Clear(D2D1::ColorF(color));
+            }), "Commit fixture did not render");
+            marker.Offset({x, 20, 0});
+            app.commit();
+            bool shown{};
+            const auto deadline = GetTickCount64() + 3000;
+            while (!shown && GetTickCount64() < deadline) {
+                if (auto frame = capture.next_frame()) {
+                    const auto close = wil::scope_exit([&] { frame.Close(); });
+                    const auto size = frame.ContentSize();
+                    const auto logical = target.logical_size();
+                    const auto sample = [&](float sx, float sy) {
+                        return composia::testing::frame_pixel(app, frame,
+                            static_cast<UINT>(sx / logical.x * size.Width), static_cast<UINT>(sy / logical.y * size.Height));
+                    };
+                    if (composia::testing::matches(sample(5, 5), color)) {
+                        require(composia::testing::matches(sample(x + 8, 28), 0xFFFFFF), "Surface and visual position were presented separately");
+                        shown = true;
+                    }
+                }
+                if (!shown) { Sleep(5); }
+            }
+            require(shown, "Composition update waited for the message queue to run");
+            x += 60;
+        }
+        capture.close();
+    }
+    app.close();
+    return 0;
+}
+
 // Reads the composited result through a capture of the target's visual: partial repaints change
 // only their own areas, and the surface keeps everything else.
 int partial(bool warp) {
@@ -958,6 +1008,7 @@ int main(int argc, char** argv) {
         {"pointer", [](const Options& options) { pointer(options.warp); return 0; }},
         {"focus", [](const Options& options) { focus(options.warp); return 0; }},
         {"render", [](const Options& options) { render(options.warp); return 0; }},
+        {"commit", [](const Options& options) { return commit(options.warp); }},
         {"partial", [](const Options& options) { return partial(options.warp); }},
         {"swapchain", [](const Options& options) { return swapchain(options.warp); }},
         {"accessible", [](const Options& options) { accessible(options.warp); return 0; }},

@@ -89,7 +89,7 @@ composia_add_scenarios(composia-smoke-tests smoke WARP SCENARIOS lifecycle)
 # The mechanisms Window provides: pointer, focus, enabled state, rendering, accessibility, controls.
 composia_test_target(composia-foundation-tests FoundationTests.cpp)
 composia_add_scenarios(composia-foundation-tests foundation WARP
-    SCENARIOS pointer focus render partial swapchain accessible native)
+    SCENARIOS pointer focus render commit partial swapchain accessible native)
 
 # Button input as Windows delivers it, and a UI Automation client in another apartment.
 composia_test_target(composia-interaction-tests InteractionTests.cpp)

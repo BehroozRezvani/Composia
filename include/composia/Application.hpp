@@ -4,6 +4,7 @@
 #include <composia/GraphicsDevice.hpp>
 #include <composia/Window.hpp>
 #include <winrt/Windows.System.h>
+#include <winrt/Windows.UI.Composition.Core.h>
 #include <functional>
 #include <memory>
 #include <vector>
@@ -31,6 +32,8 @@ public:
     // Runs a drawing operation; if it fails with device loss, replaces the graphics device and
     // runs it once more. Other failures, and a second device loss, propagate.
     void render(const std::function<void()>& draw);
+    // Submits a complete visual update without waiting for the message queue to become idle.
+    void commit();
     // Queues a callback on the UI thread from any thread. Returns false once the application is
     // closing. An exception from the callback is rethrown by run() or close().
     bool post(std::function<void()> callback);
@@ -67,6 +70,8 @@ private:
         ~Apartment();
     } apartment_;
     winrt::Windows::System::DispatcherQueueController dispatcher_{nullptr};
+    winrt::Windows::UI::Composition::Core::CompositorController controller_{nullptr};
+    winrt::event_token commitNeeded_{};
     composition::Compositor compositor_{nullptr};
     std::unique_ptr<GraphicsDevice> graphics_;
     std::vector<Window*> windows_;
