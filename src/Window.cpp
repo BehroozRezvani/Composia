@@ -67,7 +67,7 @@ NotificationHandler* notification_handler(HWND parent, HWND control) noexcept {
 }
 }
 
-Window::Window(Application& application, std::wstring_view title, int widthDip, int heightDip, HWND parent)
+Window::Window(Application& application, std::wstring_view title, int widthDip, int heightDip, HWND parent, DWORD extendedStyle)
     : application_(application), topLevel_(parent == nullptr) {
     application_.verify_thread();
     const auto instance = GetModuleHandleW(nullptr);
@@ -84,7 +84,7 @@ Window::Window(Application& application, std::wstring_view title, int widthDip, 
     const auto initialDpi = parent ? GetDpiForWindow(parent) : GetDpiForSystem();
     const DWORD style = parent ? WS_CHILD | WS_TABSTOP | WS_CLIPSIBLINGS | WS_VISIBLE
                                : WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN;
-    const DWORD extendedStyle = parent ? 0 : WS_EX_CONTROLPARENT;
+    extendedStyle |= parent ? 0 : WS_EX_CONTROLPARENT;
     RECT bounds{0, 0, MulDiv(widthDip, initialDpi, 96), MulDiv(heightDip, initialDpi, 96)};
     THROW_IF_WIN32_BOOL_FALSE(AdjustWindowRectExForDpi(&bounds, style, FALSE, extendedStyle, initialDpi));
     const std::wstring ownedTitle{title};

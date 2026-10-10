@@ -34,7 +34,8 @@ protected:
 // state changes through virtual hooks, and any other code can subscribe to them as signals.
 class Window {
 public:
-    Window(Application&, std::wstring_view title, int widthDip, int heightDip, HWND parent = nullptr);
+    // Extra styles are applied at creation; some, such as WS_EX_NOREDIRECTIONBITMAP, cannot be added later.
+    Window(Application&, std::wstring_view title, int widthDip, int heightDip, HWND parent = nullptr, DWORD extendedStyle = 0);
     virtual ~Window();
     Window(const Window&) = delete;
     Window& operator=(const Window&) = delete;
