@@ -37,8 +37,8 @@ int main(int argc, char**) {
         {
             composia::VirtualSurface document{app.graphics(), {1000000, 1000000}};
             document.update({0, 0, 100, 100}, [](auto& draw, const RECT&) { draw.context()->Clear(D2D1::ColorF(0)); });
-            composia::Window window{app, L"Consumer", 320, 240};
-            composia::CompositionWindowTarget target{app.compositor(), app.graphics(), window.hwnd()};
+            composia::Window window{app, L"Consumer", 320, 240, composia::Window::Content::composition};
+            composia::CompositionWindowTarget target{window, composia::CompositionWindowTarget::Hosting::shared};
             target.root().Children().InsertAtTop(composia::animations::sprite(app.compositor(), {10, 10}, {255, 0, 0, 0}));
             composia::Button button{window, L"Action"};
             // The painter in docs/guide.md.
@@ -50,6 +50,8 @@ int main(int argc, char**) {
             window.set_dark_title_bar(app.appearance().dark);
             auto appearance = app.on_appearance_changed([](const composia::Appearance&) {});
             button.set_bounds({10, 10, 160, 44});
+            composia::NativeControl search{window, L"EDIT", WS_VISIBLE, {}, 0, composia::NativeControl::Painting::buffered_edit};
+            app.update(window, [&] { search.set_bounds({10, 60, 200, 24}); });
             composia::NativeControl check{window, L"BUTTON", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX, L"Option"};
             check.set_colors(RGB(255, 255, 255), RGB(0, 0, 0));
             composia::Window panel{app, L"Panel", 100, 40, window.hwnd()};

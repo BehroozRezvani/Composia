@@ -67,6 +67,9 @@ NotificationHandler* notification_handler(HWND parent, HWND control) noexcept {
 }
 }
 
+Window::Window(Application& application, std::wstring_view title, int widthDip, int heightDip, Content content, HWND parent)
+    : Window(application, title, widthDip, heightDip, parent, content == Content::composition ? WS_EX_NOREDIRECTIONBITMAP : 0) {}
+
 Window::Window(Application& application, std::wstring_view title, int widthDip, int heightDip, HWND parent, DWORD extendedStyle)
     : application_(application), topLevel_(parent == nullptr) {
     application_.verify_thread();
@@ -126,7 +129,10 @@ HWND Window::require_hwnd() const {
 }
 
 void Window::show(int command) { ShowWindow(require_hwnd(), command); }
-void Window::invalidate() { THROW_IF_WIN32_BOOL_FALSE(InvalidateRect(require_hwnd(), nullptr, FALSE)); }
+void Window::invalidate() {
+    THROW_IF_WIN32_BOOL_FALSE(InvalidateRect(require_hwnd(), nullptr, FALSE));
+    paintPending_ = true;
+}
 
 void Window::invalidate(layout::Rect bounds) {
     const auto handle = require_hwnd();
@@ -141,6 +147,7 @@ void Window::invalidate(layout::Rect bounds) {
         pixel(std::ceil((static_cast<double>(bounds.x) + bounds.width) * factor)),
         pixel(std::ceil((static_cast<double>(bounds.y) + bounds.height) * factor))};
     THROW_IF_WIN32_BOOL_FALSE(InvalidateRect(handle, &area, FALSE));
+    paintPending_ = true;
 }
 
 void Window::set_bounds(layout::Rect bounds) { detail::place(require_hwnd(), bounds); }
@@ -433,6 +440,9 @@ LRESULT Window::dispatch(HWND handle, UINT message, WPARAM wparam, LPARAM lparam
         return 0;
     }
     case WM_PAINT: {
+        paintPending_ = false;
+        painting_ = true;
+        const auto finished = wil::scope_exit([&] { painting_ = false; });
         PAINTSTRUCT paint{};
         BeginPaint(handle, &paint);
         const auto endPaint = wil::scope_exit([&] {

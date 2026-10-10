@@ -3,6 +3,7 @@
 #include <composia/Composition.hpp>
 #include <cstdint>
 #include <functional>
+#include <memory>
 
 namespace composia {
 
@@ -15,6 +16,15 @@ class Window;
 // surface sized to the client area. Add visuals above the canvas through root().Children().
 class CompositionWindowTarget {
 public:
+    enum class Hosting { standalone, shared };
+    // Shared targets require Window::Content::composition. A top-level target hosts the tree;
+    // a child joins its immediate parent's shared target, which must already exist. Position,
+    // rectangular clipping, visibility and sibling order then travel with the painted content.
+    // The Window and Application must outlive this target; child targets must go first. Native
+    // controls remain independent. Reparenting and nonrectangular HWND regions are unsupported
+    // and reported as errors. Use Application::update for layout, paint and commit together.
+    CompositionWindowTarget(Window&, Hosting);
+    [[nodiscard]] static bool hosts_children(HWND) noexcept;
     // Paints the canvas in DIPs; size is the client area in DIPs.
     using Painter = std::function<void(ScopedSurfaceDraw&, numerics::float2 size)>;
 
@@ -37,6 +47,8 @@ public:
     // change, or a replaced graphics device repaints everything. Returns false without painting
     // when the client area is empty, the window is minimized, or no visible area needs painting.
     bool render(Window&, const Painter& paint);
+    // A fill under the canvas and children, including newly exposed space during a resize.
+    void set_background(winrt::Windows::UI::Color);
     // The client area in DIPs as of the last resize.
     [[nodiscard]] numerics::float2 logical_size() const noexcept { return logicalSize_; }
     [[nodiscard]] const composition::ContainerVisual& root() const noexcept { return root_; }
@@ -46,6 +58,10 @@ public:
     [[nodiscard]] const composition::Desktop::DesktopWindowTarget& target() const noexcept { return target_; }
 
 private:
+    struct Host;
+    std::unique_ptr<Host> host_;
+    composition::ContainerVisual frame_{nullptr};
+    composition::CompositionColorBrush background_{nullptr};
     composition::Desktop::DesktopWindowTarget target_{nullptr};
     composition::ContainerVisual root_{nullptr};
     composition::SpriteVisual canvas_{nullptr};

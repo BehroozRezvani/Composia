@@ -16,15 +16,18 @@ bool has_class(HWND hwnd, const wchar_t* name) noexcept {
 }
 }
 
-NativeControl::NativeControl(Window& parent, std::wstring_view className, DWORD style, std::wstring_view text, DWORD extendedStyle)
-    : parent_(parent) {
+NativeControl::NativeControl(Window& parent, std::wstring_view className, DWORD style, std::wstring_view text, DWORD extendedStyle, Painting painting)
+    : parent_(parent), buffered_(painting == Painting::buffered_edit) {
     const auto parentHwnd = parent.hwnd();
     THROW_HR_IF(HRESULT_FROM_WIN32(ERROR_INVALID_WINDOW_HANDLE), !parentHwnd);
     const std::wstring ownedClass{className}, ownedText{text};
+    THROW_HR_IF(E_INVALIDARG, buffered_ && _wcsicmp(ownedClass.c_str(), L"EDIT") != 0);
+    if (buffered_) { extendedStyle |= WS_EX_LAYERED; }
     const auto handle = CreateWindowExW(extendedStyle, ownedClass.c_str(), ownedText.c_str(), style | WS_CHILD, 0, 0, 0, 0,
         parentHwnd, nullptr, GetModuleHandleW(nullptr), nullptr);
     THROW_LAST_ERROR_IF_NULL(handle);
     hwnd_.reset(handle);
+    if (buffered_) { THROW_IF_WIN32_BOOL_FALSE(SetLayeredWindowAttributes(handle, 0, 255, LWA_ALPHA)); }
     auto undo = wil::scope_exit([&] { detach(); });
     Window::set_notification_handler(handle, this);
     // A drop-down list is a separate window, but it asks for colors through the combo box.
@@ -59,6 +62,22 @@ void NativeControl::detach() noexcept {
 LRESULT CALLBACK NativeControl::subclass_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, UINT_PTR, DWORD_PTR reference) noexcept {
     const auto self = reinterpret_cast<NativeControl*>(reference);
     switch (message) {
+    case WM_WINDOWPOSCHANGING:
+        if (self->buffered_) { reinterpret_cast<WINDOWPOS*>(lparam)->flags &= ~SWP_NOCOPYBITS; }
+        break;
+    case WM_WINDOWPOSCHANGED:
+        if (self->buffered_) {
+            const auto flags = reinterpret_cast<const WINDOWPOS*>(lparam)->flags;
+            const auto result = DefSubclassProc(hwnd, message, wparam, lparam);
+            if (IsWindow(hwnd) && (flags & (SWP_NOMOVE | SWP_NOSIZE)) != (SWP_NOMOVE | SWP_NOSIZE)) {
+                RedrawWindow(hwnd, nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW | RDW_NOERASE);
+            }
+            return result;
+        }
+        break;
+    case WM_ERASEBKGND:
+        if (self->buffered_) { return 1; }
+        break;
     case WM_DPICHANGED_AFTERPARENT:
         // The parent re-arranges bounds; the font has to follow the new monitor on its own.
         try { self->apply_font(); } catch (...) { LOG_CAUGHT_EXCEPTION(); }

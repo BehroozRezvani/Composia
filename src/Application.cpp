@@ -1,4 +1,5 @@
 #include <composia/Application.hpp>
+#include <composia/CompositionWindowTarget.hpp>
 #include "Logging.hpp"
 #include <DispatcherQueue.h>
 #include <winrt/Windows.UI.ViewManagement.h>
@@ -41,9 +42,11 @@ Application::Application(bool forceWarp) {
         callbacks_->queue = dispatcher_.DispatcherQueue();
         controller_ = winrt::Windows::UI::Composition::Core::CompositorController{};
         compositor_ = controller_.Compositor();
-        commitNeeded_ = controller_.CommitNeeded([state = std::weak_ptr{callbacks_}](const auto& controller, const auto&) {
+        commitNeeded_ = controller_.CommitNeeded([this, state = std::weak_ptr{callbacks_}](const auto&, const auto&) {
             // Framework requests can arrive off-thread; composition is committed on the UI queue.
-            if (const auto callbacks = state.lock()) { (void)enqueue(callbacks, [controller] { controller.Commit(); }); }
+            if (const auto callbacks = state.lock()) {
+                (void)enqueue(callbacks, [this] { if (!closing_ && !closed_) { commit(); } });
+            }
         });
         graphics_ = std::make_unique<GraphicsDevice>(compositor_, forceWarp);
         graphicsConnection_ = graphics_->on_recreated([this](auto) { notify_graphics_recreated(); });
@@ -123,7 +126,73 @@ void Application::close() {
 void Application::commit() {
     verify_thread();
     if (closing_ || closed_) { throw std::logic_error("Application is closing"); }
-    controller_.Commit();
+    if (!updateDepth_) { controller_.Commit(); }
+}
+
+void Application::update(Window& root, const std::function<void()>& layout) {
+    verify_thread();
+    if (closing_ || closed_) { throw std::logic_error("Application is closing"); }
+    if (!updateDepth_ && std::ranges::any_of(windows_, [](const Window* window) { return window->painting_; })) {
+        throw std::logic_error("Start layout updates from input or resize handlers, not painting");
+    }
+    THROW_HR_IF(E_INVALIDARG, &root.application() != this);
+    (void)root.client_pixels();
+    const auto hwnd = root.hwnd();
+    if (std::find(updateRoots_.begin(), updateRoots_.end(), hwnd) == updateRoots_.end()) { updateRoots_.push_back(hwnd); }
+    ++updateDepth_;
+    auto leave = wil::scope_exit([&] {
+        if (--updateDepth_ == 0) { updateRoots_.clear(); }
+    });
+    layout();
+    if (root.hwnd()) { root.invalidate(); }
+    if (updateDepth_ != 1) { return; }
+    // Keep commits deferred while synchronous paints call back into the application.
+    for (unsigned pass = 0; !updateRoots_.empty(); ++pass) {
+        if (pass == 16) { throw std::logic_error("Layout invalidated itself during every paint"); }
+        const auto roots = std::exchange(updateRoots_, {});
+        for (const auto handle : roots) {
+            if (!IsWindow(handle) || GetWindowThreadProcessId(handle, nullptr) != thread_) { continue; }
+            paint_window(handle);
+            struct Context { Application* app; std::exception_ptr error; } context{this, {}};
+            EnumChildWindows(handle, [](HWND child, LPARAM data) -> BOOL {
+                const auto context = reinterpret_cast<Context*>(data);
+                try {
+                    if (GetWindowThreadProcessId(child, nullptr) == GetCurrentThreadId() && IsWindowVisible(child)) { context->app->paint_window(child); }
+                    return TRUE;
+                } catch (...) { context->error = std::current_exception(); return FALSE; }
+            }, reinterpret_cast<LPARAM>(&context));
+            if (context.error) { std::rethrow_exception(context.error); }
+            rethrow_callback_error();
+            const bool pending = std::ranges::any_of(windows_, [handle](const Window* window) {
+                const auto hwnd = window->hwnd();
+                return window->paintPending_ && !window->painting_ && hwnd && IsWindowVisible(hwnd) &&
+                    (hwnd == handle || IsChild(handle, hwnd)) && CompositionWindowTarget::hosts_children(hwnd);
+            });
+            if (pending && std::find(updateRoots_.begin(), updateRoots_.end(), handle) == updateRoots_.end()) { updateRoots_.push_back(handle); }
+        }
+    }
+    leave.release();
+    --updateDepth_;
+    commit();
+}
+
+void Application::paint_window(HWND handle) {
+    UpdateWindow(handle);
+    rethrow_callback_error();
+    // Win32 can defer a transparent child's WM_PAINT behind its siblings. Its composition
+    // surface still needs its pending content before the shared tree is committed.
+    if (!CompositionWindowTarget::hosts_children(handle) || !IsWindowVisible(handle)) { return; }
+    const auto found = std::ranges::find_if(windows_, [handle](const Window* window) { return window->hwnd() == handle; });
+    if (found == windows_.end()) { return; }
+    const auto window = *found;
+    if (!window->paintPending_ || window->painting_) { return; }
+    ValidateRect(handle, nullptr);
+    window->paintPending_ = false;
+    window->painting_ = true;
+    const auto finished = wil::scope_exit([&] {
+        if (std::find(windows_.begin(), windows_.end(), window) != windows_.end()) { window->painting_ = false; }
+    });
+    window->on_paint();
 }
 
 void Application::render(const std::function<void()>& draw) {

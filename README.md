@@ -15,6 +15,10 @@ prescribing an application architecture.
 Composia is not a UI toolkit: it has one `Button`, a stack layout helper, and no data
 binding, styling, or designer.
 
+For resizable panes, use [shared composition targets and coordinated updates](docs/Resizing.md).
+They keep pane placement, clipping and painting together; native EDIT controls can opt into
+buffered painting while panes move around them.
+
 ## Requirements
 
 - Windows 10 version 1903 or later, x64 (tested on Windows 11). `TextureSurface` needs a
@@ -123,7 +127,7 @@ declarations in your own manifest.
 | `Application.hpp` | The UI thread's message loop, compositor, graphics device recovery, and system appearance |
 | `Appearance.hpp` | Dark mode, high contrast, accent color, text scale, and system colors |
 | `Window.hpp` | An HWND with input, focus, enabled state, invalidation, and DPI tracking |
-| `CompositionWindowTarget.hpp` | A window's visual tree and its drawing surface |
+| `CompositionWindowTarget.hpp` | Standalone or shared pane visuals, clipping, backgrounds, and drawing surfaces |
 | `ScopedSurfaceDraw.hpp` | Direct2D drawing into a Composition surface |
 | `GraphicsDevice.hpp` | The Direct3D 11, Direct2D, DirectWrite, and Composition devices |
 | `SwapChainSurface.hpp` | Direct3D 11 frames in the visual tree |

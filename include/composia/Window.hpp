@@ -34,6 +34,10 @@ protected:
 // state changes through virtual hooks, and any other code can subscribe to them as signals.
 class Window {
 public:
+    enum class Content { native, composition };
+    // Composition windows get their required redirection style at creation. Use a shared
+    // CompositionWindowTarget to host resizable panes; native controls keep their own HWNDs.
+    Window(Application&, std::wstring_view title, int widthDip, int heightDip, Content, HWND parent = nullptr);
     // Extra styles are applied at creation; some, such as WS_EX_NOREDIRECTIONBITMAP, cannot be added later.
     Window(Application&, std::wstring_view title, int widthDip, int heightDip, HWND parent = nullptr, DWORD extendedStyle = 0);
     virtual ~Window();
@@ -141,6 +145,7 @@ private:
     std::optional<RECT> paintRect_;
     HWND lastFocus_{};
     bool hovered_{}, tracking_{}, captured_{}, reportedEnabled_{true}, destroyNotified_{};
+    bool paintPending_{}, painting_{};
     Signal<bool> hoverChanged_, focusChanged_, enabledChanged_;
     Signal<> captureLost_, destroying_;
 };

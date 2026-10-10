@@ -34,6 +34,12 @@ public:
     void render(const std::function<void()>& draw);
     // Submits a complete visual update without waiting for the message queue to become idle.
     void commit();
+    // Runs layout, invalidates root, paints pending regions in its same-thread subtree, and
+    // commits once. Nested updates join the outer operation; commit() inside it is deferred.
+    // Exceptions propagate without submitting the incomplete update. This is not rollback:
+    // native HWND changes already happened. Callbacks must not pump messages or wait for input.
+    // Other-thread controls (including a browser's windows) retain their own painting schedule.
+    void update(Window& root, const std::function<void()>& layout);
     // Queues a callback on the UI thread from any thread. Returns false once the application is
     // closing. An exception from the callback is rethrown by run() or close().
     bool post(std::function<void()> callback);
@@ -52,6 +58,7 @@ public:
 
 private:
     friend class Window;
+    friend class CompositionWindowTarget;
     void attach(Window&);
     void detach(Window&) noexcept;
     void report_error(std::exception_ptr) noexcept;
@@ -59,6 +66,7 @@ private:
     bool has_windows() const noexcept;
     void remember_focus() const noexcept;
     void verify_thread() const;
+    void paint_window(HWND);
     void notify_graphics_recreated();
     void refresh_appearance();
     void watch_appearance() noexcept;
@@ -88,6 +96,8 @@ private:
     DWORD thread_ = GetCurrentThreadId();
     bool closing_{};
     bool closed_{};
+    unsigned updateDepth_{};
+    std::vector<HWND> updateRoots_;
 };
 
 }

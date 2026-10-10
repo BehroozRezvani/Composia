@@ -38,10 +38,10 @@ Palette palette(const Button::State& state) {
 }
 
 Button::Button(Window& parent, std::wstring_view label, Painter painter)
-    : Window(parent.application(), label, 160, 44, require_parent(parent)),
+    : Window(parent.application(), label, 160, 44, Content::composition, require_parent(parent)),
       label_(label),
       painter_(std::move(painter)),
-      target_(application().compositor(), application().graphics(), hwnd()),
+      target_(*this, CompositionWindowTarget::hosts_children(parent.hwnd()) ? CompositionWindowTarget::Hosting::shared : CompositionWindowTarget::Hosting::standalone),
       text_(make_label(label_)),
       accessible_(*this, {.name = label_, .controlType = UIA_ButtonControlTypeId, .invoke = [this] { invoke(); }}) {
     invalidate();

@@ -17,7 +17,12 @@ namespace composia {
 // common-controls v6 manifest gives the controls their themed look.
 class NativeControl : private NotificationHandler {
 public:
-    NativeControl(Window& parent, std::wstring_view className, DWORD style, std::wstring_view text = {}, DWORD extendedStyle = 0);
+    enum class Painting { native, buffered_edit };
+    // buffered_edit keeps an EDIT's GDI text in an opaque layered buffer while composition panes
+    // resize around it. Other control classes are rejected. Requires the supplied Windows 10
+    // application manifest. Text, selection, IME and accessibility remain native.
+    NativeControl(Window& parent, std::wstring_view className, DWORD style, std::wstring_view text = {}, DWORD extendedStyle = 0,
+        Painting painting = Painting::native);
     ~NativeControl();
     NativeControl(const NativeControl&) = delete;
     NativeControl& operator=(const NativeControl&) = delete;
@@ -71,6 +76,7 @@ private:
     int weight_{FW_NORMAL};
     std::optional<COLORREF> textColor_, backgroundColor_;
     bool unthemed_{};
+    bool buffered_{};
     Signal<UINT> command_;
     Signal<const NMHDR&> notify_;
 };
