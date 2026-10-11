@@ -93,7 +93,7 @@ composia_add_scenarios(composia-foundation-tests foundation WARP
 
 # Shared composition panes, coordinated updates, and whole-window capture with a native EDIT.
 composia_test_target(composia-pane-tests PaneTests.cpp)
-composia_add_scenarios(composia-pane-tests pane WARP TIMEOUT 30 SCENARIOS arguments geometry updates restrictions capture)
+composia_add_scenarios(composia-pane-tests pane WARP TIMEOUT 30 SCENARIOS arguments geometry visibility updates restrictions capture)
 
 # Button input as Windows delivers it, and a UI Automation client in another apartment.
 composia_test_target(composia-interaction-tests InteractionTests.cpp)

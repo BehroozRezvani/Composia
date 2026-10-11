@@ -121,6 +121,29 @@ int geometry(const testing::Options& options) {
     return 0;
 }
 
+int visibility(const testing::Options& options) {
+    const auto foreground = GetForegroundWindow();
+    Application app{options.warp};
+    {
+        Pane parent{app}, child{app, parent.hwnd()};
+        Button button{child, L"Hidden parent button", [](ScopedSurfaceDraw&, numerics::float2, const Button::State&) {}};
+        for (const auto window : {static_cast<Window*>(&child), static_cast<Window*>(&button)}) {
+            const auto frame = window == &child ? child.target.root().Parent() : button.composition_target().root().Parent();
+            for (const auto command : {SW_SHOWNA, SW_SHOWNOACTIVATE}) {
+                window->show(SW_HIDE);
+                require(!frame.IsVisible(), "Hidden child remained visible beneath a hidden parent");
+                window->set_bounds({17, 63, 201, 137});
+                window->show(command);
+                require((GetWindowLongPtrW(window->hwnd(), GWL_STYLE) & WS_VISIBLE) != 0, "Child HWND was not shown");
+                require(frame.IsVisible(), "Shown child retained a hidden composition frame");
+            }
+        }
+        require(!IsWindowVisible(parent.hwnd()) && GetForegroundWindow() == foreground, "Hidden visibility check disturbed the desktop");
+    }
+    app.close();
+    return 0;
+}
+
 int updates(const testing::Options& options) {
     Application app{options.warp};
     {
@@ -299,6 +322,6 @@ int capture_panes(const testing::Options& options) {
 }
 
 int main(int argc, char** argv) {
-    return testing::run(argc, argv, {{"arguments", arguments}, {"geometry", geometry}, {"updates", updates},
+    return testing::run(argc, argv, {{"arguments", arguments}, {"geometry", geometry}, {"visibility", visibility}, {"updates", updates},
         {"restrictions", restrictions}, {"capture", capture_panes}});
 }

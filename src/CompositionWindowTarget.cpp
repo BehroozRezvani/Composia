@@ -70,12 +70,12 @@ struct CompositionWindowTarget::Host {
         } catch (...) { LOG_CAUGHT_EXCEPTION(); }
     }
 
-    void refresh() {
+    void refresh(std::optional<bool> visible = std::nullopt) {
         THROW_HR_IF_MSG(E_INVALIDARG, static_cast<bool>(parent) != static_cast<bool>(GetWindowLongPtrW(hwnd, GWL_STYLE) & WS_CHILD),
             "A shared composition window cannot change between child and top-level");
         THROW_HR_IF_MSG(E_INVALIDARG, parent && (GetParent(hwnd) != parent || !hosts_children(parent)),
             "A shared composition pane cannot be reparented or outlive its parent target");
-        owner.frame_.IsVisible((GetWindowLongPtrW(hwnd, GWL_STYLE) & WS_VISIBLE) != 0);
+        owner.frame_.IsVisible(visible.value_or((GetWindowLongPtrW(hwnd, GWL_STYLE) & WS_VISIBLE) != 0));
         RECT bounds{};
         THROW_IF_WIN32_BOOL_FALSE(GetClientRect(hwnd, &bounds));
         if (bounds.right != owner.pixels_.cx || bounds.bottom != owner.pixels_.cy || window.dpi() != owner.dpi_) { window.invalidate(); }
@@ -127,7 +127,9 @@ struct CompositionWindowTarget::Host {
         const auto result = DefSubclassProc(hwnd, message, wparam, lparam);
         if (GetPropW(hwnd, hostProperty) != self) { return result; }
         try {
-            if (message == WM_WINDOWPOSCHANGED || message == WM_SHOWWINDOW || message == WM_DPICHANGED_AFTERPARENT) { self->refresh(); }
+            // A hidden parent's child can get WM_SHOWWINDOW before WS_VISIBLE changes, without a later position update.
+            if (message == WM_SHOWWINDOW) { self->refresh(wparam != 0); }
+            else if (message == WM_WINDOWPOSCHANGED || message == WM_DPICHANGED_AFTERPARENT) { self->refresh(); }
             if (message == WM_WINDOWPOSCHANGED && !(reinterpret_cast<const WINDOWPOS*>(lparam)->flags & SWP_NOZORDER)) { self->reorder(); }
         } catch (...) { self->application.report_error(std::current_exception()); }
         return result;
