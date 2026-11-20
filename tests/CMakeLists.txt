@@ -8,7 +8,9 @@
 # all to one library variant, so each library function has one set of counters.
 function(composia_test_target target source)
     set(library Composia::UI)
-    if(ARGC GREATER 2 OR COMPOSIA_COVERAGE)
+    if(ARGC GREATER 2)
+        set(library ${ARGV2})
+    elseif(COMPOSIA_COVERAGE)
         set(library composia-testing)
     endif()
     add_executable(${target} ${source} ${COMPOSIA_MANIFEST})
@@ -137,13 +139,9 @@ endif()
 
 # Optional appearance-independent controls.
 if(COMPOSIA_BUILD_CONTROLS)
-    add_executable(composia-controls-tests ControlsTests.cpp ${COMPOSIA_MANIFEST})
-    target_link_libraries(composia-controls-tests PRIVATE Composia::Controls)
-    target_compile_options(composia-controls-tests PRIVATE /W4 $<$<BOOL:${COMPOSIA_WARNINGS_AS_ERRORS}>:/WX>)
+    composia_test_target(composia-controls-tests ControlsTests.cpp Composia::Controls)
     composia_add_scenarios(composia-controls-tests controls CORE SCENARIOS behaviour virtualization popup)
-    add_executable(composia-control-window-tests ControlWindowTests.cpp ${COMPOSIA_MANIFEST})
-    target_link_libraries(composia-control-window-tests PRIVATE Composia::Controls)
-    target_compile_options(composia-control-window-tests PRIVATE /W4 $<$<BOOL:${COMPOSIA_WARNINGS_AS_ERRORS}>:/WX>)
+    composia_test_target(composia-control-window-tests ControlWindowTests.cpp Composia::Controls)
     composia_add_scenarios(composia-control-window-tests controls WARP SCENARIOS interaction)
 endif()
 
