@@ -1,0 +1,6 @@
+{
+  "name": "composia-port-consumer",
+  "version-string": "0",
+  "builtin-baseline": "0699a19d0c6386247ce50d4dedbb8217d484d536",
+  "dependencies": [{ "name": "composia", "features": ["controls"] }]
+}

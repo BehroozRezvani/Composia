@@ -93,6 +93,27 @@ in its `examples` folder.
 
 ## Using Composia
 
+### With vcpkg
+
+In an x64 Visual Studio developer shell, clone Composia into your application's
+`vendor/Composia` directory. Pin the checkout to your chosen release. Add
+`"composia"` to the dependencies in the application's vcpkg manifest, or request
+`{ "name": "composia", "features": ["controls"] }` for the lookless controls.
+Use the overlay from that checkout with your usual vcpkg toolchain:
+
+```powershell
+cmake -S . -B build -G "Ninja Multi-Config" -DCMAKE_CXX_COMPILER=clang-cl `
+  "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" `
+  "-DVCPKG_OVERLAY_PORTS=$PWD/vendor/Composia/ports" -DVCPKG_TARGET_TRIPLET=x64-windows-static
+cmake --build build --config Release
+```
+
+Set `CMAKE_MSVC_RUNTIME_LIBRARY` before defining application targets, as shown
+below. The overlay installs both configurations and resolves WIL and C++/WinRT.
+[Consumer CMake project](tests/consumer/CMakeLists.txt) · [Example manifest](tests/port/vcpkg.json)
+
+### With CMake
+
 From an installed package:
 
 ```powershell
@@ -100,6 +121,7 @@ cmake --install out/build/release --prefix C:/libs/composia
 ```
 
 ```cmake
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 find_package(Composia 0.3 CONFIG REQUIRED)
 add_executable(my_app WIN32 main.cpp ${COMPOSIA_MANIFEST})
 target_link_libraries(my_app PRIVATE Composia::UI)

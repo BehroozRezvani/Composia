@@ -1,0 +1,17 @@
+{
+  "name": "composia",
+  "version": "0.3.0",
+  "description": "C++23 windowing and retained UI on Windows Composition",
+  "homepage": "https://github.com/BehroozRezvani/Composia",
+  "license": "MIT",
+  "supports": "windows & x64 & !uwp & !mingw",
+  "dependencies": [
+    "cppwinrt",
+    { "name": "vcpkg-cmake", "host": true },
+    { "name": "vcpkg-cmake-config", "host": true },
+    "wil"
+  ],
+  "features": {
+    "controls": { "description": "Appearance-independent control behaviours" }
+  }
+}
