@@ -19,6 +19,10 @@ try {
     $env:PATH = "$installer;$env:PATH"
     Import-Module (Join-Path $vsPath 'Common7\Tools\Microsoft.VisualStudio.DevShell.dll')
     Enter-VsDevShell -VsInstallPath $vsPath -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
+    # Prefer the clang-cl shipped with this STL. The standalone LLVM on PATH can be older
+    # than the minimum compiler supported by the installed Visual Studio toolset.
+    $bundledLlvm = Join-Path $vsPath 'VC/Tools/Llvm/x64/bin'
+    if (Test-Path "$bundledLlvm/clang-cl.exe") { $env:PATH = "$bundledLlvm;$env:PATH" }
     $env:VCPKG_ROOT = Join-Path $repoRoot 'external\vcpkg'
     if (!(Test-Path 'external/vcpkg/bootstrap-vcpkg.bat')) {
         & git submodule update --init --recursive
