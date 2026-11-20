@@ -111,6 +111,7 @@ public:
     void set_dark_title_bar(bool dark);
 
 protected:
+    Window(Application&, std::wstring_view, int widthDip, int heightDip, HWND parent, DWORD extendedStyle, bool doubleClicks);
     [[nodiscard]] HWND require_hwnd() const;
     virtual void on_graphics_recreated() {}
     // Runs when the system appearance changes (see Application::appearance), before the window

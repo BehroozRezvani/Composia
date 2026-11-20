@@ -14,6 +14,8 @@ public:
     std::function<bool(const PointerEvent&)> pointer;
     std::function<bool(const KeyEvent&)> key;
     mutable unsigned measures{};
+    std::vector<bool> focusChanges;
+    void on_focus_changed(bool value) override { focusChanges.push_back(value); }
 
     layout::Size measure_content(layout::Size available) const override {
         ++measures;
@@ -57,6 +59,8 @@ int arrangement(const testing::Options&) {
     require(same(b->bounds(), {14, 0, 20, 10}), "Flex proportional shrink");
     require(grid->bounds().height == 6 && tree.hit_test({32, 20}) == nullptr, "Stack overflow or half-open viewport");
     auto clipped = grid->children()[2];
+    require(clipped->viewport_bounds().y >= 20 && clipped->viewport_bounds(true).height == 0,
+        "Screen geometry exposed a fully clipped row");
     clipped->set_focusable(true);
     require(!tree.focus(clipped.get()), "Fully clipped grid row took focus");
     flex->set_layout({Kind::stack, Axis::horizontal, 1});
@@ -150,6 +154,8 @@ int routing(const testing::Options&) {
     std::weak_ptr<Probe> lifetime = front;
     front->pointer = [&](const auto&) {
         root->remove(*panel);
+        require(front->focusChanges == std::vector<bool>{true, false, true, false},
+            "Removing the focused subtree missed a focus transition");
         front.reset();
         panel.reset();
         require(!lifetime.expired() && tree.focused() == nullptr, "Removing a routed subtree lost lifetime or left focus");

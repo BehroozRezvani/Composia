@@ -13,14 +13,18 @@ bool key_down(int key) { return (GetKeyState(key) & 0x8000) != 0; }
 
 ElementWindow::ElementWindow(Application& app, std::wstring_view title, int widthDip, int heightDip,
     std::shared_ptr<Element> root, HWND parent)
-    : Window(app, title, widthDip, heightDip, Content::composition, parent),
+    : Window(app, title, widthDip, heightDip, parent, WS_EX_NOREDIRECTIONBITMAP, true),
       tree_(std::move(root), [this] {
           if (hwnd()) { THROW_IF_WIN32_BOOL_FALSE(PostMessageW(hwnd(), update_message(), 0, 0)); }
       }),
       target_(*this, !parent || CompositionWindowTarget::hosts_children(parent)
           ? CompositionWindowTarget::Hosting::shared : CompositionWindowTarget::Hosting::standalone) {
+    tree_.window_ = this;
+    destroying_ = on_destroy([this] { tree_.release_window(); });
     on_resize();
 }
+
+ElementWindow::~ElementWindow() { tree_.release_window(); }
 
 void ElementWindow::on_resize() {
     const auto b = client_bounds();
@@ -48,6 +52,9 @@ std::optional<LRESULT> ElementWindow::on_message(UINT message, WPARAM wparam, LP
     using Kind = PointerEvent::Kind;
     using Button = PointerEvent::Button;
     PointerEvent event{};
+    event.modifiers = LOWORD(wparam);
+    event.doubleClick = message == WM_LBUTTONDBLCLK || message == WM_RBUTTONDBLCLK ||
+        message == WM_MBUTTONDBLCLK || message == WM_XBUTTONDBLCLK;
     switch (message) {
     case WM_GETDLGCODE: {
         if (wparam == VK_TAB) {
@@ -61,7 +68,7 @@ std::optional<LRESULT> ElementWindow::on_message(UINT message, WPARAM wparam, LP
     }
     case WM_KEYDOWN: case WM_KEYUP:
         if (enabled() && tree_.key({static_cast<unsigned>(wparam), message == WM_KEYDOWN,
-                key_down(VK_SHIFT), key_down(VK_CONTROL), key_down(VK_MENU)})) { return 0; }
+                key_down(VK_SHIFT), key_down(VK_CONTROL), key_down(VK_MENU), lparam})) { return 0; }
         return std::nullopt;
     case WM_MOUSEWHEEL: case WM_MOUSEHWHEEL:
         if (!enabled()) { return std::nullopt; }

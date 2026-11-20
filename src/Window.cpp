@@ -14,13 +14,15 @@
 namespace composia {
 namespace {
 constexpr wchar_t windowClass[] = L"Composia.Window";
+constexpr wchar_t doubleClickClass[] = L"Composia.ElementWindow";
 constexpr wchar_t handlerProperty[] = L"Composia.NotificationHandler";
 
 // The Composia window behind an HWND of this thread, or null.
 Window* window_from(HWND hwnd) noexcept {
     if (!hwnd || GetWindowThreadProcessId(hwnd, nullptr) != GetCurrentThreadId()) { return nullptr; }
-    wchar_t name[std::size(windowClass)]{};
-    if (!GetClassNameW(hwnd, name, static_cast<int>(std::size(name))) || std::wcscmp(name, windowClass) != 0) { return nullptr; }
+    wchar_t name[std::size(doubleClickClass)+1]{};
+    if (!GetClassNameW(hwnd, name, static_cast<int>(std::size(name))) ||
+        (std::wcscmp(name, windowClass) && std::wcscmp(name, doubleClickClass))) { return nullptr; }
     return reinterpret_cast<Window*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
 }
 
@@ -71,15 +73,19 @@ Window::Window(Application& application, std::wstring_view title, int widthDip, 
     : Window(application, title, widthDip, heightDip, parent, content == Content::composition ? WS_EX_NOREDIRECTIONBITMAP : 0) {}
 
 Window::Window(Application& application, std::wstring_view title, int widthDip, int heightDip, HWND parent, DWORD extendedStyle)
+    : Window(application, title, widthDip, heightDip, parent, extendedStyle, false) {}
+
+Window::Window(Application& application, std::wstring_view title, int widthDip, int heightDip, HWND parent, DWORD extendedStyle, bool doubleClicks)
     : application_(application), topLevel_(parent == nullptr), unredirected_((extendedStyle & WS_EX_NOREDIRECTIONBITMAP) != 0) {
     application_.verify_thread();
     const auto instance = GetModuleHandleW(nullptr);
     WNDCLASSEXW wc{};
     wc.cbSize = sizeof(wc);
     wc.lpfnWndProc = window_proc;
+    wc.style = doubleClicks ? CS_DBLCLKS : 0;
     wc.hInstance = instance;
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-    wc.lpszClassName = windowClass;
+    wc.lpszClassName = doubleClicks ? doubleClickClass : windowClass;
     if (!RegisterClassExW(&wc)) {
         THROW_LAST_ERROR_IF(GetLastError() != ERROR_CLASS_ALREADY_EXISTS);
     }
@@ -91,7 +97,7 @@ Window::Window(Application& application, std::wstring_view title, int widthDip, 
     RECT bounds{0, 0, MulDiv(widthDip, initialDpi, 96), MulDiv(heightDip, initialDpi, 96)};
     THROW_IF_WIN32_BOOL_FALSE(AdjustWindowRectExForDpi(&bounds, style, FALSE, extendedStyle, initialDpi));
     const std::wstring ownedTitle{title};
-    auto handle = CreateWindowExW(extendedStyle, windowClass, ownedTitle.c_str(), style,
+    auto handle = CreateWindowExW(extendedStyle, wc.lpszClassName, ownedTitle.c_str(), style,
         parent ? 0 : CW_USEDEFAULT, parent ? 0 : CW_USEDEFAULT, bounds.right - bounds.left, bounds.bottom - bounds.top,
         parent, nullptr, instance, this);
     hwnd_.reset(handle);

@@ -66,9 +66,9 @@ bool ElementTree::focus(Element* element) {
         element->reveal(true);
     }
     if (focused_ == element) { return true; }
-    if (focused_) { focused_->invalidate(); }
-    focused_ = element;
-    if (element) { element->invalidate(); }
+    auto* previous = std::exchange(focused_, element);
+    if (previous) { previous->invalidate(); previous->on_focus_changed(false); }
+    if (element) { element->invalidate(); element->on_focus_changed(true); }
     return true;
 }
 

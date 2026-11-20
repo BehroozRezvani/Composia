@@ -33,6 +33,7 @@ void Element::check_mutation() const {
 }
 
 void Element::attach(ElementTree* tree) noexcept {
+    if (tree_ && !tree) { on_detaching(); }
     tree_ = tree;
     for (auto& child : children_) { child->attach(tree); }
 }
@@ -63,7 +64,7 @@ void Element::remove(Element& child) {
     child.invalidate();
     if (tree_) {
         for (auto* p = tree_->focused_; p; p = p->parent_) {
-            if (p == &child) { tree_->focused_ = nullptr; break; }
+            if (p == &child) { tree_->focus(nullptr); break; }
         }
     }
     child.attach(nullptr);
@@ -124,6 +125,21 @@ void Element::set_scroll_offset(float value) {
 }
 
 bool Element::focused() const noexcept { return tree_ && tree_->focused_ == this; }
+
+ElementWindow* Element::host_window() const noexcept { return tree_ ? tree_->window_ : nullptr; }
+
+Rect Element::viewport_bounds(bool clipped) const noexcept {
+    auto box = bounds_;
+    for (auto* p = parent_; p; p = p->parent_) {
+        if (clipped) { box = intersection(box, {0, 0, p->bounds_.width, p->bounds_.height}); }
+        box.x += p->bounds_.x;
+        box.y += p->bounds_.y;
+    }
+    if (clipped && tree_) { box = intersection(box, {0, 0, tree_->viewport_.width, tree_->viewport_.height}); }
+    box.width = std::max(0.f, box.width);
+    box.height = std::max(0.f, box.height);
+    return box;
+}
 
 void Element::invalidate() { invalidate({0, 0, bounds_.width, bounds_.height}); }
 
@@ -224,6 +240,14 @@ ElementTree::ElementTree(std::shared_ptr<Element> root, std::function<void()> re
 
 ElementTree::~ElementTree() { root_->attach(nullptr); }
 
+void ElementTree::release_window() noexcept {
+    if (!window_) { return; }
+    focused_ = nullptr;
+    root_->attach(nullptr);
+    window_ = nullptr;
+    root_->attach(this);
+}
+
 void ElementTree::schedule() {
     if (scheduled_) { return; }
     scheduled_ = true;
@@ -259,7 +283,10 @@ void ElementTree::update_layout() {
     const auto reset = wil::scope_exit([&] { traversing_ = false; });
     root_->measure(viewport_);
     root_->arrange({0, 0, viewport_.width, viewport_.height});
-    if (focused_ && !focused_->reveal(false)) { focused_ = nullptr; }
+    if (focused_ && !focused_->reveal(false)) {
+        auto* old = std::exchange(focused_, nullptr);
+        old->on_focus_changed(false);
+    }
 }
 
 std::optional<Rect> ElementTree::take_dirty_bounds() {

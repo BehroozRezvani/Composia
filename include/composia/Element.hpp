@@ -1,6 +1,7 @@
 #pragma once
 
 #include <composia/Layout.hpp>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -11,6 +12,7 @@ namespace composia {
 
 class Element;
 class ElementTree;
+class ElementWindow;
 class ScopedSurfaceDraw;
 
 struct ElementLayout {
@@ -29,11 +31,14 @@ struct PointerEvent {
     Button button{};
     float wheelDelta{};                       // Detents, positive towards the start.
     layout::Axis wheelAxis{layout::Axis::vertical};
+    unsigned modifiers{};                     // Win32 mouse key state (MK_SHIFT, MK_LBUTTON, ...).
+    bool doubleClick{};
 };
 
 struct KeyEvent {
     unsigned key{};                           // Windows virtual-key code.
     bool down{}, shift{}, control{}, alt{};
+    std::intptr_t keyData{};                   // Win32 repeat count, scan code and transition flags.
 };
 
 // A UI-thread element. A parent owns its children. Siblings lay out and take focus in
@@ -62,12 +67,18 @@ public:
     [[nodiscard]] bool focused() const noexcept;
     [[nodiscard]] layout::Rect bounds() const noexcept { return bounds_; } // In parent DIPs.
     [[nodiscard]] layout::Size desired_size() const noexcept { return desired_; }
+    // Bounds in viewport DIPs, optionally intersected with all ancestor clips.
+    [[nodiscard]] layout::Rect viewport_bounds(bool clipped = false) const noexcept;
 
     void invalidate();
     void invalidate(layout::Rect local);
     void invalidate_measure();
 
 protected:
+    [[nodiscard]] ElementWindow* host_window() const noexcept;
+    // Host lifecycle hooks may invalidate paint. Leave tree structure and focus unchanged.
+    virtual void on_focus_changed(bool) {}
+    virtual void on_detaching() noexcept {}
     // Available dimensions can be +infinity. Return finite nonnegative DIPs. Layout and paint
     // hooks must leave the tree structurally unchanged. Input handlers may edit the tree.
     virtual layout::Size measure_content(layout::Size available) const;
@@ -131,6 +142,8 @@ public:
 
 private:
     friend class Element;
+    friend class ElementWindow;
+    void release_window() noexcept;
     struct Recipient { std::shared_ptr<Element> element; layout::Point origin; };
     template<class Handler> bool bubble(Element&, Handler&&);
     void schedule();
@@ -139,6 +152,7 @@ private:
     std::function<void()> requestUpdate_;
     std::vector<Recipient> route_;
     Element* focused_{};
+    ElementWindow* window_{};
     layout::Size viewport_{};
     std::optional<layout::Rect> dirty_;
     bool scheduled_{}, traversing_{};

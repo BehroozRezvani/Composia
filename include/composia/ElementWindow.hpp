@@ -12,6 +12,7 @@ class ElementWindow : public Window {
 public:
     ElementWindow(Application&, std::wstring_view title, int widthDip, int heightDip,
         std::shared_ptr<Element> root, HWND parent = nullptr);
+    ~ElementWindow() override;
     [[nodiscard]] ElementTree& elements() noexcept { return tree_; }
     [[nodiscard]] CompositionWindowTarget& composition_target() noexcept { return target_; }
 
@@ -25,6 +26,7 @@ private:
     ElementTree tree_;
     CompositionWindowTarget target_;
     bool pointerFocus_{};
+    Connection destroying_;
 };
 
 }
