@@ -20,6 +20,9 @@ that keep their output on the GPU avoid this synchronous readback.
 5900X, GeForce RTX 3090 driver 32.0.16.2124, clang-cl 21.1.1, x64 Release,
 static CRT. The measured source is commit `fda7457`. [Per-process results](windows11-x64.csv)
 
+A [device creation investigation](d3d11-device-startup.md) isolates two
+driver-initiated operations on this machine before the first draw.
+
 **Method.** The driver uses one inactive desktop and a seeded, interleaved order.
 It discards one fresh process per backend and measures 11 more. Startup spans
 process creation through validation of the first rendered pixel with a warm
