@@ -333,6 +333,17 @@ int Application::run() {
             for (const auto window : windows_) {
                 const auto root = window->hwnd();
                 if (window->top_level() && root && (message.hwnd == root || IsChild(root, message.hwnd))) {
+                    // A retained control can receive keyboard input on the dialog root itself.
+                    // IsDialogMessage handles that HWND as a dialog even when it wants text.
+                    if (root == message.hwnd && (message.message == WM_KEYDOWN ||
+                        message.message == WM_KEYUP || message.message == WM_CHAR)) {
+                        const auto code = SendMessageW(root, WM_GETDLGCODE, message.wParam,
+                            reinterpret_cast<LPARAM>(&message));
+                        const auto wants = message.wParam == VK_TAB ? DLGC_WANTTAB :
+                            (message.wParam == VK_RETURN || message.wParam == VK_ESCAPE) ? DLGC_WANTMESSAGE :
+                            DLGC_WANTCHARS;
+                        if (code & (wants | DLGC_WANTMESSAGE)) { break; }
+                    }
                     handled = IsDialogMessageW(root, &message) != FALSE;
                     break;
                 }

@@ -43,6 +43,13 @@ int main(int argc, char** argv) {
             std::ofstream(path, std::ios::binary) << "\xff";
             require(composia::testing::throws<std::runtime_error>([&] { window.open(path); }), "Invalid UTF-8 accepted");
             require(field.text().empty(), "A failed open changed the document");
+            std::ofstream(path, std::ios::binary) << "Draft";
+            window.open(path);
+            PostMessageW(window.hwnd(), WM_CHAR, L'A', 1);
+            PostMessageW(window.hwnd(), WM_COMMAND, FILE_SAVE, 0);
+            PostQuitMessage(0);
+            require(app.run() == 0 && editor::read_document(path).text == L"ADraft",
+                "A character routed through the application loop did not reach the saved file");
         }
         app.close();
         return 0;
