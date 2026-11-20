@@ -19,6 +19,59 @@ void flush(ElementWindow& window) {
     window.rethrow_callback_error();
 }
 
+int cursor(const testing::Options& options) {
+    Application app{options.warp};
+    {
+        auto root = std::make_shared<Element>(ElementLayout{ElementLayout::Kind::canvas});
+        auto edit = std::make_shared<TextBox>(TextBox::Options{.name = L"Message"}, L"Document text");
+        edit->set_preferred_size({110, 60});
+        root->add(edit);
+        ElementWindow window{app, L"Text cursor", 260, 100, root};
+        window.show(SW_SHOWNOACTIVATE);
+        flush(window);
+        const auto hwnd = window.hwnd();
+        const auto arrow = LoadCursorW(nullptr, IDC_ARROW);
+        const auto ibeam = LoadCursorW(nullptr, IDC_IBEAM);
+        const auto query = [&](int hit) {
+            SendMessageW(hwnd, WM_SETCURSOR, reinterpret_cast<WPARAM>(hwnd), MAKELPARAM(hit, WM_MOUSEMOVE));
+        };
+        const auto move = [&](int x, HCURSOR expected) {
+            // Place the fixture under the pointer. Never move the user's cursor.
+            POINT mouse{};
+            if (!GetCursorPos(&mouse)) {
+                const auto pos = GetMessagePos();
+                mouse = {static_cast<short>(LOWORD(pos)), static_cast<short>(HIWORD(pos))};
+            }
+            POINT client{};
+            RECT frame{};
+            THROW_IF_WIN32_BOOL_FALSE(ClientToScreen(hwnd, &client));
+            THROW_IF_WIN32_BOOL_FALSE(GetWindowRect(hwnd, &frame));
+            const int px = static_cast<int>(x * window.scale()), py = static_cast<int>(20 * window.scale());
+            THROW_IF_WIN32_BOOL_FALSE(SetWindowPos(hwnd, nullptr, mouse.x - px - (client.x - frame.left),
+                mouse.y - py - (client.y - frame.top), 0, 0, SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOSIZE));
+            query(HTCLIENT);
+            require(GetCursor() == expected, "Wrong cursor between WM_SETCURSOR and WM_MOUSEMOVE");
+            SendMessageW(hwnd, WM_MOUSEMOVE, 0, MAKELPARAM(px, py));
+            require(GetCursor() == expected, "Pointer movement changed the resolved cursor");
+        };
+        SetCursor(arrow);
+        for (int x = 20; x < 64; x += 4) { move(x, ibeam); }
+        edit->select(0, -1);
+        move(50, ibeam);
+        move(180, arrow);
+        edit->set_read_only(true);
+        move(40, ibeam);
+        edit->set_enabled(false);
+        move(40, arrow);
+        edit->set_enabled(true);
+        move(40, ibeam);
+        query(HTMENU);
+        require(GetCursor() == arrow, "The I-beam leaked into the native menu bar");
+    }
+    app.close();
+    return 0;
+}
+
 int editing(const testing::Options& options) {
     Application app{options.warp};
     {
@@ -335,6 +388,7 @@ int accessibility(const testing::Options& options) {
 int main(int argc, char** argv) {
     return testing::run(argc, argv,
                         {{"editing", editing},
+                         {"cursor", cursor},
                          {"rendering", rendering},
                          {"clipboard", clipboard},
                          {"accessibility", accessibility},

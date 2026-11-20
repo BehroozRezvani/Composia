@@ -172,7 +172,6 @@ bool TextBox::on_pointer(const PointerEvent& e) {
         return before.x != after.x || before.y != after.y;
     }
     if (e.kind == PointerEvent::Kind::move) {
-        if (host_window()) { SetCursor(LoadCursorW(nullptr, IDC_IBEAM)); }
         return host_->input(WM_MOUSEMOVE, keys, pt).has_value();
     }
     if (e.button != PointerEvent::Button::left) { return false; }

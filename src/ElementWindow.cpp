@@ -92,6 +92,19 @@ std::optional<LRESULT> ElementWindow::on_message(UINT message, WPARAM wparam, LP
     event.doubleClick = message == WM_LBUTTONDBLCLK || message == WM_RBUTTONDBLCLK ||
         message == WM_MBUTTONDBLCLK || message == WM_XBUTTONDBLCLK;
     switch (message) {
+    case WM_SETCURSOR: {
+        if (reinterpret_cast<HWND>(wparam) != hwnd() || LOWORD(lparam) != HTCLIENT || !enabled()) {
+            return std::nullopt;
+        }
+        POINT point{};
+        // The live cursor position is unavailable on an inactive desktop.
+        const auto position = GetCursorPos(&point) && ScreenToClient(hwnd(), &point)
+            ? to_dips(point) : pointer_position_from_screen(GetMessagePos());
+        const auto* editor = dynamic_cast<TextBox*>(tree_.hit_test(position));
+        if (!editor || !editor->enabled()) { return std::nullopt; }
+        SetCursor(LoadCursorW(nullptr, IDC_IBEAM));
+        return TRUE;
+    }
     case WM_CHAR: {
         const wchar_t unit = static_cast<wchar_t>(wparam);
         if (enabled() && unit >= L' ' && tree_.text_input({&unit, 1})) { return 0; }
