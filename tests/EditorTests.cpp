@@ -7,7 +7,7 @@ using composia::testing::require;
 
 // SetMenu and GetMenuItemCount also succeed when a composition-only HWND has
 // nowhere to paint its native menu. Check the actual label pixels in the frame.
-static void check_menu_labels(HWND hwnd) {
+static bool menu_labels_visible(HWND hwnd) {
     RECT frame{};
     THROW_IF_WIN32_BOOL_FALSE(GetWindowRect(hwnd, &frame));
     const wil::unique_hdc_window screen{GetDC(nullptr)};
@@ -30,8 +30,23 @@ static void check_menu_labels(HWND hwnd) {
                 if (pixel != CLR_INVALID && pixel != background) { ++ink; }
             }
         }
-        require(ink >= 8, "The editor menu label did not paint");
+        if (ink < 8) { return false; }
     }
+    return true;
+}
+
+static void check_first_menu_frame(composia::Application& app, HWND hwnd) {
+    // The non-client frame is composed asynchronously after ShowWindow. Pump
+    // queued paints while waiting, as the standalone editor's message loop does.
+    const auto deadline = GetTickCount64() + 3000;
+    do {
+        MSG message{};
+        while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) { DispatchMessageW(&message); }
+        app.commit();
+        if (menu_labels_visible(hwnd)) { return; }
+        MsgWaitForMultipleObjectsEx(0, nullptr, 16, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+    } while (GetTickCount64() < deadline);
+    require(false, "The editor menu label did not paint");
 }
 
 int main(int argc, char** argv) {
@@ -51,7 +66,7 @@ int main(int argc, char** argv) {
             window.show(SW_SHOWNOACTIVATE);
             UpdateWindow(window.hwnd());
             require(GetMenuItemCount(GetMenu(window.hwnd())) == 2, "File and Edit menus must be attached");
-            check_menu_labels(window.hwnd());
+            check_first_menu_frame(app, window.hwnd());
             auto& field = dynamic_cast<composia::TextBox&>(window.elements().root());
             require(field.text() == L"Café 東京\rSecond line\r", "UTF-8 import or newline handling failed");
             window.focus_element(field);
