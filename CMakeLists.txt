@@ -14,6 +14,7 @@ option(COMPOSIA_BUILD_CONTROLS "Provide the optional appearance-independent cont
 option(COMPOSIA_INSTALL "Generate Composia's install rules" ${PROJECT_IS_TOP_LEVEL})
 option(COMPOSIA_WARNINGS_AS_ERRORS "Treat warnings in Composia's own code as errors" ${PROJECT_IS_TOP_LEVEL})
 option(COMPOSIA_COVERAGE "Instrument the library for clang source-based code coverage" OFF)
+option(COMPOSIA_BUILD_BENCHMARKS "Build the comparative drawing workload" OFF)
 
 # A top-level build uses the static CRT, so its executables depend only on Windows system DLLs.
 # Inside another project, Composia uses that project's runtime library.
@@ -130,6 +131,9 @@ endif()
 
 if(COMPOSIA_BUILD_EXAMPLES)
     add_subdirectory(examples)
+endif()
+if(COMPOSIA_BUILD_BENCHMARKS)
+    add_subdirectory(benchmarks)
 endif()
 
 if(COMPOSIA_INSTALL)
