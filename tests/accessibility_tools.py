@@ -90,7 +90,7 @@ def fixture_window(desk, proc):
     raise RuntimeError("Fixture window did not open")
 
 
-def run(fixture, nvda, checker):
+def run(fixture, nvda, checker, playback):
     name = "ComposiaAccessibility" + uuid.uuid4().hex
     with tempfile.TemporaryDirectory() as work, ExitStack() as stack:
         desk = create_desktop(name, None, None, 0, 0x10000000, None)
@@ -107,7 +107,12 @@ def run(fixture, nvda, checker):
             "playStartAndExitSounds = False\n[speech]\nsynth = silence\n[update]\nautoCheck = False\n"
             "[development]\nenableScratchpadDir = True\n", encoding="utf-8")
         result = Path(work) / "result.json"
-        os.environ.update(COMPOSIA_TEST_HWND=str(hwnd), COMPOSIA_NVDA_RESULT=str(result))
+        expected = ({"Output device": ("Output device", "COMBOBOX"), "Mute audio": ("Mute audio", "CHECKBOX"),
+                     "Studio headphones": ("Studio headphones", "LISTITEM"), "Volume": ("Volume", "SLIDER")}
+                    if playback else {"volume": ("Volume", "SLIDER"), "devices": ("Playback devices", "LIST"),
+                                      "device1": ("Device 1", "LISTITEM"), "apply": ("Apply", "BUTTON")})
+        os.environ.update(COMPOSIA_TEST_HWND=str(hwnd), COMPOSIA_NVDA_RESULT=str(result),
+                          COMPOSIA_NVDA_TARGETS=json.dumps(list(expected)), COMPOSIA_NVDA_PLAYBACK=str(int(playback)))
         log = Path(work) / "nvda.log"
         reader = start(stack, name, [nvda, "--minimal", "--no-sr-flag", "--config-path", profile, "-f", log])
         for _ in range(300):
@@ -119,17 +124,20 @@ def run(fixture, nvda, checker):
         print(json.dumps(report, indent=2), flush=True)
         if "error" in report:
             raise RuntimeError(report["error"])
-        expected = {"volume": ("Volume", "SLIDER"), "devices": ("Playback devices", "LIST"),
-                    "device1": ("Device 1", "LISTITEM"), "apply": ("Apply", "BUTTON")}
         for key, (label, role) in expected.items():
             entry = report[key]
             if entry["name"] != label or entry["role"] != role or label not in entry["speech"]:
                 raise AssertionError(f"Unexpected NVDA announcement for {key}")
-        volume_words = report["volume"]["speech"].split()
-        if ("25" not in volume_words or "focused" not in volume_words
-                or "selected" not in report["device1"]["speech"].split()
-                or report["document"].rstrip() != "Surround sound"):
-            raise AssertionError("Unexpected NVDA value, focus, selection state or document text")
+        if playback:
+            if ("expanded" not in report["Output device"]["speech"].split()
+                    or "selected" not in report["Studio headphones"]["speech"].split()):
+                raise AssertionError("NVDA missed the expanded dropdown or its selected option")
+        else:
+            volume_words = report["volume"]["speech"].split()
+            if ("25" not in volume_words or "focused" not in volume_words
+                    or "selected" not in report["device1"]["speech"].split()
+                    or report["document"].rstrip() != "Surround sound"):
+                raise AssertionError("Unexpected NVDA value, focus, selection state or document text")
         check_log = Path(work) / "checker.xml"
         inspect = start(stack, name, [checker, "-hwnd", hex(hwnd), "-enable", "CheckName",
                         "-enable", "CheckRole", "-enable", "CheckTreeDepth", "-logfile", check_log])
@@ -146,6 +154,7 @@ def run(fixture, nvda, checker):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--playback", action="store_true", help="Inspect the lookless playback controls")
     for option in ("fixture", "nvda", "checker"):
         parser.add_argument("--" + option, type=lambda path: Path(path).resolve(strict=True), required=True)
     run(**vars(parser.parse_args()))

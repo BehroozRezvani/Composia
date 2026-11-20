@@ -40,6 +40,8 @@ HWND. An NVDA global plugin reads the virtual controls through NVDA's UI Automat
 and checks its generated English speech for the slider, list, selection and button. It also
 reads the textbox through NVDA's text navigation interface. AccCheckConsole independently
 checks names, roles and tree depth. NVDA uses a temporary profile and a silent synthesizer.
+With `Composia::Controls` enabled, `accessibility-playback` checks NVDA's announcements
+for the custom dropdown, its selected option, the toggle and the slider.
 
 With Python 3, a portable copy of NVDA and the Windows SDK Accessibility Checker installed,
 configure their paths in the test build and run the external check.
@@ -49,7 +51,7 @@ cmake --preset release `
   '-DCOMPOSIA_TEST_NVDA=C:/tools/nvda/nvda_noUIAccess.exe' `
   '-DCOMPOSIA_TEST_ACCCHECK=C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64/AccChecker/AccCheckConsole.exe'
 cmake --build out/build/release
-ctest --test-dir out/build/release -R '^accessibility-tools$' --output-on-failure
+ctest --test-dir out/build/release -R '^accessibility-(tools|playback)$' --output-on-failure
 ```
 
 The core selection tests and the UI Automation client tests run independently of the external tools.

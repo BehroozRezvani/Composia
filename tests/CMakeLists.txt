@@ -143,6 +143,13 @@ if(COMPOSIA_BUILD_CONTROLS)
     composia_add_scenarios(composia-controls-tests controls CORE SCENARIOS behaviour virtualization popup)
     composia_test_target(composia-control-window-tests ControlWindowTests.cpp Composia::Controls)
     composia_add_scenarios(composia-control-window-tests controls WARP SCENARIOS interaction)
+    if(COMPOSIA_TEST_NVDA AND COMPOSIA_TEST_ACCCHECK)
+        add_test(NAME accessibility-playback COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/accessibility_tools.py" --playback
+            --fixture $<TARGET_FILE:composia-control-window-tests>
+            --nvda "${COMPOSIA_TEST_NVDA}" --checker "${COMPOSIA_TEST_ACCCHECK}")
+        set_tests_properties(accessibility-playback PROPERTIES LABELS desktop RUN_SERIAL TRUE TIMEOUT 120)
+    endif()
 endif()
 
 # Sparse virtual surfaces.

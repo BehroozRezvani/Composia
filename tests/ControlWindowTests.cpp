@@ -105,7 +105,15 @@ int interaction(const testing::Options& options) {
     }
     return 0;
 }
+int fixture(const testing::Options& options) {
+    Application app(options.warp);
+    playback::Playback panel(app);
+    ElementWindow window(app, L"Composia accessibility test", 344, 184, panel.root);
+    window.show(SW_SHOWNOACTIVATE);
+    require(panel.output->open(), "Could not open playback choices");
+    return app.run();
+}
 }
 int main(int argc, char** argv) {
-    return testing::run(argc, argv, {{"interaction", interaction}});
+    return testing::run(argc, argv, {{"interaction", interaction}, {"fixture", fixture}});
 }
