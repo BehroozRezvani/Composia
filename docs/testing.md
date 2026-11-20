@@ -32,6 +32,28 @@ results to `out/build/<preset>/test-results-*.xml`.
 The test build also compiles every public header on its own, twice, so a header that is not
 self-contained, or lacks an include guard, fails the build.
 
+## Screen-reader and inspection tests
+
+The optional `accessibility-tools` test starts a retained preferences panel, portable NVDA
+and the Windows SDK's AccCheckConsole on a new, inactive Win32 desktop. The panel has one
+HWND. An NVDA global plugin reads the virtual controls through NVDA's UI Automation adapter
+and checks its generated English speech for the slider, list, selection and button. It also
+reads the textbox through NVDA's text navigation interface. AccCheckConsole independently
+checks names, roles and tree depth. NVDA uses a temporary profile and a silent synthesizer.
+
+With Python 3, a portable copy of NVDA and the Windows SDK Accessibility Checker installed,
+configure their paths in the test build and run the external check.
+
+```powershell
+cmake --preset release `
+  '-DCOMPOSIA_TEST_NVDA=C:/tools/nvda/nvda_noUIAccess.exe' `
+  '-DCOMPOSIA_TEST_ACCCHECK=C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64/AccChecker/AccCheckConsole.exe'
+cmake --build out/build/release
+ctest --test-dir out/build/release -R '^accessibility-tools$' --output-on-failure
+```
+
+The core selection tests and the UI Automation client tests run independently of the external tools.
+
 ## What the tests check
 
 Tests are named `<area>-<scenario>`; a `-warp` suffix runs the same scenario on WARP.
@@ -115,8 +137,8 @@ and one 96-DPI monitor, on hardware and on WARP. The checks do not establish:
   inspected at high DPI.
 - Real pointer and keyboard input. The checks send messages; focus restoration is driven by
   `SetActiveWindow` and minimize and restore rather than Alt+Tab.
-- IME composition in hosted EDIT controls, and what a screen reader announces. UI
-  Automation is checked through provider calls and one system client.
+- IME composition in hosted EDIT controls, manual screen-reader navigation and announcements
+  from readers other than NVDA.
 - The system screen-capture picker, which needs a person; the capture checks pick their
   target through the SDK's desktop interop.
 - Whether the update clip is ever needed: on this machine, drawing outside a partial

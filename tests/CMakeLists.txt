@@ -124,6 +124,17 @@ composia_test_target(composia-element-accessibility-tests ElementAccessibilityTe
 composia_add_scenarios(composia-element-accessibility-tests element-accessibility WARP SCENARIOS inspect)
 composia_add_scenarios(composia-element-accessibility-tests element-accessibility CORE SCENARIOS selection)
 
+set(COMPOSIA_TEST_NVDA "" CACHE FILEPATH "Portable NVDA executable for screen-reader testing")
+set(COMPOSIA_TEST_ACCCHECK "" CACHE FILEPATH "Windows SDK AccCheckConsole executable for accessibility inspection")
+if(COMPOSIA_TEST_NVDA AND COMPOSIA_TEST_ACCCHECK)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    add_test(NAME accessibility-tools COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/accessibility_tools.py"
+        --fixture $<TARGET_FILE:composia-element-accessibility-tests>
+        --nvda "${COMPOSIA_TEST_NVDA}" --checker "${COMPOSIA_TEST_ACCCHECK}")
+    set_tests_properties(accessibility-tools PROPERTIES LABELS desktop RUN_SERIAL TRUE TIMEOUT 120)
+endif()
+
 # Sparse virtual surfaces.
 composia_test_target(composia-virtual-tests VirtualSurfaceTests.cpp)
 composia_add_scenarios(composia-virtual-tests virtual WARP TIMEOUT 40 SCENARIOS sparse-cache partial-updates)
