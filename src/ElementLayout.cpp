@@ -88,6 +88,7 @@ Size Element::layout_children(Size available, bool arranging) {
     const float gap = layout_.gap;
     if (kind == overlay || kind == canvas) {
         Size result{};
+        if (kind == canvas && !arranging) { return result; } // The canvas supplies its own extent.
         for (auto& child : children_) {
             const auto size = child->measure(available);
             result.width = std::max(result.width, size.width);

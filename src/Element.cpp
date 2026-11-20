@@ -324,9 +324,8 @@ void ElementTree::set_viewport(Size value) {
 }
 
 void ElementTree::update_layout() {
-    if (updatingLayout_) { return; }
     root_->check_mutation();
-    if (!root_->arrangeDirty_) { return; }
+    if (updatingLayout_ || (!root_->arrangeDirty_ && layoutCallbacks_.empty())) { return; }
     updatingLayout_ = true;
     const auto reset = wil::scope_exit([&] { updatingLayout_ = traversing_ = false; });
     do {
@@ -334,15 +333,14 @@ void ElementTree::update_layout() {
         root_->measure(viewport_);
         root_->arrange({0, 0, viewport_.width, viewport_.height});
         traversing_ = false;
-        auto callbacks = std::move(layoutCallbacks_);
-        for (const auto& e : callbacks) {
+        while (!layoutCallbacks_.empty()) {
+            const auto e = layoutCallbacks_.back();
             if (e->tree_ == this && e->observeLayout_) { e->on_layout_updated(); }
+            layoutCallbacks_.pop_back();
         }
-        callbacks.clear();
-        layoutCallbacks_.swap(callbacks);
     } while (root_->arrangeDirty_);
     if (focused_ && !focused_->reveal(false)) {
-        auto* old = std::exchange(focused_, nullptr);
+        auto old = reference(std::exchange(focused_, nullptr));
         old->on_focus_changed(false);
         if (window_ && window_->focused()) { ElementAutomation::focus_changed(*old, false); }
     }
