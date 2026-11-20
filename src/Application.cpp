@@ -186,11 +186,16 @@ void Application::paint_window(HWND handle) {
     if (found == windows_.end()) { return; }
     const auto window = *found;
     if (!window->paintPending_ || window->painting_) { return; }
+    RECT region{};
+    if (GetUpdateRect(handle, &region, FALSE)) { window->paintRect_ = region; }
     ValidateRect(handle, nullptr);
     window->paintPending_ = false;
     window->painting_ = true;
     const auto finished = wil::scope_exit([&] {
-        if (std::find(windows_.begin(), windows_.end(), window) != windows_.end()) { window->painting_ = false; }
+        if (std::find(windows_.begin(), windows_.end(), window) != windows_.end()) {
+            window->paintRect_.reset();
+            window->painting_ = false;
+        }
     });
     window->on_paint();
 }

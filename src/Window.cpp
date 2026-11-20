@@ -71,7 +71,7 @@ Window::Window(Application& application, std::wstring_view title, int widthDip, 
     : Window(application, title, widthDip, heightDip, parent, content == Content::composition ? WS_EX_NOREDIRECTIONBITMAP : 0) {}
 
 Window::Window(Application& application, std::wstring_view title, int widthDip, int heightDip, HWND parent, DWORD extendedStyle)
-    : application_(application), topLevel_(parent == nullptr) {
+    : application_(application), topLevel_(parent == nullptr), unredirected_((extendedStyle & WS_EX_NOREDIRECTIONBITMAP) != 0) {
     application_.verify_thread();
     const auto instance = GetModuleHandleW(nullptr);
     WNDCLASSEXW wc{};
@@ -443,13 +443,18 @@ LRESULT Window::dispatch(HWND handle, UINT message, WPARAM wparam, LPARAM lparam
         paintPending_ = false;
         painting_ = true;
         const auto finished = wil::scope_exit([&] { painting_ = false; });
+        // An unredirected HWND can have an empty GDI paint clip even when a region of its
+        // composition surface was invalidated. BeginPaint validates that region.
+        RECT requested{};
+        const bool haveRegion = unredirected_ && GetUpdateRect(handle, &requested, FALSE);
         PAINTSTRUCT paint{};
         BeginPaint(handle, &paint);
         const auto endPaint = wil::scope_exit([&] {
             paintRect_.reset();
             EndPaint(handle, &paint);
         });
-        if (!IsRectEmpty(&paint.rcPaint)) { paintRect_ = paint.rcPaint; }
+        if (haveRegion) { paintRect_ = requested; }
+        else if (!IsRectEmpty(&paint.rcPaint)) { paintRect_ = paint.rcPaint; }
         on_paint();
         return 0;
     }

@@ -159,6 +159,13 @@ int updates(const testing::Options& options) {
         });
         require(child.paints > before, "Update left its pending child paint in the queue");
         require(testing::matches(testing::surface_pixel(app, child.target.surface(), 5, 5), readerColor), "Update painted stale application state");
+        app.update(parent, [&] {
+            child.color = listColor;
+            child.invalidate({0, 0, 12, 12});
+        });
+        require(testing::matches(testing::surface_pixel(app, child.target.surface(), 5, 5), listColor) &&
+            testing::matches(testing::surface_pixel(app, child.target.surface(), 60, 50), readerColor),
+            "A partial composition pane update overwrote preserved pixels");
         require(testing::throws<std::runtime_error>([&] {
             app.update(parent, [] { throw std::runtime_error("layout failure"); });
         }), "Layout failure was swallowed");

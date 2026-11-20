@@ -138,7 +138,7 @@ private:
     void notify_destroy();
 
     Application& application_;
-    bool topLevel_{};
+    bool topLevel_{}, unredirected_{};
     wil::unique_hwnd hwnd_;
     std::exception_ptr callbackError_;
     IRawElementProviderSimple* automationProvider_{};
