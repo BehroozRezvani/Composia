@@ -26,11 +26,19 @@
 #include <composia/VirtualSurface.hpp>
 #include <composia/Window.hpp>
 #include <string_view>
+#ifdef COMPOSIA_TEST_CONTROLS
+#include <composia/Controls.hpp>
+#endif
 
 static_assert(std::string_view{COMPOSIA_VERSION_STRING} == COMPOSIA_PACKAGE_VERSION, "The headers do not match the package version");
 static_assert(COMPOSIA_VERSION == COMPOSIA_VERSION_MAJOR * 10000 + COMPOSIA_VERSION_MINOR * 100 + COMPOSIA_VERSION_PATCH);
 
 int main(int argc, char**) {
+#ifdef COMPOSIA_TEST_CONTROLS
+    composia::controls::Dropdown choices{L"Output", composia::controls::Items::strings({L"Stereo"})};
+    choices.set_selected(0);
+    if (choices.selected_text() != L"Stereo") { return 4; }
+#endif
     composia::ElementTree tree{std::make_shared<composia::Element>()};
     tree.set_viewport({20, 10});
     if (!tree.hit_test({1, 1})) { return 3; }

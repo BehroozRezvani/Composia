@@ -158,6 +158,7 @@ composia_add_scenarios(composia-capture-tests capture WARP TIMEOUT 40 SCENARIOS 
 
 # The installed package, relocated, consumed through find_package.
 add_test(NAME package-consumer COMMAND ${CMAKE_COMMAND}
+    -DEXPECT_CONTROLS=${COMPOSIA_BUILD_CONTROLS}
     -DBINARY_DIR=${PROJECT_BINARY_DIR} -DSOURCE_DIR=${PROJECT_SOURCE_DIR}
     -DCONFIG=$<CONFIG> -DCOMPILER=${CMAKE_CXX_COMPILER}
     -DTOOLCHAIN=${CMAKE_TOOLCHAIN_FILE} -DVCPKG_INSTALLED_DIR=${VCPKG_INSTALLED_DIR}

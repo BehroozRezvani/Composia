@@ -2,8 +2,9 @@ cmake_minimum_required(VERSION 3.25)
 project(ComposiaSubproject LANGUAGES CXX)
 # Composia inside another build, as add_subdirectory or FetchContent adds it: it uses this build's
 # runtime library (CMake's default, the DLL CRT) and defines no tests, examples, or install rules.
+set(COMPOSIA_BUILD_CONTROLS OFF CACHE BOOL "")
 add_subdirectory(${COMPOSIA_SOURCE_DIR} composia)
-foreach(target composia-testing composia-smoke-tests composia-inputs-example)
+foreach(target composia-testing composia-smoke-tests composia-inputs-example composia-controls)
     if(TARGET ${target})
         message(FATAL_ERROR "Composia defined ${target} inside another build")
     endif()
