@@ -116,6 +116,12 @@ int virtualization(const testing::Options&) {
     list->set_items(ui::Items::strings({L"One", L"Two"}));
     tree.update_layout();
     require(!list->selected() && !list->scroll_offset() && list->realized_count() == 2, "Model reset");
+    auto resetOnSelection = list->on_selection([&](ui::List::Index i) {
+        if (i) { list->set_items({}); }
+    });
+    tree.key({VK_END, true});
+    tree.update_layout();
+    require(!list->selected() && !list->realized_count(), "Navigation reused a row removed by a selection observer");
     return 0;
 }
 }

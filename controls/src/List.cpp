@@ -37,7 +37,9 @@ public:
         return Pressable::on_pointer(e);
     }
     void choose(bool invoke) {
-        if (owner && owner->select(index) && owner && invoke) { owner->activate_selected(); }
+        if (owner && owner->select(index) && owner && owner->selected() == index && invoke) {
+            owner->activate_selected();
+        }
     }
     void paint(ScopedSurfaceDraw& draw) override {
         if (!owner || !owner->renderer_) { return; }
@@ -124,7 +126,7 @@ void List::synchronize_selection() {
     Index next;
     for (const auto& child : rows_->children()) {
         auto& row = static_cast<Row&>(*child);
-        if (row.state().selected) { next = row.index; break; }
+        if (row.accessibility()->selected.value_or(false)) { next = row.index; break; }
     }
     if (next == selected_) { return; }
     selected_ = next;
@@ -167,7 +169,7 @@ bool List::type_ahead(std::wstring_view text) {
     const auto start = selected_ ? (*selected_ + (fresh ? 1 : 0)) % items_.count : 0;
     if (items_.findPrefix) {
         auto match = items_.findPrefix(prefix_, start);
-        if (match && select(match)) { reveal(*match); }
+        if (match && select(match) && selected_ == match) { reveal(*match); }
     } else {
         auto i = start;
         do {
@@ -175,7 +177,7 @@ bool List::type_ahead(std::wstring_view text) {
             if (label.size() >= prefix_.size() && prefix_.size() <= INT_MAX &&
                 CompareStringOrdinal(label.data(), static_cast<int>(prefix_.size()), prefix_.data(),
                                      static_cast<int>(prefix_.size()), TRUE) == CSTR_EQUAL && select(i)) {
-                reveal(i);
+                if (selected_ == i) { reveal(i); }
                 break;
             }
             i = (i + 1) % items_.count;
@@ -209,7 +211,7 @@ bool List::navigate(const KeyEvent& e) {
     for (;;) {
         auto command = items_.command ? items_.command(candidate) : nullptr;
         if ((!command || command->enabled.get()) && select(candidate)) {
-            reveal(candidate);
+            if (selected_ == candidate) { reveal(candidate); }
             return true;
         }
         if (backwards ? candidate == 0 : candidate == last) { return true; }

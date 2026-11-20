@@ -152,7 +152,7 @@ void Picker::commit(List::Index index) {
     changed_.emit(index);
 }
 void Picker::set_selected(List::Index index) {
-    if (list_->select(index)) { commit(index); }
+    if (list_->select(index) && list_->selected() == index) { commit(index); }
 }
 void Picker::set_items(Items items) {
     close();
