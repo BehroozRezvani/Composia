@@ -181,6 +181,7 @@ public:
 private:
     friend class Element;
     friend class ElementWindow;
+    friend struct ElementProvider;
     void release_window() noexcept;
     std::shared_ptr<Element> reference(Element*) const noexcept;
     struct Recipient { std::shared_ptr<Element> element; layout::Point origin; };

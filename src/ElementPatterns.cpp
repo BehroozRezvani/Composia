@@ -233,6 +233,7 @@ bool Element::select_item(SelectionAction action) {
         return false;
     }
     const auto& group = *owner->accessibility_->selection;
+    const auto keepOwner = tree_ ? tree_->reference(owner) : nullptr;
     auto selected = ElementAutomation::selected_items(*owner);
     const bool before = *accessibility_->selected;
     if (action == SelectionAction::add && !before && !group.multiple && !selected.empty()) {
@@ -389,6 +390,7 @@ void ElementAutomation::properties(Element& e, const ElementAccessibility* old) 
 HRESULT ElementProvider::set_switch(const std::optional<ElementAccessibility::Switch>& state, bool on) noexcept {
     if (!state || !state->set) { return UIA_E_NOTSUPPORTED; }
     try {
+        const auto target = window.elements().reference(element);
         if (state->on != on) { auto set = state->set; set(on); }
         return S_OK;
     } CATCH_RETURN();
@@ -427,9 +429,12 @@ HRESULT ElementProvider::Invoke() noexcept {
     try {
         return window.application().post([self = get_strong()] {
             if (SUCCEEDED(self->actionable())) {
-                if (auto invoke = self->info().invoke) {
+                const auto target = self->window.elements().reference(self->element);
+                if (self->info().invoke) {
                     UiaRaiseAutomationEvent(self.get(), UIA_Invoke_InvokedEventId);
-                    invoke();
+                    if (SUCCEEDED(self->actionable())) {
+                        if (auto invoke = self->info().invoke) { invoke(); }
+                    }
                 }
             }
         })
@@ -452,6 +457,7 @@ HRESULT ElementProvider::SetValue(LPCWSTR value) noexcept {
     }
     try {
         auto set = v->set;
+        const auto target = window.elements().reference(element);
         set(value);
         return S_OK;
     }
@@ -503,6 +509,7 @@ HRESULT ElementProvider::SetValue(double value) noexcept {
     }
     try {
         auto set = r->set;
+        const auto target = window.elements().reference(element);
         set(value);
         return S_OK;
     }
