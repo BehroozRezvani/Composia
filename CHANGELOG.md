@@ -12,6 +12,10 @@ documented and tested, and the package can be installed or added to another buil
 surface, with nested stack, flex, grid and scroll layout, routed pointer and keyboard
 events, focus traversal, clipping, z order and partial repaints.
 
+`TextBox` adds windowless Rich Edit to the retained tree. Single-line and multiline
+editors share the surface with other elements and expose UI Automation Text and Value
+patterns. Applications can supply a painter for the field, text and caret.
+
 ### Upgrading from 0.2.0
 
 0.3.0 is not source compatible with 0.2.0. Rebuild everything that links Composia, require

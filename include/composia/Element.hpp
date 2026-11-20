@@ -90,6 +90,7 @@ protected:
 
 private:
     friend class ElementTree;
+    friend struct TextBoxAutomation;
     void attach(ElementTree*) noexcept;
     void check_mutation() const;
     void mark_layout(bool measure);

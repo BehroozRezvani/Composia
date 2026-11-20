@@ -117,6 +117,10 @@ composia_add_scenarios(composia-element-tests element CORE SCENARIOS layout rout
 composia_test_target(composia-element-window-tests ElementWindowTests.cpp)
 composia_add_scenarios(composia-element-window-tests element-window WARP SCENARIOS pixels navigation)
 
+composia_test_target(composia-text-box-tests TextBoxTests.cpp)
+composia_add_scenarios(composia-text-box-tests text-box WARP SCENARIOS editing rendering)
+composia_add_scenarios(composia-text-box-tests text-box SCENARIOS accessibility clipboard composition)
+
 # Sparse virtual surfaces.
 composia_test_target(composia-virtual-tests VirtualSurfaceTests.cpp)
 composia_add_scenarios(composia-virtual-tests virtual WARP TIMEOUT 40 SCENARIOS sparse-cache partial-updates)

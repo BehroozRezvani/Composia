@@ -12,7 +12,9 @@ prescribing an application architecture.
 - A static library whose only dependencies are the header-only WIL and C++/WinRT.
 - Recovers from graphics device loss, including while idle.
 
-Use stack, flex, grid, and scroll containers for custom-drawn elements. Standard Win32
+Use stack, flex, grid, and scroll containers for custom-drawn elements. A retained
+`TextBox` paints editable Unicode text on the same surface and exposes native text ranges
+to screen readers. Standard Win32
 controls and Composia's accessible `Button` can share the same application.
 
 For resizable panes, use [shared composition targets and coordinated updates](docs/resizing.md).
@@ -136,6 +138,7 @@ declarations in your own manifest.
 | `VirtualSurface.hpp` | A sparse surface up to 2²⁴ pixels square, drawn in tiles |
 | `ScreenCapture.hpp` | Windows Graphics Capture of a window, monitor, or visual |
 | `TextLayout.hpp` | DirectWrite text layout and measurement |
+| `TextBox.hpp` | Retained plain-text editing, IME, clipboard, undo, selection geometry and custom painting |
 | `NativeControl.hpp` | Standard Win32 controls hosted in a window |
 | `Accessible.hpp` | A UI Automation element for a window |
 | `Button.hpp` | An accessible push button whose look a painter supplies |

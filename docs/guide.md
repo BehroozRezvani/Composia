@@ -228,9 +228,53 @@ element as unavailable. A window has at most one `Accessible`.
 
 ## Text input and native controls
 
-There are two ways to take text input. The recommended one reuses the system's EDIT
-control through `NativeControl`, so Windows supplies IME composition, selection, the
-clipboard, keyboard conventions, and the UI Automation Text and Value patterns:
+`TextBox` paints directly into an `ElementWindow`. It takes part in retained layout,
+clipping, z order and Tab navigation. Windows' windowless Rich Edit engine handles
+Unicode shaping, IME composition, pointer selection, keyboard commands and undo history.
+Use the accessible name to identify each field to screen readers.
+
+```cpp
+#include <composia/ElementWindow.hpp>
+#include <composia/ScopedSurfaceDraw.hpp>
+#include <composia/TextBox.hpp>
+
+using namespace composia;
+auto body = std::make_shared<TextBox>(
+    TextBox::Options{.name = L"Message", .multiline = true, .fontSize = 18,
+                     .foreground = RGB(246, 248, 250), .background = RGB(27, 42, 54)},
+    L"Draft message");
+ElementWindow window{app, L"Compose", 460, 200, body};
+auto changed = body->on_text_changed([&] { save_draft(body->text()); });
+```
+
+The editor wraps multiline text to its arranged width and scrolls to keep the caret
+visible. Selection offsets count UTF-16 code units, with one carriage return per
+paragraph. `select(0, -1)` selects the document. `replace_selection` participates in
+undo and redo. `set_text` installs a new document and clears its history. Attached
+editors coalesce text change callbacks on the application thread. `set_read_only(true)`
+keeps selection and copying available.
+
+The default painter uses the font, padding and colors in `Options`. A custom painter
+can draw its own chrome, then call `draw_text` for the shaped glyphs, selection and IME
+decorations, and `draw_caret` for the blinking insertion point. `caret_bounds()` and
+`selection_rectangles()` expose local DIP geometry. Keep the text origin aligned with
+the element so pointer, IME and accessibility coordinates agree.
+
+```cpp
+body->set_painter([](ScopedSurfaceDraw& draw, TextBox& box) {
+    const auto r = box.bounds();
+    draw.context()->FillRoundedRectangle({{0, 0, r.width, r.height}, 8, 8},
+        draw.solid_brush(0x1B2A36));
+    box.draw_text(draw);
+    box.draw_caret(draw);
+});
+```
+
+An `ElementWindow` exposes its editors as UI Automation fragments. Clients can read,
+select and navigate native text ranges or edit the Value. Applications that install
+their own provider on the window take ownership of its automation tree.
+
+For interfaces built from child windows, `NativeControl` can host a standard EDIT:
 
 ```cpp
 composia::NativeControl name{window, L"EDIT", WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL};
@@ -270,13 +314,6 @@ Child HWNDs always draw above the parent's composition content, so hosted contro
 top of the canvas and cannot be clipped, transformed, or animated by Composition. Embed a
 common-controls version 6 manifest dependency, as `resources/composia.manifest` does, for
 the themed look.
-
-The other way is a composition-drawn field, for when rendering must be custom: a child
-`Window` that draws its text and caret and handles keyboard input itself. A
-product-quality field then needs selection, IME composition, and accessibility of its
-own. An `Accessible` with the Value pattern exposes the text, but screen readers also need
-the Text pattern for the caret, selection, and moving through the text, which Composia
-does not provide.
 
 ## System appearance
 

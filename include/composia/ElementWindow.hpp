@@ -23,6 +23,8 @@ protected:
     std::optional<LRESULT> on_message(UINT, WPARAM, LPARAM) override;
 
 private:
+    friend struct TextBoxAutomation;
+    winrt::com_ptr<struct TextBoxAutomation> editorAutomation_;
     ElementTree tree_;
     CompositionWindowTarget target_;
     bool pointerFocus_{};

@@ -1,4 +1,6 @@
 #include <composia/ElementWindow.hpp>
+#include <composia/TextBox.hpp>
+#include "TextBoxAutomation.hpp"
 
 namespace composia {
 namespace {
@@ -20,11 +22,11 @@ ElementWindow::ElementWindow(Application& app, std::wstring_view title, int widt
       target_(*this, !parent || CompositionWindowTarget::hosts_children(parent)
           ? CompositionWindowTarget::Hosting::shared : CompositionWindowTarget::Hosting::standalone) {
     tree_.window_ = this;
-    destroying_ = on_destroy([this] { tree_.release_window(); });
+    destroying_ = on_destroy([this] { TextBoxAutomation::disconnect(*this); tree_.release_window(); });
     on_resize();
 }
 
-ElementWindow::~ElementWindow() { tree_.release_window(); }
+ElementWindow::~ElementWindow() { TextBoxAutomation::disconnect(*this); tree_.release_window(); }
 
 void ElementWindow::on_resize() {
     const auto b = client_bounds();
@@ -41,10 +43,12 @@ void ElementWindow::on_paint() {
 
 void ElementWindow::on_focus(bool value) {
     if (!value) { tree_.focus(nullptr); }
+    else if (auto* editor = dynamic_cast<TextBox*>(tree_.focused())) { editor->on_focus_changed(true); }
     else if (!pointerFocus_ && !tree_.focused()) { tree_.move_focus(key_down(VK_SHIFT)); }
 }
 
 std::optional<LRESULT> ElementWindow::on_message(UINT message, WPARAM wparam, LPARAM lparam) {
+    if (message == WM_GETOBJECT && static_cast<LONG>(lparam) == UiaRootObjectId) { TextBoxAutomation::attach(*this); }
     if (message == update_message()) {
         if (const auto region = tree_.take_dirty_bounds()) { invalidate(*region); }
         return 0;
@@ -52,6 +56,9 @@ std::optional<LRESULT> ElementWindow::on_message(UINT message, WPARAM wparam, LP
     using Kind = PointerEvent::Kind;
     using Button = PointerEvent::Button;
     PointerEvent event{};
+    if (auto* editor = dynamic_cast<TextBox*>(tree_.focused()); editor && enabled()) {
+        if (auto result = editor->window_message(message, wparam, lparam)) { return result; }
+    }
     event.modifiers = LOWORD(wparam);
     event.doubleClick = message == WM_LBUTTONDBLCLK || message == WM_RBUTTONDBLCLK ||
         message == WM_MBUTTONDBLCLK || message == WM_XBUTTONDBLCLK;

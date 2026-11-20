@@ -19,6 +19,7 @@
 #include <composia/Signal.hpp>
 #include <composia/SwapChainSurface.hpp>
 #include <composia/TextLayout.hpp>
+#include <composia/TextBox.hpp>
 #include <composia/TextureSurface.hpp>
 #include <composia/Version.hpp>
 #include <composia/VirtualSurface.hpp>
@@ -44,6 +45,8 @@ int main(int argc, char**) {
             document.update({0, 0, 100, 100}, [](auto& draw, const RECT&) { draw.context()->Clear(D2D1::ColorF(0)); });
             composia::Window window{app, L"Consumer", 320, 240, composia::Window::Content::composition};
             composia::ElementWindow elements{app, L"Retained", 300, 180, std::make_shared<composia::Element>()};
+            elements.elements().root().add(std::make_shared<composia::TextBox>(
+                composia::TextBox::Options{.name = L"Subject"}, L"Draft"));
             composia::CompositionWindowTarget target{window, composia::CompositionWindowTarget::Hosting::shared};
             target.root().Children().InsertAtTop(composia::animations::sprite(app.compositor(), {10, 10}, {255, 0, 0, 0}));
             composia::Button button{window, L"Action"};

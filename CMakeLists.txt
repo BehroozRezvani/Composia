@@ -54,6 +54,9 @@ set(COMPOSIA_SOURCES
     ScopedSurfaceDraw.cpp
     ScreenCapture.cpp
     SwapChainSurface.cpp
+    TextBox.cpp
+    TextBoxAutomation.cpp
+    TextBoxHost.cpp
     TextLayout.cpp
     TextureSurface.cpp
     VirtualSurface.cpp
@@ -92,7 +95,7 @@ function(composia_add_library target)
     target_compile_options(${target} PRIVATE $<$<CXX_COMPILER_ID:Clang>:/clang:-mcx16>)
     target_link_libraries(${target}
         PUBLIC WIL::WIL Microsoft::CppWinRT
-        PRIVATE d3d11 dxgi d2d1 dwrite windowsapp CoreMessaging user32 gdi32 ole32 oleaut32 uiautomationcore comctl32 uxtheme dwmapi
+        PRIVATE d3d11 dxgi d2d1 dwrite windowsapp CoreMessaging user32 gdi32 ole32 oleaut32 uiautomationcore comctl32 uxtheme dwmapi imm32
     )
     if(COMPOSIA_COVERAGE)
         target_compile_options(${target} PRIVATE -fprofile-instr-generate -fcoverage-mapping)
