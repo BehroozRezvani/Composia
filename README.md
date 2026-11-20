@@ -36,6 +36,11 @@ buffered painting while panes move around them.
 
 ## Example
 
+The [Composia Editor](examples/editor/README.md) opens, edits and saves UTF-8 files,
+preserves line endings, and prompts before discarding edits. The
+[drawing comparison](benchmarks/README.md) reports measured startup, memory,
+executable size and render timings for Composia, Direct2D and GDI.
+
 ```cpp
 #include <composia/Application.hpp>
 #include <composia/CompositionWindowTarget.hpp>
