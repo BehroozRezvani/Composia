@@ -139,7 +139,7 @@ void Element::set_focusable(bool value) {
 
 bool Element::enabled() const noexcept {
     for (auto* p = this; p; p = p->parent_) {
-        if (!p->enabled_) { return false; }
+        if (!p->enabled_ || !p->available_) { return false; }
     }
     return true;
 }
@@ -148,10 +148,19 @@ void Element::set_enabled(bool value) {
     check_mutation();
     if (enabled_ == value) { return; }
     enabled_ = value;
-    if (!value && tree_ && tree_->captured_ && !tree_->captured_->enabled()) { tree_->release_capture(); }
+    enabled_changed();
+}
+void Element::set_available(bool value) {
+    check_mutation();
+    if (available_ == value) { return; }
+    available_ = value;
+    enabled_changed();
+}
+void Element::enabled_changed() {
+    if (tree_ && tree_->captured_ && !tree_->captured_->enabled()) { tree_->release_capture(); }
     ElementAutomation::geometry_changed(*this);
     if (tree_) { tree_->schedule(); }
-    if (!value && tree_ && tree_->focused_ && !tree_->focused_->enabled()) { tree_->focus(nullptr); }
+    if (tree_ && tree_->focused_ && !tree_->focused_->enabled()) { tree_->focus(nullptr); }
     invalidate();
 }
 bool Element::interactive() const noexcept {

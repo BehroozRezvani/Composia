@@ -118,6 +118,7 @@ bool Picker::open() {
     if (expanded()) { return true; }
     auto* target = host();
     if (!target || !list_->items().count || !interactive() || !request_focus()) { return false; }
+    list_->prefix_.clear();
     list_->select(menu_ ? List::Index{} : selected_);
     if (!list_->selected()) { list_->navigate({VK_HOME, true}); }
     target->present(*this);
@@ -155,6 +156,14 @@ void Picker::set_items(Items items) {
     commit({});
 }
 void Picker::activate() { if (expanded()) { close(); } else { open(); } }
+bool Picker::on_text_input(std::wstring_view text) {
+    if (!expanded() && menu_) { return false; }
+    preview_ = expanded();
+    const auto reset = wil::scope_exit([&] { preview_ = false; });
+    if (!list_->type_ahead(text)) { return false; }
+    if (!expanded()) { commit(list_->selected()); }
+    return true;
+}
 bool Picker::on_key(const KeyEvent& e) {
     if (!focused()) { return false; }
     if (e.down && (e.key == VK_F4 || (e.alt && (e.key == VK_UP || e.key == VK_DOWN)))) {

@@ -88,6 +88,11 @@ std::optional<LRESULT> ElementWindow::on_message(UINT message, WPARAM wparam, LP
     event.doubleClick = message == WM_LBUTTONDBLCLK || message == WM_RBUTTONDBLCLK ||
         message == WM_MBUTTONDBLCLK || message == WM_XBUTTONDBLCLK;
     switch (message) {
+    case WM_CHAR: {
+        const wchar_t unit = static_cast<wchar_t>(wparam);
+        if (enabled() && unit >= L' ' && tree_.text_input({&unit, 1})) { return 0; }
+        return std::nullopt;
+    }
     case WM_GETDLGCODE: {
         if (wparam == VK_TAB) {
             const bool backwards = key_down(VK_SHIFT);

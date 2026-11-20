@@ -7,6 +7,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace composia {
@@ -94,6 +95,8 @@ public:
 
 protected:
     [[nodiscard]] ElementWindow* host_window() const noexcept;
+    // Additional enabled gate for controls bound to a command.
+    void set_available(bool);
     bool capture_pointer();
     void release_pointer() noexcept;
     virtual void on_capture_lost() noexcept {}
@@ -112,6 +115,7 @@ protected:
     // The deepest hit or focused element is called first. Return true to stop bubbling.
     virtual bool on_pointer(const PointerEvent&) { return false; }
     virtual bool on_key(const KeyEvent&) { return false; }
+    virtual bool on_text_input(std::wstring_view) { return false; }
 
 private:
     friend class ElementTree;
@@ -120,6 +124,7 @@ private:
     void attach(ElementTree*) noexcept;
     void check_mutation() const;
     bool accessibility_key(const KeyEvent&);
+    void enabled_changed();
     void mark_layout(bool measure);
     void arrange(layout::Rect);
     layout::Size measure(layout::Size);
@@ -131,7 +136,7 @@ private:
     Element* last_descendant() noexcept;
     Element* adjacent(bool backwards) noexcept;
 
-    bool observeLayout_{}, hover_{};
+    bool observeLayout_{}, hover_{}, available_{true};
     Element* parent_{};
     std::unique_ptr<ElementAccessibility> accessibility_;
     ElementTree* tree_{};
@@ -166,6 +171,7 @@ public:
     bool pointer(PointerEvent);                // Input position in viewport DIPs.
     void pointer_leave();
     bool key(const KeyEvent&);
+    bool text_input(std::wstring_view);
     bool focus(Element*);                      // nullptr clears focus.
     [[nodiscard]] Element* focused() const noexcept { return focused_; }
     [[nodiscard]] Element* next_focus(bool backwards = false, bool wrap = true);

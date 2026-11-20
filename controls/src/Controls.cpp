@@ -81,8 +81,8 @@ bool Pressable::on_key(const KeyEvent& e) {
 Button::Button(std::wstring name, std::shared_ptr<Command> command)
     : Pressable(std::move(name), UIA_ButtonControlTypeId), command_(std::move(command)) {
     if (!command_) { throw std::invalid_argument("A button needs a command"); }
-    set_enabled(command_->enabled.get());
-    availability_ = command_->enabled.on_change([this](bool) { set_enabled(command_->enabled.get()); });
+    set_available(command_->enabled.get());
+    availability_ = command_->enabled.on_change([this](bool) { set_available(command_->enabled.get()); });
     auto a = *accessibility();
     a.invoke = [this] { activate(); };
     set_accessibility(std::move(a));

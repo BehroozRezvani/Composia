@@ -23,8 +23,8 @@ public:
         if (list.items_.command) {
             command = list.items_.command(i);
             if (command) {
-                set_enabled(command->enabled.get());
-                availability = command->enabled.on_change([this](bool) { set_enabled(command->enabled.get()); });
+                set_available(command->enabled.get());
+                availability = command->enabled.on_change([this](bool) { set_available(command->enabled.get()); });
             }
         }
         set_offset({0, static_cast<float>(double(i) * list.rowHeight_)});
@@ -85,6 +85,7 @@ void List::set_items(Items items) {
     }
     const bool notify = selected_.has_value();
     selected_.reset();
+    prefix_.clear();
     items_ = std::move(items);
     rows_->set_preferred_size({0, static_cast<float>(extent)});
     set_scroll_offset(0);
@@ -152,6 +153,34 @@ bool List::activate_selected() {
     auto command = row.command;
     activated_.emit(index);
     if (command) { command->execute(); }
+    return true;
+}
+bool List::type_ahead(std::wstring_view text) {
+    if (!interactive() || text.empty() || !items_.count || text.front() < L' ') { return false; }
+    const auto now = GetTickCount64();
+    if (now - lastText_ > 1000) { prefix_.clear(); }
+    if (prefix_.empty() && text == L" ") { return false; }
+    const bool cycle = text.size() == 1 && prefix_ == text;
+    const bool fresh = prefix_.empty() || cycle;
+    if (!cycle) { prefix_.append(text); }
+    lastText_ = now;
+    const auto start = selected_ ? (*selected_ + (fresh ? 1 : 0)) % items_.count : 0;
+    if (items_.findPrefix) {
+        auto match = items_.findPrefix(prefix_, start);
+        if (match && select(match)) { reveal(*match); }
+    } else {
+        auto i = start;
+        do {
+            auto label = items_.label(i);
+            if (label.size() >= prefix_.size() && prefix_.size() <= INT_MAX &&
+                CompareStringOrdinal(label.data(), static_cast<int>(prefix_.size()), prefix_.data(),
+                                     static_cast<int>(prefix_.size()), TRUE) == CSTR_EQUAL && select(i)) {
+                reveal(i);
+                break;
+            }
+            i = (i + 1) % items_.count;
+        } while (i != start);
+    }
     return true;
 }
 bool List::navigate(const KeyEvent& e) {

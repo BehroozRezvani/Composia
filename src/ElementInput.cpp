@@ -102,6 +102,11 @@ bool ElementTree::key(const KeyEvent& event) {
     constexpr unsigned tab = 0x09;
     return event.down && event.key == tab && !event.alt && !event.control && move_focus(event.shift);
 }
+bool ElementTree::text_input(std::wstring_view text) {
+    return focused_ && focused_->enabled() && bubble(*focused_, [&](Element& e, layout::Point) {
+        return e.on_text_input(text);
+    });
+}
 
 bool ElementTree::focus(Element* element) {
     root_->check_mutation();

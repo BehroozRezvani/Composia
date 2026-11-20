@@ -123,6 +123,8 @@ struct Items {
     std::size_t count{};
     std::function<std::wstring(std::size_t)> label;
     std::function<std::shared_ptr<Command>(std::size_t)> command{};
+    // Optional indexed, case-insensitive search from start, wrapping at the end.
+    std::function<std::optional<std::size_t>(std::wstring_view prefix, std::size_t start)> findPrefix{};
     static Items strings(std::vector<std::wstring>);
 };
 
@@ -140,6 +142,7 @@ public:
     bool select(Index);
     void reveal(std::size_t);
     bool navigate(const KeyEvent&);
+    bool type_ahead(std::wstring_view);
     bool activate_selected();
     [[nodiscard]] std::size_t realized_count() const noexcept;
     Connection on_selection(std::function<void(Index)> f) { return changed_.connect(std::move(f)); }
@@ -152,12 +155,15 @@ private:
     void synchronize_selection();
     void on_layout_updated() override;
     bool on_key(const KeyEvent& e) override { return navigate(e); }
+    bool on_text_input(std::wstring_view text) override { return type_ahead(text); }
     std::shared_ptr<Element> rows_;
     Items items_;
     Index selected_;
     float rowHeight_;
     bool menu_;
     bool popupFocus_{};
+    std::wstring prefix_;
+    std::uint64_t lastText_{};
     RowRenderer renderer_;
     Signal<Index> changed_;
     Signal<std::size_t> activated_;
@@ -201,6 +207,7 @@ private:
     void commit(List::Index);
     void activate() override;
     bool on_key(const KeyEvent&) override;
+    bool on_text_input(std::wstring_view) override;
     void on_focus_changed(bool) override;
     void on_detaching() noexcept override;
     std::shared_ptr<List> list_;

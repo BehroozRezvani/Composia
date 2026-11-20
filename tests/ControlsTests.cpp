@@ -37,6 +37,9 @@ int behaviour(const testing::Options&) {
     require(clicks == 1, "Keyboard activation");
     cmd->enabled.set(false);
     require(button->state().disabled && !button->focused() && !cmd->execute(), "Disabled command");
+    button->set_enabled(false);
+    cmd->enabled.set(true);
+    require(button->state().disabled, "Command availability erased a local disabled state");
     tree.pointer({Kind::down, {8, 42}, Mouse::left});
     tree.pointer({Kind::up, {8, 42}, Mouse::left});
     require(toggle->checked() && toggle->state().selected, "Toggle did not latch");
@@ -72,6 +75,8 @@ int popup(const testing::Options&) {
     require(!dropdown->expanded() && dropdown->selected() == 0, "Escape committed a preview");
     tree.key({VK_F4, true}); tree.key({VK_DOWN, true}); tree.key({VK_RETURN, true});
     require(!dropdown->expanded() && dropdown->selected_text() == L"Mono", "Keyboard dropdown commit");
+    tree.text_input(L"s"); tree.text_input(L"u");
+    require(dropdown->selected_text() == L"Surround", "Incremental dropdown search");
     dropdown->open();
     tree.pointer({PointerEvent::Kind::down, {4, 148}, PointerEvent::Button::left});
     require(!dropdown->expanded(), "Outside click left popup open");
