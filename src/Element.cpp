@@ -182,6 +182,7 @@ void Element::set_scroll_offset(float value) {
 bool Element::focused() const noexcept { return tree_ && tree_->focused_ == this; }
 
 ElementWindow* Element::host_window() const noexcept { return tree_ ? tree_->window_ : nullptr; }
+void Element::update_host_layout() { if (tree_) { tree_->update_layout(); } }
 
 Rect Element::viewport_bounds(bool clipped) const noexcept {
     auto box = bounds_;

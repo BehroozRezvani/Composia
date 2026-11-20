@@ -72,7 +72,9 @@ void PopupHost::on_layout_updated() {
     const float height = std::min(wanted, down ? below : above);
     if (height <= 0) { dismiss(); return; }
     auto& list = *picker->list_;
+    const auto offset = list.scroll_offset();
     list.set_layout({ElementLayout::Kind::scroll, layout::Axis::vertical, 0, 1, height});
+    list.set_scroll_offset(offset);
     list.set_preferred_size({anchor.width, height});
     list.set_offset({anchor.x - origin.x, anchor.y - origin.y + (down ? anchor.height : -height)});
 }
@@ -122,7 +124,9 @@ bool Picker::open() {
     list_->select(menu_ ? List::Index{} : selected_);
     if (!list_->selected()) { list_->navigate({VK_HOME, true}); }
     target->present(*this);
+    update_host_layout();
     if (auto i = list_->selected()) { list_->reveal(*i); }
+    update_host_layout();
     return expanded();
 }
 void Picker::close() {

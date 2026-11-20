@@ -95,6 +95,7 @@ public:
 
 protected:
     [[nodiscard]] ElementWindow* host_window() const noexcept;
+    void update_host_layout();
     // Additional enabled gate for controls bound to a command.
     void set_available(bool);
     bool capture_pointer();
