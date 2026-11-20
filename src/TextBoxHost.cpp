@@ -1,6 +1,7 @@
 #include "TextBoxHost.hpp"
 #include <composia/Application.hpp>
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <limits>
 
@@ -11,7 +12,7 @@ struct RichEdit {
     template <class T> T symbol(const char* name) {
         auto address = GetProcAddress(dll.get(), name);
         THROW_LAST_ERROR_IF_NULL(address);
-        return reinterpret_cast<T>(address);
+        return std::bit_cast<T>(address);
     }
     PCreateTextServices create = symbol<PCreateTextServices>("CreateTextServices");
     PShutdownTextServices shutdown = symbol<PShutdownTextServices>("ShutdownTextServices");
