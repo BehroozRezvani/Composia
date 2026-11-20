@@ -46,7 +46,14 @@ void TextBox::set_text(std::wstring_view text) {
     const auto value = terminated(text);
     THROW_IF_FAILED(host_->engine->TxSetText(value.c_str()));
     host_->send(EM_EMPTYUNDOBUFFER);
+    mark_saved();
     invalidate();
+}
+bool TextBox::modified() const {
+    return host_->send(EM_GETMODIFY) != 0;
+}
+void TextBox::mark_saved() {
+    host_->send(EM_SETMODIFY, FALSE);
 }
 TextBox::Selection TextBox::selection() const {
     CHARRANGE r{};

@@ -36,6 +36,8 @@ public:
     ~TextBox() override;
     [[nodiscard]] std::wstring text() const;
     void set_text(std::wstring_view); // Replaces the document and resets undo history.
+    [[nodiscard]] bool modified() const; // Rich Edit's modification flag, available during input dispatch.
+    void mark_saved();
     [[nodiscard]] Selection selection() const;
     void select(long start, long end); // (0, -1) selects all.
     void replace_selection(std::wstring_view);
