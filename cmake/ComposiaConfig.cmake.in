@@ -1,10 +1,10 @@
 @PACKAGE_INIT@
+# Dependency configs can change PACKAGE_PREFIX_DIR on CMake 3.25 through 3.29.
+set_and_check(COMPOSIA_MANIFEST "@PACKAGE_COMPOSIA_MANIFEST_INSTALL@")
 include(CMakeFindDependencyMacro)
 find_dependency(wil CONFIG)
 find_dependency(cppwinrt CONFIG)
 include("${CMAKE_CURRENT_LIST_DIR}/ComposiaTargets.cmake")
 set(Composia_UI_FOUND TRUE)
 set(Composia_Controls_FOUND @COMPOSIA_BUILD_CONTROLS@)
-# The manifest applications embed for per-monitor DPI awareness and themed common controls.
-set_and_check(COMPOSIA_MANIFEST "@PACKAGE_COMPOSIA_MANIFEST_INSTALL@")
 check_required_components(Composia)
