@@ -19,11 +19,12 @@ struct ElementAccessibility;
 enum class SelectionAction;
 
 struct ElementLayout {
-    enum class Kind { overlay, stack, flex, grid, scroll };
+    enum class Kind { overlay, stack, flex, grid, scroll, canvas };
     Kind kind{Kind::overlay};
     layout::Axis axis{layout::Axis::vertical}; // Stack, flex and scroll direction.
     float gap{};                              // Both axes for a grid.
     std::size_t columns{1};                   // Equal width, row-major grid.
+    std::optional<float> viewportLength{};    // Intrinsic length of a scroll viewport.
 };
 
 struct PointerEvent {
@@ -54,6 +55,7 @@ public:
     Element& operator=(const Element&) = delete;
 
     void add(std::shared_ptr<Element>);
+    void insert(std::size_t index, std::shared_ptr<Element>);
     void remove(Element&);
     [[nodiscard]] std::span<const std::shared_ptr<Element>> children() const noexcept { return children_; }
     [[nodiscard]] Element* parent() const noexcept { return parent_; }
@@ -67,6 +69,7 @@ public:
     [[nodiscard]] bool focusable() const noexcept { return focusable_; }
     void set_enabled(bool);
     [[nodiscard]] bool enabled() const noexcept; // Includes retained ancestors.
+    [[nodiscard]] bool interactive() const noexcept; // Also checks the host HWND.
     void set_accessibility(ElementAccessibility);
     void clear_accessibility();
     void set_accessible_value(double);         // Update RangeValue and notify clients.
@@ -76,7 +79,10 @@ public:
     // Scroll containers have at most one child. Scroll distance is clamped during layout.
     void set_scroll_offset(float);
     [[nodiscard]] float scroll_offset() const noexcept { return scrollOffset_; }
+    [[nodiscard]] float scroll_limit() const noexcept { return scrollLimit_; }
     [[nodiscard]] bool focused() const noexcept;
+    bool request_focus();
+    [[nodiscard]] bool hovered() const noexcept;
     [[nodiscard]] layout::Rect bounds() const noexcept { return bounds_; } // In parent DIPs.
     [[nodiscard]] layout::Size desired_size() const noexcept { return desired_; }
     // Bounds in viewport DIPs, optionally intersected with all ancestor clips.
@@ -88,6 +94,13 @@ public:
 
 protected:
     [[nodiscard]] ElementWindow* host_window() const noexcept;
+    bool capture_pointer();
+    void release_pointer() noexcept;
+    virtual void on_capture_lost() noexcept {}
+    virtual void on_hover_changed(bool) {}
+    // Opt in to a callback after arrangement, when child membership may safely change.
+    void observe_layout(bool value = true) noexcept { observeLayout_ = value; }
+    virtual void on_layout_updated() {}
     // Host lifecycle hooks may invalidate paint. Leave tree structure and focus unchanged.
     virtual void on_focus_changed(bool) {}
     virtual void on_detaching() noexcept {}
@@ -118,6 +131,7 @@ private:
     Element* last_descendant() noexcept;
     Element* adjacent(bool backwards) noexcept;
 
+    bool observeLayout_{}, hover_{};
     Element* parent_{};
     std::unique_ptr<ElementAccessibility> accessibility_;
     ElementTree* tree_{};
@@ -150,6 +164,7 @@ public:
     void paint(ScopedSurfaceDraw&);
     [[nodiscard]] Element* hit_test(layout::Point);
     bool pointer(PointerEvent);                // Input position in viewport DIPs.
+    void pointer_leave();
     bool key(const KeyEvent&);
     bool focus(Element*);                      // nullptr clears focus.
     [[nodiscard]] Element* focused() const noexcept { return focused_; }
@@ -164,11 +179,17 @@ private:
     struct Recipient { std::shared_ptr<Element> element; layout::Point origin; };
     template<class Handler> bool bubble(Element&, Handler&&);
     void schedule();
+    void update_hover(Element*);
+    void release_capture() noexcept;
     void damage(layout::Rect);
     std::shared_ptr<Element> root_;
     std::function<void()> requestUpdate_;
     std::vector<Recipient> route_;
     Element* focused_{};
+    Element* hovered_{};
+    Element* captured_{};
+    bool updatingLayout_{};
+    std::vector<std::shared_ptr<Element>> layoutCallbacks_;
     ElementWindow* window_{};
     layout::Size viewport_{};
     std::optional<layout::Rect> dirty_;

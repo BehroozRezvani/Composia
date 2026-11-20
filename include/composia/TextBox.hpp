@@ -50,6 +50,7 @@ public:
     void draw_text(ScopedSurfaceDraw&); // Includes native selection and IME decorations.
     void draw_caret(ScopedSurfaceDraw&);
     [[nodiscard]] bool caret_visible() const noexcept;
+    [[nodiscard]] bool pointer_pressed() const noexcept;
     [[nodiscard]] layout::Rect caret_bounds() const noexcept;
     // Visible selection rectangles in local DIPs, including wrapped and bidirectional runs.
     [[nodiscard]] std::vector<layout::Rect> selection_rectangles() const;
@@ -64,6 +65,7 @@ private:
     bool on_pointer(const PointerEvent&) override;
     bool on_key(const KeyEvent&) override;
     void on_focus_changed(bool) override;
+    void on_hover_changed(bool) override { if (painter_) { invalidate(); } }
     void on_detaching() noexcept override;
     Options options_;
     Painter painter_;

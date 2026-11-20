@@ -49,6 +49,7 @@ void ElementWindow::on_paint() {
 
 void ElementWindow::on_focus(bool value) {
     if (!value) {
+        tree_.release_capture();
         previousFocus_ = tree_.reference(tree_.focused());
         tree_.focus(nullptr);
         if (auto previous = previousFocus_.lock(); previous && !focused()) {
@@ -97,8 +98,9 @@ std::optional<LRESULT> ElementWindow::on_message(UINT message, WPARAM wparam, LP
         return tree_.focused() ? DLGC_WANTARROWS | DLGC_WANTCHARS |
             ((wparam == VK_RETURN || wparam == VK_ESCAPE) ? DLGC_WANTMESSAGE : 0) : 0;
     }
+    case WM_SYSKEYDOWN: case WM_SYSKEYUP:
     case WM_KEYDOWN: case WM_KEYUP:
-        if (enabled() && tree_.key({static_cast<unsigned>(wparam), message == WM_KEYDOWN,
+        if (enabled() && tree_.key({static_cast<unsigned>(wparam), message == WM_KEYDOWN || message == WM_SYSKEYDOWN,
                 key_down(VK_SHIFT), key_down(VK_CONTROL), key_down(VK_MENU), lparam})) { return 0; }
         return std::nullopt;
     case WM_MOUSEWHEEL: case WM_MOUSEHWHEEL:
@@ -136,8 +138,12 @@ std::optional<LRESULT> ElementWindow::on_message(UINT message, WPARAM wparam, LP
 }
 
 void ElementWindow::on_enabled(bool enabled) {
-    if (!enabled) { tree_.focus(nullptr); }
+    if (!enabled) { tree_.release_capture(); tree_.focus(nullptr); }
+    if (hwnd()) { invalidate(); }
     if (automation_) { automation_->geometryDirty = true; ElementAutomation::refresh(*this); }
 }
+
+void ElementWindow::on_hover(bool inside) { if (!inside) { tree_.pointer_leave(); } }
+void ElementWindow::on_capture_lost() { tree_.release_capture(); }
 
 }

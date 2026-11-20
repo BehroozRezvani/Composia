@@ -34,13 +34,24 @@ void Element::check_mutation() const {
 }
 
 void Element::attach(ElementTree* tree) noexcept {
-    if (tree_ && !tree) { ElementAutomation::detach(*this); on_detaching(); }
+    if (tree_ && !tree) {
+        if (tree_->captured_ == this) { tree_->release_capture(); }
+        if (tree_->hovered_ == this) { tree_->hovered_ = nullptr; }
+        hover_ = false;
+        ElementAutomation::detach(*this);
+        on_detaching();
+    }
     tree_ = tree;
     for (auto& child : children_) { child->attach(tree); }
 }
 
 void Element::add(std::shared_ptr<Element> child) {
+    insert(children_.size(), std::move(child));
+}
+
+void Element::insert(std::size_t index, std::shared_ptr<Element> child) {
     check_mutation();
+    if (index > children_.size()) { throw std::out_of_range("Invalid child index"); }
     if (!child || child->parent_ || child->tree_) { throw std::invalid_argument("Expected an unattached child"); }
     for (auto* p = this; p; p = p->parent_) {
         if (p == child.get()) { throw std::invalid_argument("An element cannot contain an ancestor"); }
@@ -48,8 +59,8 @@ void Element::add(std::shared_ptr<Element> child) {
     if (layout_.kind == ElementLayout::Kind::scroll && !children_.empty()) {
         throw std::invalid_argument("A scroll element accepts one child");
     }
-    children_.push_back(child);
-    child->siblingIndex_ = children_.size() - 1;
+    children_.insert(children_.begin() + index, child);
+    for (auto i = index; i < children_.size(); ++i) { children_[i]->siblingIndex_ = i; }
     child->parent_ = this;
     child->attach(tree_);
     orderDirty_ = true;
@@ -74,6 +85,7 @@ void Element::remove(Element& child) {
         }
     }
     const auto index = child.siblingIndex_;
+    if (tree_ && child.hover_) { tree_->update_hover(this); }
     child.attach(nullptr);
     child.parent_ = nullptr;
     children_.erase(children_.begin() + index);
@@ -136,10 +148,15 @@ void Element::set_enabled(bool value) {
     check_mutation();
     if (enabled_ == value) { return; }
     enabled_ = value;
+    if (!value && tree_ && tree_->captured_ && !tree_->captured_->enabled()) { tree_->release_capture(); }
     ElementAutomation::geometry_changed(*this);
     if (tree_) { tree_->schedule(); }
     if (!value && tree_ && tree_->focused_ && !tree_->focused_->enabled()) { tree_->focus(nullptr); }
     invalidate();
+}
+bool Element::interactive() const noexcept {
+    auto* w = host_window();
+    return enabled() && (!w || w->enabled());
 }
 
 void Element::set_scroll_offset(float value) {
@@ -307,12 +324,23 @@ void ElementTree::set_viewport(Size value) {
 }
 
 void ElementTree::update_layout() {
+    if (updatingLayout_) { return; }
     root_->check_mutation();
     if (!root_->arrangeDirty_) { return; }
-    traversing_ = true;
-    const auto reset = wil::scope_exit([&] { traversing_ = false; });
-    root_->measure(viewport_);
-    root_->arrange({0, 0, viewport_.width, viewport_.height});
+    updatingLayout_ = true;
+    const auto reset = wil::scope_exit([&] { updatingLayout_ = traversing_ = false; });
+    do {
+        traversing_ = true;
+        root_->measure(viewport_);
+        root_->arrange({0, 0, viewport_.width, viewport_.height});
+        traversing_ = false;
+        auto callbacks = std::move(layoutCallbacks_);
+        for (const auto& e : callbacks) {
+            if (e->tree_ == this && e->observeLayout_) { e->on_layout_updated(); }
+        }
+        callbacks.clear();
+        layoutCallbacks_.swap(callbacks);
+    } while (root_->arrangeDirty_);
     if (focused_ && !focused_->reveal(false)) {
         auto* old = std::exchange(focused_, nullptr);
         old->on_focus_changed(false);

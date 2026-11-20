@@ -137,6 +137,7 @@ void TextBox::draw_caret(ScopedSurfaceDraw& draw) {
 bool TextBox::caret_visible() const noexcept {
     return host_->caretOn && focused();
 }
+bool TextBox::pointer_pressed() const noexcept { return host_->captured; }
 void TextBox::on_focus_changed(bool value) {
     host_->focus(value && host_window() && host_window()->focused());
 }

@@ -26,7 +26,9 @@ bool ElementTree::bubble(Element& target, Handler&& handle) {
 }
 
 bool ElementTree::pointer(PointerEvent event) {
-    auto* target = hit_test(event.position);
+    auto* hit = hit_test(event.position);
+    update_hover(hit);
+    auto* target = captured_ && event.kind != PointerEvent::Kind::wheel ? captured_ : hit;
     if (!target || !target->enabled()) { return false; }
     if (event.kind == PointerEvent::Kind::down && event.button == PointerEvent::Button::left) {
         const auto keepTarget = reference(target);
@@ -49,6 +51,45 @@ bool ElementTree::pointer(PointerEvent event) {
         }
         return false;
     });
+}
+
+bool Element::hovered() const noexcept { return hover_; }
+
+void ElementTree::update_hover(Element* next) {
+    if (hovered_ == next) { return; }
+    auto* previous = std::exchange(hovered_, next);
+    auto* common = next;
+    while (common && !common->hover_) { common = common->parent_; }
+    for (auto* p = previous; p != common; p = p->parent_) {
+        p->hover_ = false;
+        p->on_hover_changed(false);
+    }
+    for (auto* p = next; p != common; p = p->parent_) {
+        p->hover_ = true;
+        p->on_hover_changed(true);
+    }
+}
+void ElementTree::pointer_leave() { update_hover(nullptr); }
+
+bool Element::request_focus() {
+    return host_window() ? host_window()->focus_element(*this) : tree_ && tree_->focus(this);
+}
+bool Element::capture_pointer() {
+    if (!tree_ || !enabled()) { return false; }
+    if (tree_->captured_ == this) { return true; }
+    tree_->release_capture();
+    if (auto* w = host_window()) { w->capture_pointer(); }
+    tree_->captured_ = this;
+    return true;
+}
+void ElementTree::release_capture() noexcept {
+    if (auto* previous = std::exchange(captured_, nullptr)) {
+        if (window_) { window_->release_pointer(); }
+        previous->on_capture_lost();
+    }
+}
+void Element::release_pointer() noexcept {
+    if (tree_ && tree_->captured_ == this) { tree_->release_capture(); }
 }
 
 bool ElementTree::key(const KeyEvent& event) {

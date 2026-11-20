@@ -11,7 +11,8 @@ using layout::Size;
 constexpr float unbounded = std::numeric_limits<float>::infinity();
 
 void validate(ElementLayout value) {
-    if (!std::isfinite(value.gap) || value.gap < 0 || !value.columns) {
+    if (!std::isfinite(value.gap) || value.gap < 0 || !value.columns ||
+        (value.viewportLength && (!std::isfinite(*value.viewportLength) || *value.viewportLength < 0))) {
         throw std::invalid_argument("Element layout needs a nonnegative finite gap and at least one column");
     }
 }
@@ -26,7 +27,7 @@ void Element::set_layout(ElementLayout value) {
         throw std::invalid_argument("A scroll element accepts one child");
     }
     if (layout_.kind == value.kind && layout_.gap == value.gap &&
-        layout_.axis == value.axis && layout_.columns == value.columns) { return; }
+        layout_.axis == value.axis && layout_.columns == value.columns && layout_.viewportLength == value.viewportLength) { return; }
     layout_ = value;
     orderDirty_ = true;
     scrollOffset_ = scrollLimit_ = 0;
@@ -60,6 +61,7 @@ void Element::arrange(layout::Rect box) {
     box.x += offset_.x;
     box.y += offset_.y;
     const bool resized = bounds_.width != box.width || bounds_.height != box.height;
+    const bool notify = observeLayout_ && (arrangeDirty_ || resized || bounds_.x != box.x || bounds_.y != box.y);
     // A child can throw after this element has accepted its new bounds. Keep arrangement
     // pending until every child has received its slot, including on a same-size retry.
     if (resized) { arrangeDirty_ = true; }
@@ -72,6 +74,7 @@ void Element::arrange(layout::Rect box) {
         layout_children({box.width, box.height}, true);
         arrangeDirty_ = false;
     }
+    if (notify) { tree_->layoutCallbacks_.push_back(tree_->reference(this)); }
 }
 
 Size Element::layout_children(Size available, bool arranging) {
@@ -83,13 +86,16 @@ Size Element::layout_children(Size available, bool arranging) {
     using enum ElementLayout::Kind;
     const auto kind = layout_.kind;
     const float gap = layout_.gap;
-    if (kind == overlay) {
+    if (kind == overlay || kind == canvas) {
         Size result{};
         for (auto& child : children_) {
             const auto size = child->measure(available);
             result.width = std::max(result.width, size.width);
             result.height = std::max(result.height, size.height);
-            if (arranging) { child->arrange({0, 0, available.width, available.height}); }
+            if (arranging) {
+                const auto slot = kind == canvas ? size : available;
+                child->arrange({0, 0, slot.width, slot.height});
+            }
         }
         return result;
     }
@@ -145,7 +151,7 @@ Size Element::layout_children(Size available, bool arranging) {
             scrollOffset_ = std::min(scrollOffset_, scrollLimit_);
             place(child, -scrollOffset_, std::max(main(extent), main(available)));
         }
-        return extent;
+        return layout_.viewportLength ? size(*layout_.viewportLength, cross(extent)) : extent;
     }
 
     const double gaps = static_cast<double>(children_.size() - 1) * gap;
