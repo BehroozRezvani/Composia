@@ -11,3 +11,6 @@ composia_example(composia-hello-example hello/main.cpp)
 composia_example(composia-inputs-example inputs/main.cpp)
 # Direct3D 11 content in a swap chain surface, presented only when it changes.
 composia_example(composia-gpu-example gpu/main.cpp d3dcompiler)
+if(COMPOSIA_BUILD_CONTROLS)
+    composia_example(composia-controls-example controls/main.cpp Composia::Controls)
+endif()

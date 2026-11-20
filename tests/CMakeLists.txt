@@ -141,6 +141,10 @@ if(COMPOSIA_BUILD_CONTROLS)
     target_link_libraries(composia-controls-tests PRIVATE Composia::Controls)
     target_compile_options(composia-controls-tests PRIVATE /W4 $<$<BOOL:${COMPOSIA_WARNINGS_AS_ERRORS}>:/WX>)
     composia_add_scenarios(composia-controls-tests controls CORE SCENARIOS behaviour virtualization popup)
+    add_executable(composia-control-window-tests ControlWindowTests.cpp ${COMPOSIA_MANIFEST})
+    target_link_libraries(composia-control-window-tests PRIVATE Composia::Controls)
+    target_compile_options(composia-control-window-tests PRIVATE /W4 $<$<BOOL:${COMPOSIA_WARNINGS_AS_ERRORS}>:/WX>)
+    composia_add_scenarios(composia-control-window-tests controls WARP SCENARIOS interaction)
 endif()
 
 # Sparse virtual surfaces.
