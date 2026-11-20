@@ -1,11 +1,33 @@
-# First D3D11 hardware device on GeForce 621.24
+# GeForce 621.24 scans the Windows device tree ten times during first D3D11 device creation
 
 On an RTX 3090, a fresh process spent a median 211.4 ms creating its first
 hardware device and 18.4 ms creating a second device with the first still alive.
-The probe created no window or swap chain. It used the same arguments as
-[Composia](../src/GraphicsDevice.cpp). Testing used Windows 11 26H2 build
-26300.9974, NVIDIA 32.0.16.2124, and an inactive desktop. Each timing series
+The affected application is Composia Editor. Device creation sits on its path
+to the first hardware-rendered frame. A standalone probe reproduced the delay
+before creating a window or swap chain. Testing used a Ryzen 9 5900X,
+Windows 11 26H2 build 26300.9974, NVIDIA 32.0.16.2124, and an inactive desktop. Each timing series
 used 12 fresh processes after one warm-up process, with filesystem caches warm.
+
+**Request for the Windows D3D11 driver team.** Can you confirm why the driver
+resolves the same display device ten times during one creation call and whether
+it could reuse that lookup within the call? This report covers one driver
+version. Whether an earlier version behaved differently is unknown.
+
+## Standalone reproducer
+
+Build the [single source file](D3D11DeviceStartup.cpp) from an x64 Visual Studio
+Developer PowerShell with the Windows SDK installed. From the directory
+containing the source, run the following commands.
+
+```powershell
+cl /nologo /O2 /EHsc /std:c++17 D3D11DeviceStartup.cpp /link d3d11.lib
+.\D3D11DeviceStartup.exe | Out-Null
+1..12 | ForEach-Object { .\D3D11DeviceStartup.exe }
+```
+
+Each line gives the graphics adapter's PCI vendor and device ID, followed by
+both creation times. Our adapter was `10DE:2204`. The original timing probe
+observed 208.8–220.9 ms for the first call.
 
 ## Observed driver calls
 
