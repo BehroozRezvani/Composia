@@ -142,6 +142,7 @@ declarations in your own manifest.
 | `AnimationHelpers.hpp` | Visual and animation shortcuts |
 | `Layout.hpp` | DIP geometry and stack placement |
 | `Element.hpp` | Retained elements, layout, clipped drawing, routed input, focus, and dirty regions |
+| `ElementWindow.hpp` | A window or child pane that hosts and repaints an element tree |
 | `Signal.hpp` | Signals and connections |
 | `Log.hpp` | A handler for Composia's diagnostic events |
 | `Version.hpp` | The library version |

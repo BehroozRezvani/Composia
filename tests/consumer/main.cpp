@@ -7,6 +7,7 @@
 #include <composia/Composition.hpp>
 #include <composia/CompositionWindowTarget.hpp>
 #include <composia/Element.hpp>
+#include <composia/ElementWindow.hpp>
 #include <composia/GraphicsDevice.hpp>
 #include <composia/Layout.hpp>
 #include <composia/Log.hpp>
@@ -42,6 +43,7 @@ int main(int argc, char**) {
             composia::VirtualSurface document{app.graphics(), {1000000, 1000000}};
             document.update({0, 0, 100, 100}, [](auto& draw, const RECT&) { draw.context()->Clear(D2D1::ColorF(0)); });
             composia::Window window{app, L"Consumer", 320, 240, composia::Window::Content::composition};
+            composia::ElementWindow elements{app, L"Retained", 300, 180, std::make_shared<composia::Element>()};
             composia::CompositionWindowTarget target{window, composia::CompositionWindowTarget::Hosting::shared};
             target.root().Children().InsertAtTop(composia::animations::sprite(app.compositor(), {10, 10}, {255, 0, 0, 0}));
             composia::Button button{window, L"Action"};

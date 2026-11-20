@@ -39,6 +39,7 @@ Tests are named `<area>-<scenario>`; a `-warp` suffix runs the same scenario on 
 | Tests | Check |
 | --- | --- |
 | `element-layout`, `element-routing`, `element-damage` | Nested measurement and resizing, z order, clipping, reentrant event routing, focus, dirty bounds, and cached scrolling through 2,048 rows |
+| `element-window-*` | Surface pixel readback after partial paint, translation, reordering and device recovery, plus mouse input and Tab traversal into a native EDIT |
 | `core-signal`, `core-layout`, `core-text` | Signal connection lifetimes, nested and reentrant emission, and failing subscribers; stack layout, shortening, and invalid input; text measurement, wrapping, font family, weight, and locale, and invalid arguments |
 | `application-*` | Device replacement that fails at each step and changes nothing; repeated recovery and its notifications; a persistent device loss; applications one after another on a thread, also after a failed start; the fallback to WARP; shutdown ordering; posted callback errors; calls from another thread |
 | `appearance-*` | `Appearance::current()` against the system's settings; changes reaching every window and subscriber, only when the appearance changed and only through top-level windows, with errors reported; the dark title bar; what a `Button` painter receives, `set_painter`, and `set_label`; and the default look's pixels in light, dark, and high contrast, pressed and not |

@@ -135,6 +135,41 @@ animation on its own; nothing in the application needs a timer.
 
 ## Content inside one window
 
+`ElementWindow` hosts a tree in a top-level window or a child pane. It sizes the root
+to the client area, forwards mouse and keyboard input, and schedules partial paints.
+Pass a parent HWND to place a pane in the tab order beside native controls.
+
+```cpp
+#include <composia/ElementWindow.hpp>
+#include <composia/ScopedSurfaceDraw.hpp>
+
+class Swatch : public composia::Element {
+public:
+    explicit Swatch(unsigned rgb) : rgb_(rgb) {
+        set_preferred_size({64, 32});
+        set_focusable(true);
+    }
+private:
+    void paint(composia::ScopedSurfaceDraw& draw) override {
+        const D2D1_RECT_F box{0, 0, bounds().width, bounds().height};
+        draw.context()->FillRectangle(box, draw.solid_brush(rgb_));
+        if (focused()) { draw.context()->DrawRectangle(box, draw.solid_brush(0xffffff), 2); }
+    }
+    unsigned rgb_;
+};
+
+// Inside an application, keep the window alive through app.run().
+using namespace composia;
+auto row = std::make_shared<Element>(ElementLayout{ElementLayout::Kind::flex, layout::Axis::horizontal, 8});
+for (unsigned rgb : {0x005a9eu, 0x28754eu, 0x884477u}) {
+    auto swatch = std::make_shared<Swatch>(rgb);
+    swatch->set_flex_grow(1);
+    row->add(swatch);
+}
+ElementWindow window{app, L"Swatches", 320, 80, row};
+window.show();
+```
+
 `ElementTree` retains custom-drawn elements on one surface. Each parent owns its
 children through `shared_ptr`. Remove a child before adding it elsewhere. Work with the
 tree on the UI thread. Override `measure_content` for intrinsic sizing such as wrapped

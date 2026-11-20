@@ -8,6 +8,10 @@ change the API; each change is listed here.
 The first release as a library: the demos moved to the `demo` branch, every public API is
 documented and tested, and the package can be installed or added to another build.
 
+`Element`, `ElementTree`, and `ElementWindow` add retained custom-drawn UI on one
+surface, with nested stack, flex, grid and scroll layout, routed pointer and keyboard
+events, focus traversal, clipping, z order and partial repaints.
+
 ### Upgrading from 0.2.0
 
 0.3.0 is not source compatible with 0.2.0. Rebuild everything that links Composia, require
