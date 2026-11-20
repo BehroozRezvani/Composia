@@ -18,7 +18,7 @@ public:
         set_focusable(false);
         auto a = *accessibility();
         a.selected = false;
-        a.invoke = [this] { activate(); };
+        a.invoke = [this] { choose(true); };
         set_accessibility(std::move(a));
         if (list.items_.command) {
             command = list.items_.command(i);
@@ -30,7 +30,14 @@ public:
         set_offset({0, static_cast<float>(double(i) * list.rowHeight_)});
     }
     void activate() override {
-        if (owner && owner->select(index) && owner) { owner->activate_selected(); }
+        choose(doubleClick || (owner && owner->popupFocus_));
+    }
+    bool on_pointer(const PointerEvent& e) override {
+        if (e.kind == PointerEvent::Kind::down) { doubleClick = e.doubleClick; }
+        return Pressable::on_pointer(e);
+    }
+    void choose(bool invoke) {
+        if (owner && owner->select(index) && owner && invoke) { owner->activate_selected(); }
     }
     void paint(ScopedSurfaceDraw& draw) override {
         if (!owner || !owner->renderer_) { return; }
@@ -43,6 +50,7 @@ public:
     const std::size_t index;
     std::shared_ptr<Command> command;
     Connection availability;
+    bool doubleClick{};
 };
 
 List::List(std::wstring name, Items items, float rowHeight, float height)

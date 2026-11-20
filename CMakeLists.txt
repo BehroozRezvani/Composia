@@ -112,7 +112,7 @@ set_target_properties(composia PROPERTIES EXPORT_NAME UI)
 add_library(Composia::UI ALIAS composia)
 
 if(COMPOSIA_BUILD_CONTROLS)
-    add_library(composia-controls STATIC controls/src/Controls.cpp controls/src/List.cpp)
+    add_library(composia-controls STATIC controls/src/Controls.cpp controls/src/List.cpp controls/src/Picker.cpp)
     add_library(Composia::Controls ALIAS composia-controls)
     set_target_properties(composia-controls PROPERTIES EXPORT_NAME Controls DEBUG_POSTFIX d
         MSVC_DEBUG_INFORMATION_FORMAT "$<$<CONFIG:Debug,RelWithDebInfo>:Embedded>")

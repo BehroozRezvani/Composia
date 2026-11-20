@@ -163,4 +163,63 @@ private:
     Signal<std::size_t> activated_;
 };
 
+class Picker;
+// Wrap the window content once. Open popups share its surface, focus and automation tree.
+class PopupHost final : public Element {
+public:
+    explicit PopupHost(std::shared_ptr<Element> content);
+    ~PopupHost() override;
+    void dismiss();
+private:
+    friend class Picker;
+    void present(Picker&);
+    void on_layout_updated() override;
+    std::weak_ptr<Picker> anchor_;
+    std::shared_ptr<Element> layer_;
+};
+
+class Picker : public Pressable {
+public:
+    bool open();
+    void close();
+    [[nodiscard]] bool expanded() const noexcept;
+    [[nodiscard]] List::Index selected() const noexcept { return selected_; }
+    [[nodiscard]] std::wstring_view selected_text() const noexcept { return selectedText_; }
+    void set_selected(List::Index);
+    void set_items(Items);
+    [[nodiscard]] const List& popup() const noexcept { return *list_; }
+    void set_row_renderer(List::RowRenderer renderer) { list_->set_row_renderer(std::move(renderer)); }
+    void set_popup_renderer(Renderer renderer) { list_->set_renderer(std::move(renderer)); }
+    void set_popup_tokens(StyleTokens tokens) { list_->set_tokens(tokens); }
+    Connection on_selection(std::function<void(List::Index)> f) { return changed_.connect(std::move(f)); }
+protected:
+    Picker(std::wstring name, Items, bool menu, float rowHeight, float maxPopupHeight);
+private:
+    friend class PopupHost;
+    PopupHost* host() const noexcept;
+    void set_expanded(bool);
+    void commit(List::Index);
+    void activate() override;
+    bool on_key(const KeyEvent&) override;
+    void on_focus_changed(bool) override;
+    void on_detaching() noexcept override;
+    std::shared_ptr<List> list_;
+    List::Index selected_;
+    std::wstring selectedText_;
+    float rowHeight_, maxHeight_;
+    bool menu_, preview_{};
+    Signal<List::Index> changed_;
+    Connection selection_, activation_;
+};
+class Dropdown final : public Picker {
+public:
+    Dropdown(std::wstring name, Items items, float rowHeight = 32, float maxPopupHeight = 192)
+        : Picker(std::move(name), std::move(items), false, rowHeight, maxPopupHeight) {}
+};
+class Menu final : public Picker {
+public:
+    Menu(std::wstring name, Items items, float rowHeight = 32, float maxPopupHeight = 192)
+        : Picker(std::move(name), std::move(items), true, rowHeight, maxPopupHeight) {}
+};
+
 } // namespace composia::controls

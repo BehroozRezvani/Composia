@@ -49,6 +49,43 @@ int behaviour(const testing::Options&) {
     return 0;
 }
 
+int popup(const testing::Options&) {
+    auto content = std::make_shared<Element>(ElementLayout{ElementLayout::Kind::stack});
+    auto dropdown = std::make_shared<ui::Dropdown>(L"Output", ui::Items::strings({L"Stereo", L"Mono", L"Surround"}), 20, 60);
+    dropdown->set_selected(0);
+    int actions{};
+    auto action = std::make_shared<ui::Command>([&] { ++actions; });
+    auto unavailable = std::make_shared<ui::Command>([] {});
+    unavailable->enabled.set(false);
+    auto menuItems = ui::Items::strings({L"Unavailable", L"Apply"});
+    menuItems.command = [&](std::size_t i) { return i ? action : unavailable; };
+    auto menu = std::make_shared<ui::Menu>(L"Actions", menuItems, 20, 60);
+    content->add(dropdown); content->add(menu);
+    auto host = std::make_shared<ui::PopupHost>(content);
+    ElementTree tree(host);
+    tree.set_viewport({180, 160});
+    require(dropdown->open(), "Dropdown did not open");
+    tree.update_layout();
+    auto b = dropdown->popup().viewport_bounds();
+    require(b.y == 32 && b.height == 60 && dropdown->focused(), "Popup placement or focus");
+    tree.key({VK_DOWN, true}); tree.key({VK_ESCAPE, true});
+    require(!dropdown->expanded() && dropdown->selected() == 0, "Escape committed a preview");
+    tree.key({VK_F4, true}); tree.key({VK_DOWN, true}); tree.key({VK_RETURN, true});
+    require(!dropdown->expanded() && dropdown->selected_text() == L"Mono", "Keyboard dropdown commit");
+    dropdown->open();
+    tree.pointer({PointerEvent::Kind::down, {4, 148}, PointerEvent::Button::left});
+    require(!dropdown->expanded(), "Outside click left popup open");
+    dropdown->open(); menu->request_focus();
+    require(!dropdown->expanded() && menu->open(), "Moving focus left two popups open");
+    tree.key({VK_RETURN, true});
+    require(actions == 1 && !menu->expanded() && menu->selected() == 1, "Menu command or disabled entry");
+    dropdown->open();
+    content->remove(*dropdown);
+    tree.update_layout();
+    require(host->children().size() == 1 && !dropdown->expanded(), "Detached trigger left a popup");
+    return 0;
+}
+
 int virtualization(const testing::Options&) {
     std::size_t labels{};
     auto list = std::make_shared<ui::List>(L"Library", ui::Items{1000000, [&](std::size_t i) {
@@ -78,5 +115,5 @@ int virtualization(const testing::Options&) {
 }
 }
 int main(int argc, char** argv) {
-    return testing::run(argc, argv, {{"behaviour", behaviour}, {"virtualization", virtualization}});
+    return testing::run(argc, argv, {{"behaviour", behaviour}, {"virtualization", virtualization}, {"popup", popup}});
 }
