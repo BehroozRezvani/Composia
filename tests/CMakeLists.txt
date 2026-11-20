@@ -135,6 +135,14 @@ if(COMPOSIA_TEST_NVDA AND COMPOSIA_TEST_ACCCHECK)
     set_tests_properties(accessibility-tools PROPERTIES LABELS desktop RUN_SERIAL TRUE TIMEOUT 120)
 endif()
 
+# Optional appearance-independent controls.
+if(COMPOSIA_BUILD_CONTROLS)
+    add_executable(composia-controls-tests ControlsTests.cpp ${COMPOSIA_MANIFEST})
+    target_link_libraries(composia-controls-tests PRIVATE Composia::Controls)
+    target_compile_options(composia-controls-tests PRIVATE /W4 $<$<BOOL:${COMPOSIA_WARNINGS_AS_ERRORS}>:/WX>)
+    composia_add_scenarios(composia-controls-tests controls CORE SCENARIOS behaviour virtualization)
+endif()
+
 # Sparse virtual surfaces.
 composia_test_target(composia-virtual-tests VirtualSurfaceTests.cpp)
 composia_add_scenarios(composia-virtual-tests virtual WARP TIMEOUT 40 SCENARIOS sparse-cache partial-updates)

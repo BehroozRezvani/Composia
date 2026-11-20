@@ -119,4 +119,48 @@ private:
     layout::Axis axis_;
 };
 
+struct Items {
+    std::size_t count{};
+    std::function<std::wstring(std::size_t)> label;
+    std::function<std::shared_ptr<Command>(std::size_t)> command{};
+    static Items strings(std::vector<std::wstring>);
+};
+
+class List final : public ScrollView {
+public:
+    using Index = std::optional<std::size_t>;
+    using RowRenderer = std::function<void(ScopedSurfaceDraw&, std::size_t, std::wstring_view,
+                                            layout::Size, State, const StyleTokens&)>;
+    List(std::wstring name, Items, float rowHeight = 32, float viewportHeight = 160);
+    ~List() override;
+    void set_items(Items);
+    void set_row_renderer(RowRenderer);
+    [[nodiscard]] const Items& items() const noexcept { return items_; }
+    [[nodiscard]] Index selected() const noexcept { return selected_; }
+    bool select(Index);
+    void reveal(std::size_t);
+    bool navigate(const KeyEvent&);
+    bool activate_selected();
+    [[nodiscard]] std::size_t realized_count() const noexcept;
+    Connection on_selection(std::function<void(Index)> f) { return changed_.connect(std::move(f)); }
+    Connection on_activate(std::function<void(std::size_t)> f) { return activated_.connect(std::move(f)); }
+private:
+    friend class Picker;
+    class Row;
+    List(std::wstring, Items, float, float, bool menu);
+    Row& realize(std::size_t);
+    void synchronize_selection();
+    void on_layout_updated() override;
+    bool on_key(const KeyEvent& e) override { return navigate(e); }
+    std::shared_ptr<Element> rows_;
+    Items items_;
+    Index selected_;
+    float rowHeight_;
+    bool menu_;
+    bool popupFocus_{};
+    RowRenderer renderer_;
+    Signal<Index> changed_;
+    Signal<std::size_t> activated_;
+};
+
 } // namespace composia::controls
