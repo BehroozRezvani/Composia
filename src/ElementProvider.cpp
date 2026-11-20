@@ -132,6 +132,12 @@ HRESULT ElementProvider::GetPatternProvider(PATTERNID pattern, IUnknown** out) n
     }
     try {
         auto& a = info();
+        if (pattern == UIA_TogglePatternId && a.toggle) {
+            return QueryInterface(__uuidof(IToggleProvider), reinterpret_cast<void**>(out));
+        }
+        if (pattern == UIA_ExpandCollapsePatternId && a.expansion) {
+            return QueryInterface(__uuidof(IExpandCollapseProvider), reinterpret_cast<void**>(out));
+        }
         if (pattern == UIA_InvokePatternId && a.invoke) {
             return QueryInterface(__uuidof(IInvokeProvider), reinterpret_cast<void**>(out));
         }
@@ -218,6 +224,12 @@ HRESULT ElementProvider::GetPropertyValue(PROPERTYID id, VARIANT* out) noexcept 
             return common;
         }
         switch (id) {
+        case UIA_ToggleToggleStatePropertyId:
+            if (a.toggle) { out->vt = VT_I4; out->lVal = a.toggle->on ? ToggleState_On : ToggleState_Off; }
+            return S_OK;
+        case UIA_ExpandCollapseExpandCollapseStatePropertyId:
+            if (a.expansion) { out->vt = VT_I4; out->lVal = a.expansion->on ? ExpandCollapseState_Expanded : ExpandCollapseState_Collapsed; }
+            return S_OK;
         case UIA_FrameworkIdPropertyId:
             return string_value(L"Composia", out);
         case UIA_ControlTypePropertyId:

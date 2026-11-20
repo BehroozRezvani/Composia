@@ -304,6 +304,12 @@ void ElementAutomation::properties(Element& e, const ElementAccessibility* old) 
     }
     std::vector<PROPERTYID> changed;
     const auto& a = e.accessibility() ? *e.accessibility() : defaults;
+    if (a.toggle && (!old->toggle || old->toggle->on != a.toggle->on)) {
+        changed.push_back(UIA_ToggleToggleStatePropertyId);
+    }
+    if (a.expansion && (!old->expansion || old->expansion->on != a.expansion->on)) {
+        changed.push_back(UIA_ExpandCollapseExpandCollapseStatePropertyId);
+    }
     if (old->name != a.name) {
         changed.push_back(UIA_NamePropertyId);
     }
@@ -380,6 +386,39 @@ void ElementAutomation::properties(Element& e, const ElementAccessibility* old) 
     }
 }
 
+HRESULT ElementProvider::set_switch(const std::optional<ElementAccessibility::Switch>& state, bool on) noexcept {
+    if (!state || !state->set) { return UIA_E_NOTSUPPORTED; }
+    try {
+        if (state->on != on) { auto set = state->set; set(on); }
+        return S_OK;
+    } CATCH_RETURN();
+}
+HRESULT ElementProvider::Toggle() noexcept {
+    RETURN_IF_FAILED(actionable());
+    return set_switch(info().toggle, info().toggle && !info().toggle->on);
+}
+HRESULT ElementProvider::Expand() noexcept {
+    RETURN_IF_FAILED(actionable());
+    return set_switch(info().expansion, true);
+}
+HRESULT ElementProvider::Collapse() noexcept {
+    RETURN_IF_FAILED(actionable());
+    return set_switch(info().expansion, false);
+}
+HRESULT ElementProvider::get_ToggleState(ToggleState* out) noexcept {
+    if (!out) { return E_POINTER; }
+    if (!element) { return UIA_E_ELEMENTNOTAVAILABLE; }
+    if (!info().toggle) { return UIA_E_NOTSUPPORTED; }
+    *out = info().toggle->on ? ToggleState_On : ToggleState_Off;
+    return S_OK;
+}
+HRESULT ElementProvider::get_ExpandCollapseState(ExpandCollapseState* out) noexcept {
+    if (!out) { return E_POINTER; }
+    if (!element) { return UIA_E_ELEMENTNOTAVAILABLE; }
+    if (!info().expansion) { return UIA_E_NOTSUPPORTED; }
+    *out = info().expansion->on ? ExpandCollapseState_Expanded : ExpandCollapseState_Collapsed;
+    return S_OK;
+}
 HRESULT ElementProvider::Invoke() noexcept {
     RETURN_IF_FAILED(actionable());
     if (!info().invoke) {

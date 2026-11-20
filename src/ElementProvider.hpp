@@ -5,7 +5,7 @@
 namespace composia {
 struct ElementProvider : winrt::implements<ElementProvider, IRawElementProviderSimple, IRawElementProviderFragment,
                                            IInvokeProvider, IValueProvider, IRangeValueProvider, ISelectionProvider,
-                                           ISelectionItemProvider, IScrollProvider, winrt::non_agile> {
+                                           ISelectionItemProvider, IScrollProvider, IToggleProvider, IExpandCollapseProvider, winrt::non_agile> {
     explicit ElementProvider(Element&, ElementWindow&);
     Element* element;
     ElementWindow& window; // Only accessed while element is connected.
@@ -25,6 +25,11 @@ struct ElementProvider : winrt::implements<ElementProvider, IRawElementProviderS
     HRESULT STDMETHODCALLTYPE get_FragmentRoot(IRawElementProviderFragmentRoot**) noexcept override;
 
     HRESULT STDMETHODCALLTYPE Invoke() noexcept override;
+    HRESULT STDMETHODCALLTYPE Toggle() noexcept override;
+    HRESULT STDMETHODCALLTYPE get_ToggleState(ToggleState*) noexcept override;
+    HRESULT STDMETHODCALLTYPE Expand() noexcept override;
+    HRESULT STDMETHODCALLTYPE Collapse() noexcept override;
+    HRESULT STDMETHODCALLTYPE get_ExpandCollapseState(ExpandCollapseState*) noexcept override;
     HRESULT STDMETHODCALLTYPE SetValue(LPCWSTR) noexcept override;
     HRESULT STDMETHODCALLTYPE get_Value(BSTR*) noexcept override;
     HRESULT STDMETHODCALLTYPE get_IsReadOnly(BOOL*) noexcept override;
@@ -63,6 +68,7 @@ struct ElementProvider : winrt::implements<ElementProvider, IRawElementProviderS
     static void notify_property(IRawElementProviderSimple&, PROPERTYID, VARIANT previous = {}) noexcept;
 
 private:
+    HRESULT set_switch(const std::optional<ElementAccessibility::Switch>&, bool) noexcept;
     HRESULT range_property(double*, double ElementAccessibility::RangeValue::*) noexcept;
     HRESULT selection_action(SelectionAction) noexcept;
     HRESULT scroll_value(bool vertical, bool viewSize, double*) noexcept;

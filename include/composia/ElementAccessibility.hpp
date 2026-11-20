@@ -39,5 +39,10 @@ struct ElementAccessibility {
     std::optional<bool> selected{};       // Present on a selection item.
     // Optional Text pattern for a custom document with its own text layout. TextBox supplies this natively.
     std::function<wil::com_ptr<ITextProvider>()> textProvider{};
+    struct Switch {
+        bool on{};
+        std::function<void(bool)> set{};
+    };
+    std::optional<Switch> toggle{}, expansion{};
 };
 }
