@@ -143,7 +143,7 @@ runtime library and builds no tests or examples:
 include(FetchContent)
 FetchContent_Declare(composia
     GIT_REPOSITORY https://github.com/BehroozRezvani/Composia.git
-    GIT_TAG main
+    GIT_TAG v0.3.0
     GIT_SUBMODULES "")  # Composia's vcpkg submodule is not needed here
 FetchContent_MakeAvailable(composia)
 ```
@@ -184,6 +184,8 @@ declarations in your own manifest.
 | `Version.hpp` | The library version |
 
 ## Documentation
+
+- [Releases and compatibility](docs/releases.md) covers version selection, SDK downloads and the public API policy.
 
 - [Guide](docs/guide.md): how the library works and how to use each part
 - [Testing](docs/testing.md): the tests, coverage, and what is not verified

@@ -3,7 +3,7 @@
 Composia follows [semantic versioning](https://semver.org). Before 1.0, a minor version may
 change the API; each change is listed here.
 
-## 0.3.0 (unreleased)
+## 0.3.0 (2026-11-20)
 
 The first release as a library: the demos moved to the `demo` branch, every public API is
 documented and tested, and the package can be installed or added to another build.
@@ -24,6 +24,11 @@ through the keyboard, pointer and automation.
 The optional `Composia::Controls` target adds lookless controls, command bindings,
 fixed-height virtual lists and in-surface popups. Retained fragments can now expose
 the Toggle and ExpandCollapse patterns.
+
+The [UTF-8 editor](examples/editor/README.md) provides a complete document
+workflow. This release adds a vcpkg overlay, Debug and Release SDK packaging,
+a [compatibility policy](docs/releases.md), and a reproducible
+[comparison with Direct2D and GDI](benchmarks/README.md).
 
 ### Upgrading from 0.2.0
 
