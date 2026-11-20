@@ -1,0 +1,24 @@
+#include "Commands.h"
+
+EDITOR_MENU MENU
+BEGIN
+    POPUP "&File"
+    BEGIN
+        MENUITEM "&New\tCtrl+N", FILE_NEW
+        MENUITEM "&Open...\tCtrl+O", FILE_OPEN
+        MENUITEM "&Save\tCtrl+S", FILE_SAVE
+        MENUITEM "Save &As...\tCtrl+Shift+S", FILE_SAVE_AS
+        MENUITEM SEPARATOR
+        MENUITEM "E&xit", FILE_EXIT
+    END
+    POPUP "&Edit"
+    BEGIN
+        MENUITEM "&Undo\tCtrl+Z", EDIT_UNDO
+        MENUITEM "&Redo\tCtrl+Y", EDIT_REDO
+        MENUITEM SEPARATOR
+        MENUITEM "Cu&t\tCtrl+X", EDIT_CUT
+        MENUITEM "&Copy\tCtrl+C", EDIT_COPY
+        MENUITEM "&Paste\tCtrl+V", EDIT_PASTE
+        MENUITEM "Select &All\tCtrl+A", EDIT_SELECT_ALL
+    END
+END

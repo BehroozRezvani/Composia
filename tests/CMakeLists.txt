@@ -43,6 +43,15 @@ function(composia_add_scenarios target area)
     endforeach()
 endfunction()
 
+if(COMPOSIA_BUILD_EXAMPLES)
+    enable_language(RC)
+    composia_test_target(composia-editor-tests EditorTests.cpp)
+    target_sources(composia-editor-tests PRIVATE ../examples/editor/Document.cpp ../examples/editor/Editor.cpp
+        ../examples/editor/Editor.rc)
+    target_link_libraries(composia-editor-tests PRIVATE comdlg32)
+    composia_add_scenarios(composia-editor-tests editor WARP SCENARIOS document)
+endif()
+
 # Every public header compiles on its own and tolerates a second inclusion; the build fails if not.
 file(GLOB publicHeaders CONFIGURE_DEPENDS RELATIVE ${PROJECT_SOURCE_DIR}/include ${PROJECT_SOURCE_DIR}/include/composia/*.hpp)
 list(APPEND publicHeaders composia/Version.hpp)
