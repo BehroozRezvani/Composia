@@ -2,6 +2,8 @@ param(
     [ValidateSet('debug', 'release', 'coverage')]
     [string]$Preset = 'debug',
     [switch]$Test,
+    [switch]$TestPort,
+    [switch]$Benchmarks,
     [ValidateSet('', 'core', 'desktop')]
     [string]$TestLabel = ''
 )
@@ -33,10 +35,13 @@ try {
     if ($baseline -ne $submodule) {
         throw "vcpkg.json's builtin-baseline ($baseline) is not the external/vcpkg submodule's commit ($submodule). Set it to the submodule's commit whenever the submodule moves."
     }
-    & cmake --preset $Preset
+    $options = @()
+    if ($Benchmarks) { $options += '-DCOMPOSIA_BUILD_BENCHMARKS=ON' }
+    & cmake --preset $Preset @options
     if ($LASTEXITCODE) { throw 'CMake configure failed.' }
     & cmake --build --preset $Preset
     if ($LASTEXITCODE) { throw 'Build failed.' }
+    if ($TestPort) { & "$PSScriptRoot/test-port.ps1" }
     if ($Test) {
         $buildDir = Join-Path $repoRoot "out/build/$Preset"
         $profiles = Join-Path $buildDir 'profiles'

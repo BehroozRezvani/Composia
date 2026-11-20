@@ -125,9 +125,19 @@ and the window constructor's correction for a monitor whose DPI differs from the
 
 ## Continuous integration
 
-The Windows workflow builds Debug and Release and runs the `core` tests on every push to
-`main` and every pull request. The `desktop` tests run when the workflow is started by hand
-with its `desktop` input, since they need an interactive session.
+Each push to main and each pull request builds x64 Debug and Release on Windows
+Server 2022 and 2025. All four jobs run the core suite, including the installed
+and source-tree consumers, and retain JUnit results. The 2025 Release job also
+builds the benchmarks and tests the vcpkg overlay with a separate consumer in
+both configurations. [Workflow](../.github/workflows/windows.yml)
+
+For client runtime qualification, dispatch the workflow from main with
+`desktop` selected. Register dedicated interactive x64 Windows 10 and Windows
+11 runners with labels `windows-10` and `windows-11` respectively. Each job
+checks the actual client OS build and records desktop test results, including
+CTest's explicit hardware-dependent skips. These jobs require a logged-in test
+session on each client. Hosted server builds provide compiler and packaging
+coverage. [Hosted runner inventory](https://github.com/actions/runner-images)
 
 ## Verified, and not verified
 

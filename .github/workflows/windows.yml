@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       desktop:
-        description: Also run desktop graphics and interaction checks
+        description: Run graphics and interaction on registered Windows 10 and 11 client runners
         type: boolean
         default: false
 
@@ -16,10 +16,14 @@ permissions:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: 4
     strategy:
       fail-fast: false
       matrix:
+        os: [windows-2022, windows-2025]
         preset: [debug, release]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -28,19 +32,44 @@ jobs:
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/AppData/Local/vcpkg/archives
-          key: vcpkg-windows-${{ hashFiles('vcpkg.json', 'CMakePresets.json') }}
+          key: vcpkg-${{ matrix.os }}-${{ hashFiles('vcpkg.json', 'ports/**', 'CMakePresets.json') }}
       - name: Build and test library consumption
         shell: pwsh
-        run: ./scripts/build.ps1 -Preset ${{ matrix.preset }} -Test -TestLabel core
-      - name: Desktop checks
-        if: ${{ inputs.desktop == true }}
-        shell: pwsh
-        run: ./scripts/build.ps1 -Preset ${{ matrix.preset }} -Test -TestLabel desktop
+        run: |
+          $package = '${{ matrix.os }}-${{ matrix.preset }}' -eq 'windows-2025-release'
+          ./scripts/build.ps1 -Preset ${{ matrix.preset }} -Test -TestLabel core -TestPort:$package -Benchmarks:$package
       - name: Retain test evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: test-results-${{ matrix.preset }}
+          name: test-results-${{ matrix.os }}-${{ matrix.preset }}
           path: |
             out/build/${{ matrix.preset }}/test-results-*.xml
             out/build/${{ matrix.preset }}/Testing/Temporary/*.log
+
+  client:
+    if: github.event_name == 'workflow_dispatch' && inputs.desktop && github.ref == 'refs/heads/main'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-10, windows-11]
+    runs-on: [self-hosted, Windows, X64, "${{ matrix.os }}"]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          submodules: recursive
+      - name: Confirm client OS and run desktop suite
+        shell: pwsh
+        run: |
+          $os = Get-CimInstance Win32_OperatingSystem
+          $build = [int]$os.BuildNumber
+          if ($os.ProductType -ne 1 -or $build -lt 18362 -or (($build -ge 22000) -ne ('${{ matrix.os }}' -eq 'windows-11'))) {
+            throw "Unexpected client runner: $($os.Caption) $build"
+          }
+          ./scripts/build.ps1 -Preset release -Test -TestLabel desktop
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: desktop-${{ matrix.os }}
+          path: out/build/release/test-results-desktop.xml
