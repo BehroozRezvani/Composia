@@ -138,6 +138,9 @@ animation on its own; nothing in the application needs a timer.
 `ElementWindow` hosts a tree in a top-level window or a child pane. It sizes the root
 to the client area, forwards mouse and keyboard input, and schedules partial paints.
 Pass a parent HWND to place a pane in the tab order beside native controls.
+For a window with a native Win32 menu bar, pass `Window::Content::native` before
+the root element. Windows can then paint the menu into the window's backing bitmap
+while Composia renders the document into a standalone Composition target.
 
 ```cpp
 #include <composia/ElementWindow.hpp>

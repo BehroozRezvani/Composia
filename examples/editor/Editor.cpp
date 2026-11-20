@@ -9,7 +9,7 @@ Editor::Editor(composia::Application& app)
         .name=L"Document", .multiline=true, .fontFamily=L"Consolas", .fontSize=16, .padding=16})) {}
 
 Editor::Editor(composia::Application& app, std::shared_ptr<composia::TextBox> field)
-    : ElementWindow(app, L"Untitled - Composia Editor", 760, 520, field), field_(std::move(field)) {
+    : ElementWindow(app, L"Untitled - Composia Editor", 760, 520, Content::native, field), field_(std::move(field)) {
     wil::unique_hmenu menu{LoadMenuW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(EDITOR_MENU))};
     THROW_LAST_ERROR_IF(!menu);
     THROW_IF_WIN32_BOOL_FALSE(SetMenu(hwnd(), menu.get()));

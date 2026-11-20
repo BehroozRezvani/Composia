@@ -5,6 +5,35 @@
 
 using composia::testing::require;
 
+// SetMenu and GetMenuItemCount also succeed when a composition-only HWND has
+// nowhere to paint its native menu. Check the actual label pixels in the frame.
+static void check_menu_labels(HWND hwnd) {
+    RECT frame{};
+    THROW_IF_WIN32_BOOL_FALSE(GetWindowRect(hwnd, &frame));
+    const wil::unique_hdc_window screen{GetDC(nullptr)};
+    const wil::unique_hdc memory{CreateCompatibleDC(screen.get())};
+    const wil::unique_hbitmap bitmap{CreateCompatibleBitmap(screen.get(), frame.right - frame.left, frame.bottom - frame.top)};
+    require(memory && bitmap, "Could not allocate the editor frame capture");
+    const auto selected = wil::SelectObject(memory.get(), bitmap.get());
+    THROW_IF_WIN32_BOOL_FALSE(PrintWindow(hwnd, memory.get(), PW_RENDERFULLCONTENT));
+    for (UINT item = 0; item < 2; ++item) {
+        RECT bounds{};
+        THROW_IF_WIN32_BOOL_FALSE(GetMenuItemRect(hwnd, GetMenu(hwnd), item, &bounds));
+        OffsetRect(&bounds, -frame.left, -frame.top);
+        InflateRect(&bounds, -2, -2);
+        const auto background = GetPixel(memory.get(), bounds.left, bounds.top);
+        require(background != CLR_INVALID, "Menu item is outside the editor frame");
+        unsigned ink{};
+        for (LONG y = bounds.top; y < bounds.bottom; ++y) {
+            for (LONG x = bounds.left; x < bounds.right; ++x) {
+                const auto pixel = GetPixel(memory.get(), x, y);
+                if (pixel != CLR_INVALID && pixel != background) { ++ink; }
+            }
+        }
+        require(ink >= 8, "The editor menu label did not paint");
+    }
+}
+
 int main(int argc, char** argv) {
     return composia::testing::run(argc, argv, {{"document", [](const auto& options) {
         GUID id{};
@@ -22,6 +51,7 @@ int main(int argc, char** argv) {
             window.show(SW_SHOWNOACTIVATE);
             UpdateWindow(window.hwnd());
             require(GetMenuItemCount(GetMenu(window.hwnd())) == 2, "File and Edit menus must be attached");
+            check_menu_labels(window.hwnd());
             auto& field = dynamic_cast<composia::TextBox&>(window.elements().root());
             require(field.text() == L"Café 東京\rSecond line\r", "UTF-8 import or newline handling failed");
             window.focus_element(field);

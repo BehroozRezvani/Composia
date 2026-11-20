@@ -15,11 +15,15 @@ bool key_down(int key) { return (GetKeyState(key) & 0x8000) != 0; }
 
 ElementWindow::ElementWindow(Application& app, std::wstring_view title, int widthDip, int heightDip,
     std::shared_ptr<Element> root, HWND parent)
-    : Window(app, title, widthDip, heightDip, parent, WS_EX_NOREDIRECTIONBITMAP, true),
+    : ElementWindow(app, title, widthDip, heightDip, Content::composition, std::move(root), parent) {}
+
+ElementWindow::ElementWindow(Application& app, std::wstring_view title, int widthDip, int heightDip,
+    Content content, std::shared_ptr<Element> root, HWND parent)
+    : Window(app, title, widthDip, heightDip, parent, content == Content::composition ? WS_EX_NOREDIRECTIONBITMAP : 0, true),
       tree_(std::move(root), [this] {
           if (hwnd()) { THROW_IF_WIN32_BOOL_FALSE(PostMessageW(hwnd(), update_message(), 0, 0)); }
       }),
-      target_(*this, !parent || CompositionWindowTarget::hosts_children(parent)
+      target_(*this, content == Content::composition && (!parent || CompositionWindowTarget::hosts_children(parent))
           ? CompositionWindowTarget::Hosting::shared : CompositionWindowTarget::Hosting::standalone) {
     tree_.window_ = this;
     destroying_ = on_destroy([this] { ElementAutomation::disconnect(*this); tree_.release_window(); });

@@ -19,7 +19,7 @@ normalizes it to that convention. Input and output are limited to 16 MiB. A save
 writes and flushes a temporary file in the destination directory before replacing
 the original.
 
-![Editor client area with a multilingual survey document](editor.png)
+![Composia Editor showing the File and Edit menus above a multilingual survey document](editor.png)
 
 The window wires document commands to the retained editor. File decoding and
 replacement can be reused independently. [Editor.cpp](Editor.cpp) · [Document.cpp](Document.cpp)
