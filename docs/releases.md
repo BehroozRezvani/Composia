@@ -5,6 +5,9 @@ Use the latest patch of the minor line your application has tested. An annotated
 and build recipes. Published version tags and release assets are immutable.
 Corrections get a new patch version.
 
+The initial 0.3.0 release was reissued once to correct the editor menu bar.
+The changelog identifies the original build and the updated vcpkg port revision.
+
 | Change | Compatibility commitment |
 | --- | --- |
 | 0.x patch | Existing source using documented headers, CMake targets and components continues to build. Bug fixes may change behavior that contradicted the guide. |

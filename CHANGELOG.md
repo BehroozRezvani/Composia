@@ -5,6 +5,10 @@ change the API; each change is listed here.
 
 ## 0.3.0 (2026-11-20)
 
+The 0.3.0 release was reissued to restore the editor's File and Edit menu bar.
+If you downloaded the first build (`d2d5830`), download the updated ZIP and
+verify it against the new `SHA256SUMS`. The updated overlay is `0.3.0#1`.
+
 The first release as a library: the demos moved to the `demo` branch, every public API is
 documented and tested, and the package can be installed or added to another build.
 

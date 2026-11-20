@@ -1,6 +1,6 @@
 vcpkg_check_linkage(ONLY_STATIC_LIBRARY)
 # Pin the library tree independently of subsequent packaging and documentation commits.
-set(revision 85f76edc74c051bc256bac041317ba25e3c6211a)
+set(revision dbff83b2c08083f13f07db7d1f7cef16c9916643)
 get_filename_component(repository "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
 vcpkg_find_acquire_program(GIT)
 execute_process(COMMAND "${GIT}" -C "${repository}" cat-file -e "${revision}^{commit}"

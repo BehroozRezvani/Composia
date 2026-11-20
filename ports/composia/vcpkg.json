@@ -1,6 +1,7 @@
 {
   "name": "composia",
   "version": "0.3.0",
+  "port-version": 1,
   "description": "C++23 windowing and retained UI on Windows Composition",
   "homepage": "https://github.com/BehroozRezvani/Composia",
   "license": "MIT",
