@@ -141,6 +141,7 @@ declarations in your own manifest.
 | `TextBox.hpp` | Retained plain-text editing, IME, clipboard, undo, selection geometry and custom painting |
 | `NativeControl.hpp` | Standard Win32 controls hosted in a window |
 | `Accessible.hpp` | A UI Automation element for a window |
+| `ElementAccessibility.hpp` | Nested UI Automation fragments, names, relationships and interaction patterns on a retained surface |
 | `Button.hpp` | An accessible push button whose look a painter supplies |
 | `AnimationHelpers.hpp` | Visual and animation shortcuts |
 | `Layout.hpp` | DIP geometry and stack placement |

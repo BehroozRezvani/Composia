@@ -22,14 +22,16 @@ protected:
     void on_resize() override;
     void on_paint() override;
     void on_focus(bool) override;
+    void on_enabled(bool) override;
     std::optional<LRESULT> on_message(UINT, WPARAM, LPARAM) override;
 
 private:
-    friend struct TextBoxAutomation;
-    winrt::com_ptr<struct TextBoxAutomation> editorAutomation_;
+    friend struct ElementAutomation;
+    winrt::com_ptr<struct ElementAutomation> automation_;
     ElementTree tree_;
     CompositionWindowTarget target_;
     bool pointerFocus_{};
+    std::weak_ptr<Element> previousFocus_;
     Connection destroying_;
 };
 

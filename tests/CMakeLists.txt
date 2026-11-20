@@ -120,6 +120,9 @@ composia_add_scenarios(composia-element-window-tests element-window WARP SCENARI
 composia_test_target(composia-text-box-tests TextBoxTests.cpp)
 composia_add_scenarios(composia-text-box-tests text-box WARP SCENARIOS editing rendering)
 composia_add_scenarios(composia-text-box-tests text-box SCENARIOS accessibility clipboard composition)
+composia_test_target(composia-element-accessibility-tests ElementAccessibilityTests.cpp)
+composia_add_scenarios(composia-element-accessibility-tests element-accessibility WARP SCENARIOS inspect)
+composia_add_scenarios(composia-element-accessibility-tests element-accessibility CORE SCENARIOS selection)
 
 # Sparse virtual surfaces.
 composia_test_target(composia-virtual-tests VirtualSurfaceTests.cpp)

@@ -1,4 +1,5 @@
 #include <composia/Element.hpp>
+#include <composia/ElementAccessibility.hpp>
 #include <algorithm>
 #include <cmath>
 #include <limits>

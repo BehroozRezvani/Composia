@@ -1,4 +1,5 @@
 #include <composia/Element.hpp>
+#include "ElementAutomation.hpp"
 #include <composia/ScopedSurfaceDraw.hpp>
 #include <algorithm>
 #include <cmath>
@@ -33,7 +34,7 @@ void Element::check_mutation() const {
 }
 
 void Element::attach(ElementTree* tree) noexcept {
-    if (tree_ && !tree) { on_detaching(); }
+    if (tree_ && !tree) { ElementAutomation::detach(*this); on_detaching(); }
     tree_ = tree;
     for (auto& child : children_) { child->attach(tree); }
 }
@@ -55,24 +56,32 @@ void Element::add(std::shared_ptr<Element> child) {
     // A reattached subtree can already have the exact box it will receive in this parent.
     child->invalidate();
     mark_layout(true);
+    ElementAutomation::reconcile_selection(*this, child.get());
+    ElementAutomation::structure(*this);
 }
 
 void Element::remove(Element& child) {
     check_mutation();
     if (child.parent_ != this) { throw std::invalid_argument("Element is not a direct child"); }
-    const auto index = child.siblingIndex_;
+    if (child.detaching_) { return; }
+    const auto keepChild = children_[child.siblingIndex_];
+    child.detaching_ = true;
+    const auto reset = wil::scope_exit([&] { child.detaching_ = false; });
     child.invalidate();
     if (tree_) {
         for (auto* p = tree_->focused_; p; p = p->parent_) {
             if (p == &child) { tree_->focus(nullptr); break; }
         }
     }
+    const auto index = child.siblingIndex_;
     child.attach(nullptr);
     child.parent_ = nullptr;
     children_.erase(children_.begin() + index);
     for (auto i = index; i < children_.size(); ++i) { children_[i]->siblingIndex_ = i; }
     orderDirty_ = true;
     mark_layout(true);
+    ElementAutomation::reconcile_selection(*this);
+    ElementAutomation::structure(*this);
 }
 
 void Element::set_preferred_size(Size value) {
@@ -109,7 +118,10 @@ void Element::set_z_index(int value) {
 
 void Element::set_focusable(bool value) {
     check_mutation();
+    if (focusable_ == value) { return; }
     focusable_ = value;
+    ElementAutomation::geometry_changed(*this);
+    if (tree_) { tree_->schedule(); }
     if (!value && focused()) { tree_->focus(nullptr); }
 }
 
@@ -124,6 +136,8 @@ void Element::set_enabled(bool value) {
     check_mutation();
     if (enabled_ == value) { return; }
     enabled_ = value;
+    ElementAutomation::geometry_changed(*this);
+    if (tree_) { tree_->schedule(); }
     if (!value && tree_ && tree_->focused_ && !tree_->focused_->enabled()) { tree_->focus(nullptr); }
     invalidate();
 }
@@ -173,6 +187,7 @@ void Element::invalidate(Rect r) {
 }
 
 void Element::mark_layout(bool measure) {
+    ElementAutomation::geometry_changed(*this);
     for (auto* p = this; p; p = p->parent_) {
         if (p->arrangeDirty_ && (!measure || p->measureDirty_)) { break; }
         p->arrangeDirty_ = true;
@@ -301,6 +316,7 @@ void ElementTree::update_layout() {
     if (focused_ && !focused_->reveal(false)) {
         auto* old = std::exchange(focused_, nullptr);
         old->on_focus_changed(false);
+        if (window_ && window_->focused()) { ElementAutomation::focus_changed(*old, false); }
     }
 }
 

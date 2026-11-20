@@ -195,9 +195,9 @@ state it changes.
 nearest focusable ancestor, including the hit itself. Tab and Shift+Tab traverse insertion
 order and scroll a focused descendant into view. At a scroll boundary, wheel input
 continues to the enclosing container. Individual drawn elements have logical keyboard
-focus. The HWND supplies Windows focus and the UI Automation provider. Use an
-`Accessible` child window when an element needs an individual automation provider, as
-the slider in `examples/inputs` does.
+focus. Call `window.focus_element(element)` to give a drawn control both Windows and retained
+keyboard focus. Disabling a retained ancestor clears focus inside it and takes the subtree
+out of pointer interaction and Tab traversal.
 
 For a custom host, pass a callback to the tree that queues an update. Set the viewport
 in DIPs at resize, then call `take_dirty_bounds()` in the queued update and invalidate
@@ -208,6 +208,51 @@ after device loss. Use `invalidate(localRect)` for paint changes and
 `invalidate_measure()` when custom content changes its desired size.
 
 ## Accessibility
+
+### Controls drawn into an ElementWindow
+
+Include `<composia/ElementAccessibility.hpp>` and call `set_accessibility` on each element
+that represents a control or a meaningful group. The nearest described ancestor becomes
+its UI Automation parent. Layout-only wrappers are transparent. A screen reader can walk
+from a group to a custom slider and a native Rich Edit text range on the same surface.
+Fragments retain their identity while attached. Removing an element disconnects its
+provider, including patterns already held by clients.
+
+```cpp
+using namespace composia;
+// VolumeControl derives from Element and draws the current range value in paint().
+void VolumeControl::initialize() {
+    set_focusable(true);
+    ElementAccessibility info{.name = L"Volume", .automationId = L"volume",
+                              .controlType = UIA_SliderControlTypeId};
+    info.value = ElementAccessibility::RangeValue{25, 0, 100, 1, 10,
+        [this](double level) { set_accessible_value(level); }};
+    set_accessibility(std::move(info));
+}
+```
+
+Keyboard focus, pointer hit-testing, UIA hit-testing and screen bounds use the retained
+tree's arrangement, clipping and window DPI. Tab traversal reveals a focused item inside
+a scroll container. A disabled control remains discoverable. Its enabled ancestors and
+host window determine whether it can take focus or perform an action.
+
+| Pattern | How to expose it |
+| --- | --- |
+| Invoke | Set `invoke` to the control's action. Enter and Space also activate a focused control. |
+| Value | Set `value` to an `ElementAccessibility::Value` containing its current text and an optional setter. |
+| RangeValue | Supply the current value, limits and small/large increments. Arrow keys, Page Up/Down and Home/End use the same setter as automation. |
+| Selection and SelectionItem | Give a container a `Selection`, and give each item an initial `selected` state. Use `select_item` from pointer handlers. Space selects an item and Ctrl+Space adds or removes it. Selection operations enforce the container's single/multiple and required rules and call its `changed` callback. Nested selection containers manage their own items. |
+| Scroll | Describe an element with scroll layout. UIA reads and changes the same horizontal or vertical offset used by the wheel and layout. |
+| Text | Use a `TextBox`, including read-only mode, for native ranges, selections and screen geometry. A custom document renderer can supply an `ITextProvider` through `textProvider`. |
+
+Setters run on the application's UI thread. Use `set_accessible_value` for a value change
+and `set_accessibility` to replace the description. A required group selects its first
+remaining item if its selection disappears. Omitting a value setter makes
+the value read-only. A control's own `on_key` can handle a key before the default action.
+`labeledBy`, `describedBy` and `controllerFor` are weak relationships to accessible elements
+in the same window. Provide a translated `localizedControlType` for a custom role.
+
+### Window-based controls
 
 `Accessible` gives any window a UI Automation element, using only the window's public API:
 the provider slot that answers `WM_GETOBJECT` (`set_automation_provider`) and the focus,

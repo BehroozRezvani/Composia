@@ -176,6 +176,20 @@ int routing(const testing::Options&) {
     root->add(std::shared_ptr<Element>(widget, &widget->face));
     widget->face.pointer = [](const auto&) { return true; };
     require(tree.pointer({PointerEvent::Kind::move, {1, 1}}), "Route lost ownership of an embedded element");
+    struct RemovesOnFocus : Probe {
+        void on_focus_changed(bool gained) override {
+            if (gained) { parent()->remove(*this); }
+        }
+    };
+    auto transient = std::make_shared<RemovesOnFocus>();
+    transient->set_preferred_size({20, 20});
+    transient->set_focusable(true);
+    transient->set_z_index(10);
+    root->add(transient);
+    std::weak_ptr<Element> removed = transient;
+    transient.reset();
+    tree.pointer({PointerEvent::Kind::down, {1, 1}, PointerEvent::Button::left});
+    require(removed.expired() && !tree.focused(), "A control removed during pointer focus stayed in the route");
     return 0;
 }
 

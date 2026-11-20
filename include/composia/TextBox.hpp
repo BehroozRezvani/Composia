@@ -57,7 +57,7 @@ public:
 
 private:
     friend class ElementWindow;
-    friend struct TextBoxAutomation;
+    friend struct ElementAutomation;
     struct Host;
     std::optional<LRESULT> window_message(UINT, WPARAM, LPARAM);
     void paint(ScopedSurfaceDraw&) override;

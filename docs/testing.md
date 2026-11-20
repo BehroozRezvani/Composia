@@ -40,6 +40,7 @@ Tests are named `<area>-<scenario>`; a `-warp` suffix runs the same scenario on 
 | --- | --- |
 | `element-layout`, `element-routing`, `element-damage` | Nested measurement and resizing, z order, clipping, reentrant event routing, focus, dirty bounds, and cached scrolling through 2,048 rows |
 | `element-window-*` | Surface pixel readback after partial paint, translation, reordering and device recovery, plus mouse input and Tab traversal into a native EDIT |
+| `element-accessibility-*` | UIA navigation across drawn controls and textboxes, relationships, selection rules, range events, scroll, hit-testing, painted keyboard focus and stale provider references |
 | `text-box-editing`, `text-box-rendering` | Unicode typing and undo, double-click selection, wrap and scroll geometry, partial pixel updates, a custom painter, device recovery and reattachment |
 | `text-box-composition`, `text-box-clipboard`, `text-box-accessibility` | TSF preedit and commit in the focused field, clipboard operations in an isolated window station, and an independent UI Automation client using Text and Value patterns |
 | `core-signal`, `core-layout`, `core-text` | Signal connection lifetimes, nested and reentrant emission, and failing subscribers; stack layout, shortening, and invalid input; text measurement, wrapping, font family, weight, and locale, and invalid arguments |

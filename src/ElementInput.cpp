@@ -1,5 +1,6 @@
 #include <composia/Element.hpp>
 #include <composia/Native.hpp>
+#include "ElementAutomation.hpp"
 #include <algorithm>
 
 namespace composia {
@@ -28,9 +29,11 @@ bool ElementTree::pointer(PointerEvent event) {
     auto* target = hit_test(event.position);
     if (!target || !target->enabled()) { return false; }
     if (event.kind == PointerEvent::Kind::down && event.button == PointerEvent::Button::left) {
+        const auto keepTarget = reference(target);
         for (auto* p = target; p; p = p->parent_) {
             if (p->focusable_) { focus(p); break; }
         }
+        if (target->tree_ != this || !target->enabled()) { return false; }
     }
     const auto viewportPosition = event.position;
     return bubble(*target, [&](Element& element, layout::Point origin) {
@@ -50,7 +53,9 @@ bool ElementTree::pointer(PointerEvent event) {
 
 bool ElementTree::key(const KeyEvent& event) {
     update_layout();
-    if (focused_ && bubble(*focused_, [&](Element& element, layout::Point) { return element.on_key(event); })) {
+    if (focused_ && bubble(*focused_, [&](Element& element, layout::Point) {
+        return element.on_key(event) || (element.tree_ == this && element.accessibility_ && element.accessibility_key(event));
+    })) {
         return true;
     }
     constexpr unsigned tab = 0x09;
@@ -60,22 +65,37 @@ bool ElementTree::key(const KeyEvent& event) {
 bool ElementTree::focus(Element* element) {
     root_->check_mutation();
     if (element) {
-        if (element->tree_ != this || !element->focusable_ || !element->enabled()) { return false; }
+        if (element->tree_ != this || !element->focusable_ || !element->enabled() ||
+            (window_ && !window_->enabled())) { return false; }
+        for (auto* p = element; p; p = p->parent_) {
+            if (p->detaching_) { return false; }
+        }
         update_layout();
         if (!element->reveal(false)) { return false; }
         element->reveal(true);
     }
     if (focused_ == element) { return true; }
-    auto* previous = std::exchange(focused_, element);
+    const auto previous = reference(focused_);
+    const auto next = reference(element);
+    focused_ = element;
     if (previous) { previous->invalidate(); previous->on_focus_changed(false); }
-    if (element) { element->invalidate(); element->on_focus_changed(true); }
-    return true;
+    if (next && focused_ == element) { next->invalidate(); next->on_focus_changed(true); }
+    if (window_ && window_->focused()) {
+        if (previous && !previous->focused()) { ElementAutomation::focus_changed(*previous, false); }
+        if (next && focused_ == element) { ElementAutomation::focus_changed(*next, true); }
+    }
+    return focused_ == element;
 }
 
 Element* Element::last_descendant() noexcept {
     auto* p = this;
     while (!p->children_.empty()) { p = p->children_.back().get(); }
     return p;
+}
+
+std::shared_ptr<Element> ElementTree::reference(Element* element) const noexcept {
+    if (!element) { return {}; }
+    return element->parent_ ? element->parent_->children_[element->siblingIndex_] : root_;
 }
 
 Element* Element::adjacent(bool backwards) noexcept {

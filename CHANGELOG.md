@@ -16,6 +16,11 @@ events, focus traversal, clipping, z order and partial repaints.
 editors share the surface with other elements and expose UI Automation Text and Value
 patterns. Applications can supply a painter for the field, text and caret.
 
+Retained elements can expose nested UI Automation fragments with names, roles, states
+and relationships. Invoke, Value, RangeValue, Selection, SelectionItem, Scroll and Text
+share the retained tree's focus and geometry. Disabled ancestors govern interaction
+through the keyboard, pointer and automation.
+
 ### Upgrading from 0.2.0
 
 0.3.0 is not source compatible with 0.2.0. Rebuild everything that links Composia, require

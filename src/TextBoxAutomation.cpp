@@ -1,28 +1,8 @@
-#include "TextBoxAutomation.hpp"
+#include "ElementAutomation.hpp"
 #include "TextBoxHost.hpp"
 #include <algorithm>
 
 namespace composia {
-
-void TextBoxAutomation::attach(ElementWindow& w) {
-    if (!w.automation_provider() && editor(&w.elements().root(), false)) {
-        if (!w.editorAutomation_) { w.editorAutomation_ = winrt::make_self<TextBoxAutomation>(w); }
-        w.set_automation_provider(w.editorAutomation_.get());
-    }
-}
-void TextBoxAutomation::disconnect(ElementWindow& w) noexcept {
-    if (auto root = std::move(w.editorAutomation_)) {
-        root->window = nullptr;
-        UiaDisconnectProvider(root.get());
-        if (w.automation_provider() == root.get()) { w.set_automation_provider(nullptr); }
-    }
-}
-TextBox* TextBoxAutomation::editor(Element* e, bool backwards) noexcept {
-    for (; e; e = e->adjacent(backwards)) {
-        if (auto* box = dynamic_cast<TextBox*>(e)) { return box; }
-    }
-    return nullptr;
-}
 IRawElementProviderSimple* TextBox::Host::automation_provider() {
     THROW_HR_IF(static_cast<HRESULT>(UIA_E_ELEMENTNOTAVAILABLE), !hwnd());
     sync();
@@ -34,106 +14,10 @@ IRawElementProviderSimple* TextBox::Host::automation_provider() {
     }
     return provider.get();
 }
-HRESULT TextBoxAutomation::fragment(TextBox* box, IRawElementProviderFragment** out) noexcept {
-    if (!out) { return E_POINTER; }
-    *out = nullptr;
-    if (!box) { return S_OK; }
-    try {
-        return box->host_->automation_provider()->QueryInterface(IID_PPV_ARGS(out));
-    }
-    CATCH_RETURN();
-}
-HRESULT TextBoxAutomation::get_ProviderOptions(ProviderOptions* out) noexcept {
-    if (!out) { return E_POINTER; }
-    *out = ProviderOptions(ProviderOptions_ServerSideProvider | ProviderOptions_UseComThreading);
-    return S_OK;
-}
-HRESULT TextBoxAutomation::GetPatternProvider(PATTERNID, IUnknown** out) noexcept {
-    if (!out) { return E_POINTER; }
-    *out = nullptr;
-    return window ? S_OK : UIA_E_ELEMENTNOTAVAILABLE;
-}
-HRESULT TextBoxAutomation::GetPropertyValue(PROPERTYID, VARIANT* out) noexcept {
-    if (!out) { return E_POINTER; }
-    VariantInit(out);
-    return window ? S_OK : UIA_E_ELEMENTNOTAVAILABLE;
-}
-HRESULT TextBoxAutomation::get_HostRawElementProvider(IRawElementProviderSimple** out) noexcept {
-    if (!out) { return E_POINTER; }
-    *out = nullptr;
-    return window ? UiaHostProviderFromHwnd(window->hwnd(), out) : UIA_E_ELEMENTNOTAVAILABLE;
-}
-HRESULT TextBoxAutomation::Navigate(NavigateDirection dir, IRawElementProviderFragment** out) noexcept {
-    if (!out) { return E_POINTER; }
-    *out = nullptr;
-    if (!window) { return UIA_E_ELEMENTNOTAVAILABLE; }
-    auto& root = window->elements().root();
-    if (dir == NavigateDirection_FirstChild) { return fragment(editor(&root, false), out); }
-    if (dir == NavigateDirection_LastChild) { return fragment(editor(root.last_descendant(), true), out); }
-    return S_OK;
-}
-HRESULT TextBoxAutomation::GetRuntimeId(SAFEARRAY** out) noexcept {
-    if (!out) { return E_POINTER; }
-    *out = nullptr;
-    return window ? S_OK : UIA_E_ELEMENTNOTAVAILABLE;
-}
-HRESULT TextBoxAutomation::GetEmbeddedFragmentRoots(SAFEARRAY** out) noexcept {
-    return GetRuntimeId(out);
-}
-HRESULT TextBoxAutomation::get_BoundingRectangle(UiaRect* out) noexcept {
-    if (!out) { return E_POINTER; }
-    *out = {};
-    RECT r{};
-    if (!window || !GetWindowRect(window->hwnd(), &r)) { return UIA_E_ELEMENTNOTAVAILABLE; }
-    *out = {double(r.left), double(r.top), double(r.right - r.left), double(r.bottom - r.top)};
-    return S_OK;
-}
-HRESULT TextBoxAutomation::SetFocus() noexcept {
-    if (!window) { return UIA_E_ELEMENTNOTAVAILABLE; }
-    try {
-        window->focus();
-        return S_OK;
-    }
-    CATCH_RETURN();
-}
-HRESULT TextBoxAutomation::get_FragmentRoot(IRawElementProviderFragmentRoot** out) noexcept {
-    if (!out) { return E_POINTER; }
-    *out = nullptr;
-    return window ? QueryInterface(IID_PPV_ARGS(out)) : UIA_E_ELEMENTNOTAVAILABLE;
-}
-HRESULT TextBoxAutomation::ElementProviderFromPoint(double x, double y, IRawElementProviderFragment** out) noexcept {
-    if (!out) { return E_POINTER; }
-    *out = nullptr;
-    if (!window) { return UIA_E_ELEMENTNOTAVAILABLE; }
-    POINT p{LONG(x), LONG(y)};
-    if (!ScreenToClient(window->hwnd(), &p)) { return UIA_E_ELEMENTNOTAVAILABLE; }
-    try {
-        for (auto* e = window->elements().hit_test(window->to_dips(p)); e; e = e->parent()) {
-            if (auto* box = dynamic_cast<TextBox*>(e)) { return fragment(box, out); }
-        }
-        return QueryInterface(IID_PPV_ARGS(out));
-    }
-    CATCH_RETURN();
-}
-HRESULT TextBoxAutomation::GetFocus(IRawElementProviderFragment** out) noexcept {
-    if (!out) { return E_POINTER; }
-    *out = nullptr;
-    return window ? fragment(dynamic_cast<TextBox*>(window->elements().focused()), out) : UIA_E_ELEMENTNOTAVAILABLE;
-}
-
 HRESULT TextBox::Host::GetAdjacentFragment(NavigateDirection dir, IRawElementProviderFragment** out) noexcept {
     if (!out) { return E_POINTER; }
     *out = nullptr;
-    if (!hwnd()) { return UIA_E_ELEMENTNOTAVAILABLE; }
-    if (dir == NavigateDirection_Parent) {
-        auto* root = box->host_window()->automation_provider();
-        return root ? root->QueryInterface(IID_PPV_ARGS(out)) : UIA_E_ELEMENTNOTAVAILABLE;
-    }
-    if (dir == NavigateDirection_NextSibling || dir == NavigateDirection_PreviousSibling) {
-        const bool backwards = dir == NavigateDirection_PreviousSibling;
-        return TextBoxAutomation::fragment(TextBoxAutomation::sibling(*box, backwards), out);
-    }
-    return S_OK;
+    return hwnd() ? ElementAutomation::navigate(*box->host_window(), box, dir, out) : UIA_E_ELEMENTNOTAVAILABLE;
 }
 HRESULT TextBox::Host::GetRuntimeIdPrefix(SAFEARRAY** out) noexcept {
     if (!out) { return E_POINTER; }
@@ -152,6 +36,9 @@ HRESULT TextBox::Host::GetPropertyOverrideValue(PROPERTYID property, VARIANT* ou
     VariantInit(out);
     if (!hwnd()) { return UIA_E_ELEMENTNOTAVAILABLE; }
     if (property == UIA_NamePropertyId) {
+        if (box->accessibility() && !box->accessibility()->name.empty()) {
+            return ElementAutomation::metadata(*box, property, out);
+        }
         out->vt = VT_BSTR;
         out->bstrVal = SysAllocString(box->options().name.c_str());
         return out->bstrVal ? S_OK : E_OUTOFMEMORY;
@@ -163,6 +50,9 @@ HRESULT TextBox::Host::GetPropertyOverrideValue(PROPERTYID property, VARIANT* ou
                            ? VARIANT_TRUE
                            : VARIANT_FALSE;
         return S_OK;
+    }
+    if (box->accessibility()) {
+        try { return ElementAutomation::metadata(*box,property,out); } CATCH_RETURN();
     }
     return S_FALSE;
 }

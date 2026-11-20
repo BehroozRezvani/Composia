@@ -6,6 +6,7 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <string>
 #include <vector>
 
 namespace composia {
@@ -14,6 +15,8 @@ class Element;
 class ElementTree;
 class ElementWindow;
 class ScopedSurfaceDraw;
+struct ElementAccessibility;
+enum class SelectionAction;
 
 struct ElementLayout {
     enum class Kind { overlay, stack, flex, grid, scroll };
@@ -64,6 +67,12 @@ public:
     [[nodiscard]] bool focusable() const noexcept { return focusable_; }
     void set_enabled(bool);
     [[nodiscard]] bool enabled() const noexcept; // Includes retained ancestors.
+    void set_accessibility(ElementAccessibility);
+    void clear_accessibility();
+    void set_accessible_value(double);         // Update RangeValue and notify clients.
+    void set_accessible_value(std::wstring);   // Update Value and notify clients.
+    [[nodiscard]] const ElementAccessibility* accessibility() const noexcept { return accessibility_.get(); }
+    bool select_item(SelectionAction);
     // Scroll containers have at most one child. Scroll distance is clamped during layout.
     void set_scroll_offset(float);
     [[nodiscard]] float scroll_offset() const noexcept { return scrollOffset_; }
@@ -93,9 +102,11 @@ protected:
 
 private:
     friend class ElementTree;
-    friend struct TextBoxAutomation;
+    friend struct ElementAutomation;
+    friend struct ElementProvider;
     void attach(ElementTree*) noexcept;
     void check_mutation() const;
+    bool accessibility_key(const KeyEvent&);
     void mark_layout(bool measure);
     void arrange(layout::Rect);
     layout::Size measure(layout::Size);
@@ -108,6 +119,7 @@ private:
     Element* adjacent(bool backwards) noexcept;
 
     Element* parent_{};
+    std::unique_ptr<ElementAccessibility> accessibility_;
     ElementTree* tree_{};
     std::size_t siblingIndex_{};
     std::vector<std::shared_ptr<Element>> children_;
@@ -118,7 +130,7 @@ private:
     layout::Point offset_{};
     float grow_{}, basis_{}, basisCross_{}, scrollOffset_{}, scrollLimit_{};
     int z_{};
-    bool measureDirty_{true}, arrangeDirty_{true}, orderDirty_{true}, orderedBands_{}, focusable_{}, enabled_{true};
+    bool measureDirty_{true}, arrangeDirty_{true}, orderDirty_{true}, orderedBands_{}, focusable_{}, enabled_{true}, detaching_{};
 };
 
 // Independent of HWND and graphics device lifetime. requestUpdate should enqueue work on the
@@ -148,6 +160,7 @@ private:
     friend class Element;
     friend class ElementWindow;
     void release_window() noexcept;
+    std::shared_ptr<Element> reference(Element*) const noexcept;
     struct Recipient { std::shared_ptr<Element> element; layout::Point origin; };
     template<class Handler> bool bubble(Element&, Handler&&);
     void schedule();

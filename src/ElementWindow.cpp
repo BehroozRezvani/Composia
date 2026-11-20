@@ -1,6 +1,6 @@
 #include <composia/ElementWindow.hpp>
 #include <composia/TextBox.hpp>
-#include "TextBoxAutomation.hpp"
+#include "ElementAutomation.hpp"
 
 namespace composia {
 namespace {
@@ -22,16 +22,16 @@ ElementWindow::ElementWindow(Application& app, std::wstring_view title, int widt
       target_(*this, !parent || CompositionWindowTarget::hosts_children(parent)
           ? CompositionWindowTarget::Hosting::shared : CompositionWindowTarget::Hosting::standalone) {
     tree_.window_ = this;
-    destroying_ = on_destroy([this] { TextBoxAutomation::disconnect(*this); tree_.release_window(); });
+    destroying_ = on_destroy([this] { ElementAutomation::disconnect(*this); tree_.release_window(); });
     on_resize();
 }
 
-ElementWindow::~ElementWindow() { TextBoxAutomation::disconnect(*this); tree_.release_window(); }
+ElementWindow::~ElementWindow() { ElementAutomation::disconnect(*this); tree_.release_window(); }
 
 bool ElementWindow::focus_element(Element& element) {
     if (!hwnd() || !enabled() || !tree_.focus(&element)) { return false; }
     focus();
-    return focused() && element.focused();
+    return focused() && tree_.focused() == &element;
 }
 
 void ElementWindow::on_resize() {
@@ -48,15 +48,33 @@ void ElementWindow::on_paint() {
 }
 
 void ElementWindow::on_focus(bool value) {
-    if (!value) { tree_.focus(nullptr); }
-    else if (auto* editor = dynamic_cast<TextBox*>(tree_.focused())) { editor->on_focus_changed(true); }
-    else if (!pointerFocus_ && !tree_.focused()) { tree_.move_focus(key_down(VK_SHIFT)); }
+    if (!value) {
+        previousFocus_ = tree_.reference(tree_.focused());
+        tree_.focus(nullptr);
+        if (auto previous = previousFocus_.lock(); previous && !focused()) {
+            ElementAutomation::focus_changed(*previous, false);
+        }
+    }
+    else if (auto current = tree_.reference(tree_.focused())) {
+        if (auto* editor = dynamic_cast<TextBox*>(current.get())) { editor->on_focus_changed(true); }
+        if (current->focused()) { ElementAutomation::focus_changed(*current, true); }
+    }
+    else if (!pointerFocus_) {
+        auto previous = previousFocus_.lock();
+        if (!key_down(VK_TAB) && previous && tree_.focus(previous.get())) { return; }
+        tree_.move_focus(key_down(VK_SHIFT));
+    }
 }
 
 std::optional<LRESULT> ElementWindow::on_message(UINT message, WPARAM wparam, LPARAM lparam) {
-    if (message == WM_GETOBJECT && static_cast<LONG>(lparam) == UiaRootObjectId) { TextBoxAutomation::attach(*this); }
+    if (automation_ && (message == WM_WINDOWPOSCHANGED || message == WM_SHOWWINDOW)) {
+        automation_->geometryDirty = true;
+        PostMessageW(hwnd(), update_message(), 0, 0);
+    }
+    if (message == WM_GETOBJECT && static_cast<LONG>(lparam) == UiaRootObjectId) { ElementAutomation::attach(*this); }
     if (message == update_message()) {
         if (const auto region = tree_.take_dirty_bounds()) { invalidate(*region); }
+        ElementAutomation::refresh(*this);
         return 0;
     }
     using Kind = PointerEvent::Kind;
@@ -115,6 +133,11 @@ std::optional<LRESULT> ElementWindow::on_message(UINT message, WPARAM wparam, LP
     }
     if (tree_.pointer(event)) { return event.button == Button::x1 || event.button == Button::x2 ? TRUE : 0; }
     return std::nullopt;
+}
+
+void ElementWindow::on_enabled(bool enabled) {
+    if (!enabled) { tree_.focus(nullptr); }
+    if (automation_) { automation_->geometryDirty = true; ElementAutomation::refresh(*this); }
 }
 
 }

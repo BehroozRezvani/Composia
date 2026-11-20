@@ -7,6 +7,7 @@
 #include <composia/Composition.hpp>
 #include <composia/CompositionWindowTarget.hpp>
 #include <composia/Element.hpp>
+#include <composia/ElementAccessibility.hpp>
 #include <composia/ElementWindow.hpp>
 #include <composia/GraphicsDevice.hpp>
 #include <composia/Layout.hpp>
@@ -45,6 +46,7 @@ int main(int argc, char**) {
             document.update({0, 0, 100, 100}, [](auto& draw, const RECT&) { draw.context()->Clear(D2D1::ColorF(0)); });
             composia::Window window{app, L"Consumer", 320, 240, composia::Window::Content::composition};
             composia::ElementWindow elements{app, L"Retained", 300, 180, std::make_shared<composia::Element>()};
+            elements.elements().root().set_accessibility({.name=L"Message", .controlType=UIA_GroupControlTypeId});
             elements.elements().root().add(std::make_shared<composia::TextBox>(
                 composia::TextBox::Options{.name = L"Subject"}, L"Draft"));
             composia::CompositionWindowTarget target{window, composia::CompositionWindowTarget::Hosting::shared};
