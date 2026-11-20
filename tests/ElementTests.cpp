@@ -165,6 +165,12 @@ int routing(const testing::Options&) {
     calls.clear();
     tree.pointer({PointerEvent::Kind::move, {16, 11}});
     require(lifetime.expired() && calls == std::vector<int>{3, 3}, "Reentrant routing or detached recipient");
+    tree.focus(back.get());
+    root->set_enabled(false);
+    require(!back->enabled() && !tree.focused() && !tree.move_focus() && !tree.focus(back.get()) &&
+        !tree.pointer({PointerEvent::Kind::down, {1, 1}, PointerEvent::Button::left}), "Disabled subtree received input");
+    root->set_enabled(true);
+    require(tree.move_focus() && back->focused(), "Re-enabled tab stop was lost");
     struct Widget { Probe face; };
     auto widget = std::make_shared<Widget>();
     root->add(std::shared_ptr<Element>(widget, &widget->face));

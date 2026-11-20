@@ -28,6 +28,12 @@ ElementWindow::ElementWindow(Application& app, std::wstring_view title, int widt
 
 ElementWindow::~ElementWindow() { TextBoxAutomation::disconnect(*this); tree_.release_window(); }
 
+bool ElementWindow::focus_element(Element& element) {
+    if (!hwnd() || !enabled() || !tree_.focus(&element)) { return false; }
+    focus();
+    return focused() && element.focused();
+}
+
 void ElementWindow::on_resize() {
     const auto b = client_bounds();
     tree_.set_viewport({b.width, b.height});

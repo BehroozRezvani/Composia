@@ -13,6 +13,8 @@ public:
     ElementWindow(Application&, std::wstring_view title, int widthDip, int heightDip,
         std::shared_ptr<Element> root, HWND parent = nullptr);
     ~ElementWindow() override;
+    // Gives keyboard focus to this window and reveals the requested retained tab stop.
+    bool focus_element(Element&);
     [[nodiscard]] ElementTree& elements() noexcept { return tree_; }
     [[nodiscard]] CompositionWindowTarget& composition_target() noexcept { return target_; }
 

@@ -26,7 +26,7 @@ bool ElementTree::bubble(Element& target, Handler&& handle) {
 
 bool ElementTree::pointer(PointerEvent event) {
     auto* target = hit_test(event.position);
-    if (!target) { return false; }
+    if (!target || !target->enabled()) { return false; }
     if (event.kind == PointerEvent::Kind::down && event.button == PointerEvent::Button::left) {
         for (auto* p = target; p; p = p->parent_) {
             if (p->focusable_) { focus(p); break; }
@@ -60,7 +60,7 @@ bool ElementTree::key(const KeyEvent& event) {
 bool ElementTree::focus(Element* element) {
     root_->check_mutation();
     if (element) {
-        if (element->tree_ != this || !element->focusable_) { return false; }
+        if (element->tree_ != this || !element->focusable_ || !element->enabled()) { return false; }
         update_layout();
         if (!element->reveal(false)) { return false; }
         element->reveal(true);
@@ -101,7 +101,7 @@ Element* ElementTree::next_focus(bool backwards, bool wrap) {
             candidate = first();
             wrap = false;
         }
-        if (candidate->focusable_ && candidate->reveal(false)) { return candidate; }
+        if (candidate->focusable_ && candidate->enabled() && candidate->reveal(false)) { return candidate; }
         candidate = candidate->adjacent(backwards);
     }
 }

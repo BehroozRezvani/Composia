@@ -158,7 +158,7 @@ HRESULT TextBox::Host::GetPropertyOverrideValue(PROPERTYID property, VARIANT* ou
     }
     if (property == UIA_HasKeyboardFocusPropertyId || property == UIA_IsEnabledPropertyId) {
         out->vt = VT_BOOL;
-        out->boolVal = (property == UIA_IsEnabledPropertyId ? box->host_window()->enabled()
+        out->boolVal = (property == UIA_IsEnabledPropertyId ? box->enabled() && box->host_window()->enabled()
                                                             : box->focused() && box->host_window()->focused())
                            ? VARIANT_TRUE
                            : VARIANT_FALSE;

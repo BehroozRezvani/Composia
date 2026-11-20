@@ -113,6 +113,21 @@ void Element::set_focusable(bool value) {
     if (!value && focused()) { tree_->focus(nullptr); }
 }
 
+bool Element::enabled() const noexcept {
+    for (auto* p = this; p; p = p->parent_) {
+        if (!p->enabled_) { return false; }
+    }
+    return true;
+}
+
+void Element::set_enabled(bool value) {
+    check_mutation();
+    if (enabled_ == value) { return; }
+    enabled_ = value;
+    if (!value && tree_ && tree_->focused_ && !tree_->focused_->enabled()) { tree_->focus(nullptr); }
+    invalidate();
+}
+
 void Element::set_scroll_offset(float value) {
     check_mutation();
     if (layout_.kind != ElementLayout::Kind::scroll || !std::isfinite(value)) {

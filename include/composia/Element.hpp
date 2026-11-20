@@ -61,6 +61,9 @@ public:
     void set_offset(layout::Point);            // Translation after layout, in parent DIPs.
     void set_z_index(int);
     void set_focusable(bool);
+    [[nodiscard]] bool focusable() const noexcept { return focusable_; }
+    void set_enabled(bool);
+    [[nodiscard]] bool enabled() const noexcept; // Includes retained ancestors.
     // Scroll containers have at most one child. Scroll distance is clamped during layout.
     void set_scroll_offset(float);
     [[nodiscard]] float scroll_offset() const noexcept { return scrollOffset_; }
@@ -115,7 +118,7 @@ private:
     layout::Point offset_{};
     float grow_{}, basis_{}, basisCross_{}, scrollOffset_{}, scrollLimit_{};
     int z_{};
-    bool measureDirty_{true}, arrangeDirty_{true}, orderDirty_{true}, orderedBands_{}, focusable_{};
+    bool measureDirty_{true}, arrangeDirty_{true}, orderDirty_{true}, orderedBands_{}, focusable_{}, enabled_{true};
 };
 
 // Independent of HWND and graphics device lifetime. requestUpdate should enqueue work on the

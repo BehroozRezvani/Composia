@@ -251,8 +251,7 @@ void TextBox::Host::TxSetFocus() {
     if (box && box->host_window() && (!box->focused() || !box->host_window()->focused())) {
         try {
             auto& w = *box->host_window();
-            w.focus();
-            w.elements().focus(box);
+            w.focus_element(*box);
         } catch (...) { box->host_window()->application().report_error(std::current_exception()); }
     }
 }
