@@ -111,6 +111,10 @@ composia_add_scenarios(composia-surface-tests surface WARP SCENARIOS pixels)
 composia_test_target(composia-animation-tests AnimationTests.cpp)
 composia_add_scenarios(composia-animation-tests animation WARP SCENARIOS helpers)
 
+# Retained layout, routing, focus, and damage on the UI thread.
+composia_test_target(composia-element-tests ElementTests.cpp)
+composia_add_scenarios(composia-element-tests element CORE SCENARIOS layout routing damage)
+
 # Sparse virtual surfaces.
 composia_test_target(composia-virtual-tests VirtualSurfaceTests.cpp)
 composia_add_scenarios(composia-virtual-tests virtual WARP TIMEOUT 40 SCENARIOS sparse-cache partial-updates)

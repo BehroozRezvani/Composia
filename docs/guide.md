@@ -135,13 +135,42 @@ animation on its own; nothing in the application needs a timer.
 
 ## Content inside one window
 
-Elements drawn into one window need no window of their own: they share its pointer
-messages, capture, invalidation, and DIP conversions. Two things are per HWND in Windows:
-keyboard focus and the UI Automation element. Drawn content that must be reachable with
-Tab next to native controls, or exposed to screen readers, goes in a child `Window` with
-an `Accessible`, as the slider in `examples/inputs` does. That child can still draw many
-parts. Exposing those parts individually would need a UI Automation fragment provider,
-which Composia does not supply.
+`ElementTree` retains custom-drawn elements on one surface. Each parent owns its
+children through `shared_ptr`. Remove a child before adding it elsewhere. Work with the
+tree on the UI thread. Override `measure_content` for intrinsic sizing such as wrapped
+text, `paint` for drawing in local DIPs, and `on_pointer` or `on_key` for input. An
+unbounded measurement axis is positive infinity. Return finite, nonnegative dimensions.
+
+| Container | Placement |
+| --- | --- |
+| Overlay (default) | Each child fills the parent. Higher z indices paint later. Ties follow insertion order. |
+| Stack | Children take their measured length and stretch across the other axis. Overflowing lengths shorten at the far edge. |
+| Flex | A single row or column. Extra space follows each child's flex-grow weight. A deficit shrinks children in proportion to their measured lengths. |
+| Grid | Equal-width columns in insertion order. Each row takes the height of its tallest child. The gap applies in both directions. |
+| Scroll | One child measured without a limit on the scrolling axis. The viewport clips its content and clamps the offset. Nest scroll containers for two axes. |
+
+`set_offset` translates a whole subtree after layout. Every ancestor clips both drawing
+and hit-testing. Pointer and key events bubble up the original path until a handler
+returns true. Pointer positions are relative to each recipient. Input handlers can remove
+elements during dispatch. Layout and paint hooks must leave tree properties and structure
+alone. A painter can use the supplied surface's brushes and must balance any drawing
+state it changes.
+
+`set_focusable(true)` adds an element to keyboard navigation. A left press focuses the
+nearest focusable ancestor, including the hit itself. Tab and Shift+Tab traverse insertion
+order and scroll a focused descendant into view. At a scroll boundary, wheel input
+continues to the enclosing container. Individual drawn elements have logical keyboard
+focus. The HWND supplies Windows focus and the UI Automation provider. Use an
+`Accessible` child window when an element needs an individual automation provider, as
+the slider in `examples/inputs` does.
+
+For a custom host, pass a callback to the tree that queues an update. Set the viewport
+in DIPs at resize, then call `take_dirty_bounds()` in the queued update and invalidate
+the returned window rectangle. Hit-testing, painting, and taking damage resolve pending
+layout. Call `tree.paint(draw)` inside the target's render callback. This reconstructs
+the surface's actual update area, including exposed layers after a move and full frames
+after device loss. Use `invalidate(localRect)` for paint changes and
+`invalidate_measure()` when custom content changes its desired size.
 
 ## Accessibility
 

@@ -1,0 +1,211 @@
+#include <composia/Element.hpp>
+#include "support/TestSupport.hpp"
+#include <cmath>
+
+using namespace composia;
+using testing::require;
+using Kind = ElementLayout::Kind;
+using layout::Axis;
+
+namespace {
+class Probe : public Element {
+public:
+    using Element::Element;
+    std::function<bool(const PointerEvent&)> pointer;
+    std::function<bool(const KeyEvent&)> key;
+    mutable unsigned measures{};
+
+    layout::Size measure_content(layout::Size available) const override {
+        ++measures;
+        return Element::measure_content(available);
+    }
+    bool on_pointer(const PointerEvent& e) override { return pointer && pointer(e); }
+    bool on_key(const KeyEvent& e) override { return key && key(e); }
+};
+
+auto leaf(float w, float h) {
+    auto child = std::make_shared<Probe>();
+    child->set_preferred_size({w, h});
+    return child;
+}
+
+bool same(layout::Rect a, layout::Rect b) {
+    return a.x == b.x && a.y == b.y && a.width == b.width && a.height == b.height;
+}
+
+int arrangement(const testing::Options&) {
+    auto root = std::make_shared<Element>(ElementLayout{Kind::stack, Axis::vertical, 4});
+    auto flex = std::make_shared<Element>(ElementLayout{Kind::flex, Axis::horizontal, 4});
+    auto grid = std::make_shared<Element>(ElementLayout{.kind = Kind::grid, .gap = 2, .columns = 2});
+    auto a = leaf(20, 10), b = leaf(40, 8);
+    a->set_flex_grow(1);
+    b->set_flex_grow(3);
+    flex->add(a);
+    flex->add(b);
+    for (float h : {3.f, 8.f, 12.f}) { grid->add(leaf(10, h)); }
+    root->add(flex);
+    root->add(grid);
+    ElementTree tree(root);
+    tree.set_viewport({104, 90});
+    tree.update_layout();
+    require(same(a->bounds(), {0, 0, 30, 10}) && same(b->bounds(), {34, 0, 70, 10}), "Flex weighted growth");
+    require(same(grid->bounds(), {0, 14, 104, 22}), "Nested stack intrinsic height");
+    require(same(grid->children()[0]->bounds(), {0, 0, 51, 8}) &&
+        same(grid->children()[2]->bounds(), {0, 10, 51, 12}), "Grid row heights and column gaps");
+    tree.set_viewport({34, 20});
+    tree.update_layout();
+    require(same(b->bounds(), {14, 0, 20, 10}), "Flex proportional shrink");
+    require(grid->bounds().height == 6 && tree.hit_test({32, 20}) == nullptr, "Stack overflow or half-open viewport");
+    auto clipped = grid->children()[2];
+    clipped->set_focusable(true);
+    require(!tree.focus(clipped.get()), "Fully clipped grid row took focus");
+    flex->set_layout({Kind::stack, Axis::horizontal, 1});
+    require(tree.hit_test({21, 0}) == b.get() && b->bounds().width == 13, "Replacing a layout left stale hit bounds");
+
+    class Wrapping : public Element {
+        layout::Size measure_content(layout::Size available) const override {
+            const float width = std::clamp(available.width, 1.f, 80.f);
+            return {width, 10 * std::ceil(80 / width)};
+        }
+    };
+    auto wrap = std::make_shared<Wrapping>();
+    auto line = std::make_shared<Element>(ElementLayout{Kind::flex, Axis::horizontal});
+    line->add(wrap);
+    line->add(leaf(80, 8));
+    auto column = std::make_shared<Element>(ElementLayout{Kind::stack});
+    column->add(line);
+    ElementTree wrapping(column);
+    wrapping.set_viewport({80, 100});
+    wrapping.update_layout();
+    require(same(wrap->bounds(), {0, 0, 40, 20}), "Flex failed to remeasure at the allocated width");
+    wrapping.set_viewport({160, 100});
+    wrapping.update_layout();
+    require(same(wrap->bounds(), {0, 0, 80, 10}), "Parent retained stale wrapped height after resize");
+
+    class Fallible : public Element {
+    public:
+        mutable bool fail{};
+        layout::Size measure_content(layout::Size available) const override {
+            if (available.height == 30 && std::exchange(fail, false)) { throw std::runtime_error("measure"); }
+            return {40, 60};
+        }
+    };
+    auto item = std::make_shared<Fallible>();
+    auto panel = std::make_shared<Element>();
+    panel->add(item);
+    auto stack = std::make_shared<Element>(ElementLayout{Kind::stack});
+    stack->add(panel);
+    ElementTree retry(stack);
+    retry.set_viewport({80, 50});
+    retry.update_layout();
+    item->fail = true;
+    retry.set_viewport({80, 30});
+    require(testing::throws<std::runtime_error>([&] { retry.update_layout(); }), "Custom measurement failure was lost");
+    retry.update_layout();
+    require(item->bounds().height == 30, "Retry skipped an interrupted arrange at the same size");
+
+    require(testing::throws<std::invalid_argument>([&] { grid->add(root); }), "Attached root accepted as a child");
+    require(testing::throws<std::invalid_argument>([&] { root->add(b); }), "Child attached twice");
+    require(testing::throws<std::invalid_argument>([&] { flex->set_layout({Kind::scroll}); }), "Scroll with multiple children");
+    require(testing::throws<std::invalid_argument>([&] { b->set_flex_grow(-1); }), "Negative flex weight");
+    require(testing::throws<std::invalid_argument>([&] { tree.set_viewport({INFINITY, 100}); }), "Infinite viewport");
+    require(testing::throws<std::invalid_argument>([&] { grid->set_layout({.kind = Kind::grid, .columns = 0}); }), "Grid with no columns");
+    auto detached = std::make_shared<Element>();
+    auto branch = std::make_shared<Element>();
+    detached->add(branch);
+    require(testing::throws<std::invalid_argument>([&] { branch->add(detached); }), "Detached cycle accepted");
+    detached.reset();
+    require(branch->parent() == nullptr, "Child outliving its parent still points to it");
+    return 0;
+}
+
+int routing(const testing::Options&) {
+    auto root = std::make_shared<Probe>();
+    auto back = leaf(10, 10), panel = leaf(40, 40), front = leaf(20, 20);
+    panel->set_offset({12, 5});
+    front->set_offset({3, 4});
+    panel->add(front);
+    root->add(back);
+    root->add(panel);
+    ElementTree tree(root);
+    tree.set_viewport({80, 50});
+    require(tree.hit_test({14, 9}) == panel.get() && tree.hit_test({15, 9}) == front.get(), "Nested hit offsets");
+    back->set_z_index(1);
+    require(tree.hit_test({15, 9}) == back.get(), "Picking ignored z order");
+    back->set_z_index(0);
+    std::vector<int> calls;
+    front->set_focusable(true);
+    back->set_focusable(true);
+    front->pointer = [&](const auto& e) { calls.push_back(1); return e.position.x != 1 || e.position.y != 2; };
+    panel->pointer = [&](const auto& e) { calls.push_back(2); return e.position.x == 4 && e.position.y == 6; };
+    root->pointer = [&](const auto&) { calls.push_back(3); return false; };
+    require(tree.pointer({PointerEvent::Kind::down, {16, 11}, PointerEvent::Button::left}) &&
+        calls == std::vector<int>{1, 2} && front->focused(), "Pointer bubbling, local coordinates or focus");
+    panel->key = [](const KeyEvent& e) { return e.key == 'A'; };
+    require(tree.key({'A', true}), "Key did not bubble to panel");
+    require(tree.key({VK_TAB, true}) && back->focused() && tree.key({VK_TAB, true, true}) && front->focused(),
+        "Tab and Shift+Tab did not wrap in insertion order");
+    require(tree.next_focus(false, false) == nullptr, "Last stop blocked exit to native controls");
+
+    std::weak_ptr<Probe> lifetime = front;
+    front->pointer = [&](const auto&) {
+        root->remove(*panel);
+        front.reset();
+        panel.reset();
+        require(!lifetime.expired() && tree.focused() == nullptr, "Removing a routed subtree lost lifetime or left focus");
+        tree.pointer({PointerEvent::Kind::move, {1, 1}});
+        return false;
+    };
+    calls.clear();
+    tree.pointer({PointerEvent::Kind::move, {16, 11}});
+    require(lifetime.expired() && calls == std::vector<int>{3, 3}, "Reentrant routing or detached recipient");
+    struct Widget { Probe face; };
+    auto widget = std::make_shared<Widget>();
+    root->add(std::shared_ptr<Element>(widget, &widget->face));
+    widget->face.pointer = [](const auto&) { return true; };
+    require(tree.pointer({PointerEvent::Kind::move, {1, 1}}), "Route lost ownership of an embedded element");
+    return 0;
+}
+
+int damage(const testing::Options&) {
+    auto root = std::make_shared<Element>(ElementLayout{Kind::scroll});
+    auto list = std::make_shared<Element>(ElementLayout{Kind::stack});
+    for (int i = 0; i < 2048; ++i) { list->add(leaf(60, 10)); }
+    root->add(list);
+    int updates{};
+    ElementTree tree(root, [&] { ++updates; });
+    tree.set_viewport({60, 40});
+    require(same(tree.take_dirty_bounds().value(), {0, 0, 60, 40}) && updates == 1, "Initial damage scheduling");
+    auto last = std::static_pointer_cast<Probe>(list->children().back());
+    const unsigned measured = last->measures;
+    last->invalidate();
+    require(!tree.take_dirty_bounds() && updates == 1, "Offscreen invalidation scheduled a repaint");
+    auto row = list->children()[1];
+    row->invalidate({2, 0, 4, 4});
+    row->invalidate({3, 1, 5, 3});
+    require(same(tree.take_dirty_bounds().value(), {2, 10, 6, 4}) && updates == 2, "Local dirty bounds did not coalesce");
+    row->set_offset({3, 5});
+    require(same(tree.take_dirty_bounds().value(), {0, 10, 60, 15}), "Move omitted old or new clipped bounds");
+    row->set_offset({});
+    (void)tree.take_dirty_bounds();
+    last->set_focusable(true);
+    require(tree.move_focus() && tree.hit_test({0, 39}) == last.get() && root->scroll_offset() == 20440,
+        "Navigating into a scroll viewport did not reveal the last item");
+    require(!tree.pointer({PointerEvent::Kind::wheel, {1, 20}, {}, -1}), "Scroll at boundary swallowed wheel");
+    require(tree.pointer({PointerEvent::Kind::wheel, {1, 20}, {}, 1}) && root->scroll_offset() == 20392,
+        "Wheel did not scroll the viewport");
+    require(tree.hit_test({1, 0}) == list->children()[2039].get(), "Scroll hit did not track fractional rows");
+    require(last->measures == measured, "Painting state, hits or scrolling remeasured the document");
+    const auto moved = list->children()[2040];
+    list->remove(*moved);
+    (void)tree.take_dirty_bounds();
+    list->add(moved);
+    tree.update_layout();
+    require(moved->parent() == list.get() && moved->bounds().y == 20470, "Detached element could not be reused");
+    return 0;
+}
+}
+
+int main(int argc, char** argv) {
+    return testing::run(argc, argv, {{"layout", arrangement}, {"routing", routing}, {"damage", damage}});
+}

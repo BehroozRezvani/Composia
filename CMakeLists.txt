@@ -43,6 +43,9 @@ set(COMPOSIA_SOURCES
     Application.cpp
     Button.cpp
     CompositionWindowTarget.cpp
+    Element.cpp
+    ElementInput.cpp
+    ElementLayout.cpp
     GraphicsDevice.cpp
     Layout.cpp
     Log.cpp

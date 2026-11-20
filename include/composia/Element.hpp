@@ -1,0 +1,147 @@
+#pragma once
+
+#include <composia/Layout.hpp>
+#include <functional>
+#include <memory>
+#include <optional>
+#include <span>
+#include <vector>
+
+namespace composia {
+
+class Element;
+class ElementTree;
+class ScopedSurfaceDraw;
+
+struct ElementLayout {
+    enum class Kind { overlay, stack, flex, grid, scroll };
+    Kind kind{Kind::overlay};
+    layout::Axis axis{layout::Axis::vertical}; // Stack, flex and scroll direction.
+    float gap{};                              // Both axes for a grid.
+    std::size_t columns{1};                   // Equal width, row-major grid.
+};
+
+struct PointerEvent {
+    enum class Kind { down, up, move, wheel };
+    enum class Button { none, left, middle, right, x1, x2 };
+    Kind kind{};
+    layout::Point position{};                 // Local to the current recipient.
+    Button button{};
+    float wheelDelta{};                       // Detents, positive towards the start.
+    layout::Axis wheelAxis{layout::Axis::vertical};
+};
+
+struct KeyEvent {
+    unsigned key{};                           // Windows virtual-key code.
+    bool down{}, shift{}, control{}, alt{};
+};
+
+// A UI-thread element. A parent owns its children. Siblings lay out and take focus in
+// insertion order, and paint in stable z order. All drawing and input clip to each ancestor.
+class Element {
+public:
+    explicit Element(ElementLayout = {});
+    virtual ~Element();
+    Element(const Element&) = delete;
+    Element& operator=(const Element&) = delete;
+
+    void add(std::shared_ptr<Element>);
+    void remove(Element&);
+    [[nodiscard]] std::span<const std::shared_ptr<Element>> children() const noexcept { return children_; }
+    [[nodiscard]] Element* parent() const noexcept { return parent_; }
+
+    void set_layout(ElementLayout);
+    void set_preferred_size(layout::Size);     // Intrinsic size, before constraints and children.
+    void set_flex_grow(float weight);
+    void set_offset(layout::Point);            // Translation after layout, in parent DIPs.
+    void set_z_index(int);
+    void set_focusable(bool);
+    // Scroll containers have at most one child. Scroll distance is clamped during layout.
+    void set_scroll_offset(float);
+    [[nodiscard]] float scroll_offset() const noexcept { return scrollOffset_; }
+    [[nodiscard]] bool focused() const noexcept;
+    [[nodiscard]] layout::Rect bounds() const noexcept { return bounds_; } // In parent DIPs.
+    [[nodiscard]] layout::Size desired_size() const noexcept { return desired_; }
+
+    void invalidate();
+    void invalidate(layout::Rect local);
+    void invalidate_measure();
+
+protected:
+    // Available dimensions can be +infinity. Return finite nonnegative DIPs. Layout and paint
+    // hooks must leave the tree structurally unchanged. Input handlers may edit the tree.
+    virtual layout::Size measure_content(layout::Size available) const;
+    // Origin is local (0,0). The clip includes the surface update and all ancestor bounds.
+    virtual void paint(ScopedSurfaceDraw&) {}
+    // The deepest hit or focused element is called first. Return true to stop bubbling.
+    virtual bool on_pointer(const PointerEvent&) { return false; }
+    virtual bool on_key(const KeyEvent&) { return false; }
+
+private:
+    friend class ElementTree;
+    void attach(ElementTree*) noexcept;
+    void check_mutation() const;
+    void mark_layout(bool measure);
+    void arrange(layout::Rect);
+    layout::Size measure(layout::Size);
+    layout::Size layout_children(layout::Size, bool arranging);
+    std::span<Element* const> visible_children(layout::Rect local, bool point = false);
+    void draw(ScopedSurfaceDraw&, layout::Point origin, layout::Rect clip);
+    Element* hit(layout::Point local);
+    bool reveal(bool scroll);
+    Element* last_descendant() noexcept;
+    Element* adjacent(bool backwards) noexcept;
+
+    Element* parent_{};
+    ElementTree* tree_{};
+    std::size_t siblingIndex_{};
+    std::vector<std::shared_ptr<Element>> children_;
+    std::vector<Element*> order_;
+    ElementLayout layout_;
+    layout::Rect bounds_{};
+    layout::Size preferred_{}, desired_{}, constraint_{};
+    layout::Point offset_{};
+    float grow_{}, basis_{}, basisCross_{}, scrollOffset_{}, scrollLimit_{};
+    int z_{};
+    bool measureDirty_{true}, arrangeDirty_{true}, orderDirty_{true}, orderedBands_{}, focusable_{};
+};
+
+// Independent of HWND and graphics device lifetime. requestUpdate should enqueue work on the
+// owning thread. It runs once until take_dirty_bounds() drains the accumulated surface damage.
+class ElementTree {
+public:
+    explicit ElementTree(std::shared_ptr<Element> root, std::function<void()> requestUpdate = {});
+    ~ElementTree();
+    ElementTree(const ElementTree&) = delete;
+    ElementTree& operator=(const ElementTree&) = delete;
+    [[nodiscard]] Element& root() const noexcept { return *root_; }
+
+    void set_viewport(layout::Size);
+    void update_layout();
+    [[nodiscard]] std::optional<layout::Rect> take_dirty_bounds();
+    // Reconstructs the entire update_bounds(), including transparent gaps and overlapping layers.
+    void paint(ScopedSurfaceDraw&);
+    [[nodiscard]] Element* hit_test(layout::Point);
+    bool pointer(PointerEvent);                // Input position in viewport DIPs.
+    bool key(const KeyEvent&);
+    bool focus(Element*);                      // nullptr clears focus.
+    [[nodiscard]] Element* focused() const noexcept { return focused_; }
+    [[nodiscard]] Element* next_focus(bool backwards = false, bool wrap = true);
+    bool move_focus(bool backwards = false, bool wrap = true);
+
+private:
+    friend class Element;
+    struct Recipient { std::shared_ptr<Element> element; layout::Point origin; };
+    template<class Handler> bool bubble(Element&, Handler&&);
+    void schedule();
+    void damage(layout::Rect);
+    std::shared_ptr<Element> root_;
+    std::function<void()> requestUpdate_;
+    std::vector<Recipient> route_;
+    Element* focused_{};
+    layout::Size viewport_{};
+    std::optional<layout::Rect> dirty_;
+    bool scheduled_{}, traversing_{};
+};
+
+}

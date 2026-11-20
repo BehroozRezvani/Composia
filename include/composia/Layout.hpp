@@ -10,6 +10,10 @@ struct Point {
     float x{}, y{};
 };
 
+struct Size {
+    float width{}, height{};
+};
+
 struct Rect {
     float x{}, y{}, width{}, height{};
     // True for points inside the left and top edges and before the right and bottom edges.

@@ -7,13 +7,13 @@ prescribing an application architecture.
 
 - Each window hosts a Composition visual tree; animations run in the system compositor,
   with no render loop.
-- Content drawn inside one window needs no HWND per element.
+- A retained element tree lays out, draws, and routes input for custom content on one surface.
 - Every helper exposes its HWND, COM interfaces, or C++/WinRT objects.
 - A static library whose only dependencies are the header-only WIL and C++/WinRT.
 - Recovers from graphics device loss, including while idle.
 
-Composia is not a UI toolkit: it has one `Button`, a stack layout helper, and no data
-binding, styling, or designer.
+Use stack, flex, grid, and scroll containers for custom-drawn elements. Standard Win32
+controls and Composia's accessible `Button` can share the same application.
 
 For resizable panes, use [shared composition targets and coordinated updates](docs/resizing.md).
 They keep pane placement, clipping and painting together; native EDIT controls can opt into
@@ -141,6 +141,7 @@ declarations in your own manifest.
 | `Button.hpp` | An accessible push button whose look a painter supplies |
 | `AnimationHelpers.hpp` | Visual and animation shortcuts |
 | `Layout.hpp` | DIP geometry and stack placement |
+| `Element.hpp` | Retained elements, layout, clipped drawing, routed input, focus, and dirty regions |
 | `Signal.hpp` | Signals and connections |
 | `Log.hpp` | A handler for Composia's diagnostic events |
 | `Version.hpp` | The library version |

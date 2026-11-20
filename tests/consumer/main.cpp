@@ -6,6 +6,7 @@
 #include <composia/Button.hpp>
 #include <composia/Composition.hpp>
 #include <composia/CompositionWindowTarget.hpp>
+#include <composia/Element.hpp>
 #include <composia/GraphicsDevice.hpp>
 #include <composia/Layout.hpp>
 #include <composia/Log.hpp>
@@ -27,6 +28,9 @@ static_assert(std::string_view{COMPOSIA_VERSION_STRING} == COMPOSIA_PACKAGE_VERS
 static_assert(COMPOSIA_VERSION == COMPOSIA_VERSION_MAJOR * 10000 + COMPOSIA_VERSION_MINOR * 100 + COMPOSIA_VERSION_PATCH);
 
 int main(int argc, char**) {
+    composia::ElementTree tree{std::make_shared<composia::Element>()};
+    tree.set_viewport({20, 10});
+    if (!tree.hit_test({1, 1})) { return 3; }
     // The package's manifest is embedded as the application manifest.
     if (!FindResourceW(nullptr, MAKEINTRESOURCEW(1), MAKEINTRESOURCEW(24))) { return 2; }
     // Keep a runtime-dependent call so Release also checks transitive static linking.
