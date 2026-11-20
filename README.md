@@ -17,6 +17,11 @@ Use stack, flex, grid, and scroll containers for custom-drawn elements. A retain
 to screen readers. Standard Win32
 controls and Composia's accessible `Button` can share the same application.
 
+Applications that draw their own controls can link `Composia::Controls` for button,
+toggle, slider, textbox, scroll view, dropdown, menu and virtual list behaviours.
+The playback example supplies its own painters for both the dropdown and its popup.
+[Controls guide](docs/guide.md#lookless-controls) · [Playback example](examples/controls/Playback.hpp)
+
 For resizable panes, use [shared composition targets and coordinated updates](docs/resizing.md).
 They keep pane placement, clipping and painting together; native EDIT controls can opt into
 buffered painting while panes move around them.

@@ -21,6 +21,10 @@ and relationships. Invoke, Value, RangeValue, Selection, SelectionItem, Scroll a
 share the retained tree's focus and geometry. Disabled ancestors govern interaction
 through the keyboard, pointer and automation.
 
+The optional `Composia::Controls` target adds lookless controls, command bindings,
+fixed-height virtual lists and in-surface popups. Retained fragments can now expose
+the Toggle and ExpandCollapse patterns.
+
 ### Upgrading from 0.2.0
 
 0.3.0 is not source compatible with 0.2.0. Rebuild everything that links Composia, require

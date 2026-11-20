@@ -179,6 +179,7 @@ unbounded measurement axis is positive infinity. Return finite, nonnegative dime
 | Container | Placement |
 | --- | --- |
 | Overlay (default) | Each child fills the parent. Higher z indices paint later. Ties follow insertion order. |
+| Canvas | The canvas supplies its intrinsic extent. Children keep their measured size and use their offsets as coordinates. |
 | Stack | Children take their measured length and stretch across the other axis. Overflowing lengths shorten at the far edge. |
 | Flex | A single row or column. Extra space follows each child's flex-grow weight. A deficit shrinks children in proportion to their measured lengths. |
 | Grid | Equal-width columns in insertion order. Each row takes the height of its tallest child. The gap applies in both directions. |
@@ -206,6 +207,68 @@ layout. Call `tree.paint(draw)` inside the target's render callback. This recons
 the surface's actual update area, including exposed layers after a move and full frames
 after device loss. Use `invalidate(localRect)` for paint changes and
 `invalidate_measure()` when custom content changes its desired size.
+
+## Lookless controls
+
+Link the optional controls target and include `<composia/Controls.hpp>`. The installed
+package exports the same target as a source build. Configure Composia with
+`-DCOMPOSIA_BUILD_CONTROLS=OFF` for a core-only build and installation.
+
+```cmake
+find_package(Composia CONFIG REQUIRED COMPONENTS Controls)
+target_link_libraries(my_app PRIVATE Composia::Controls)
+```
+
+The controls live in `composia::controls`. A renderer receives the drawing scope, control,
+current `State` and optional `StyleTokens`. It draws in local DIPs. Set the control's
+preferred size for your design. Focus, hover, press, selected state and disabled state
+are available on every `Control`. The retained textbox keeps its Rich Edit painter and
+text operations. Use `state_of(box)` in that painter and call `draw_text` and `draw_caret`.
+
+| Control | Interaction |
+| --- | --- |
+| Button | A left release over the pressed button, Space, Enter or UIA Invoke runs its command. Losing capture cancels a pointer press. |
+| Toggle | Pointer release, Space, Enter or UIA Toggle changes the checked state. `on_change` also observes programmatic changes. |
+| Slider | Drag on either axis, including past its ends. Arrows, Home, End and Page Up/Down adjust the same value exposed by RangeValue. Vertical sliders increase upwards. |
+| TextBox | The retained editor handles text selection, clipboard, undo, IME and UIA Text. |
+| ScrollView | Set its content, axis and preferred viewport length. Wheel, arrows, paging and UIA Scroll share its offset. |
+| List | One tab stop supports arrows, paging, Home/End, prefix search and single selection. Double-click or Enter activates an item. |
+| Dropdown | Open with a press, Enter, Space, F4 or an arrow. Preview with arrows or typing. Click or Enter commits. Escape discards the preview. |
+| Menu | The popup uses menu-item roles, skips disabled commands during navigation and dismisses before executing a choice. |
+
+Wrap the window content in one `PopupHost` to host dropdowns and menus above sibling
+controls. It places each popup below or above its trigger according to the available
+space, clips it to the host and dismisses it on outside press, focus loss or Tab.
+The trigger exposes ExpandCollapse and a relationship to the open list.
+
+```cpp
+namespace ui = composia::controls;
+auto device = std::make_shared<ui::Dropdown>(
+    L"Output device", ui::Items::strings({L"Headphones", L"Speakers"}));
+device->set_selected(0);
+device->set_renderer(draw_device_field);
+device->set_row_renderer(draw_device_row);
+auto selection = device->on_selection([&](ui::List::Index index) {
+    if (index) { select_output_device(*index); }
+});
+auto content = std::make_shared<composia::Element>(
+    composia::ElementLayout{composia::ElementLayout::Kind::stack});
+content->add(device);
+auto root = std::make_shared<ui::PopupHost>(content);
+composia::ElementWindow window(app, L"Audio output", 360, 240, root);
+```
+
+`Command` combines an action with observable availability. Share a command between buttons
+and menu entries. Its availability combines with inherited disabled state. `Observable<T>`
+publishes unequal values on the UI thread. Change and activation subscriptions return a
+`Connection` whose lifetime controls the subscription.
+
+For large lists, supply an `Items` count and indexed label callback. The list realizes
+fixed-height rows covering the viewport, including partially visible rows, and retains
+the selected row when it scrolls offscreen. Existing rows keep their UIA identity while
+realized. For indexed data sources, supply `findPrefix` to search directly. The fallback
+scans labels when the user types. Call `set_items` when the backing collection changes.
+The control owns the child elements used for realization and popup placement.
 
 ## Accessibility
 
