@@ -68,6 +68,8 @@ private:
     bool has_windows() const noexcept;
     void remember_focus() const noexcept;
     void verify_thread() const;
+    // Offers a key press to the key previews of its window and of each window it is inside.
+    bool preview_key(const MSG&);
     void paint_window(HWND);
     void notify_graphics_recreated();
     void refresh_appearance();

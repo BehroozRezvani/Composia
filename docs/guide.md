@@ -90,6 +90,19 @@ subscribes to the same changes with `on_hover_changed`, `on_focus_changed`,
 the window's hook, and each returns a `Connection`: the callback runs for as long as the
 connection lives.
 
+Keyboard accelerators go through `on_key_preview`. `Application::run` offers each key
+press (`WM_KEYDOWN` and `WM_SYSKEYDOWN`) to the previews of the window it is aimed at and of
+every window that contains it, innermost first, before the dialog manager, the focused
+control or a retained tree sees it. A handler that returns true consumes the key, so it
+produces no character and Tab or Enter do nothing else:
+
+```cpp
+auto shortcuts = window.on_key_preview([&](const composia::KeyEvent& key) {
+    if (key.control && !key.shift && !key.alt && key.key == 'N') { new_message(); return true; }
+    return false;
+});
+```
+
 After the native window is destroyed, by `DestroyWindow`, with its parent, or by the
 `Window` destructor, `hwnd()` is null, `dpi()` is zero, and operations that need the
 window throw `HRESULT_FROM_WIN32(ERROR_INVALID_WINDOW_HANDLE)`.

@@ -1,12 +1,15 @@
 #pragma once
 
 #include <composia/Native.hpp>
+#include <composia/Input.hpp>
 #include <composia/Layout.hpp>
 #include <composia/Signal.hpp>
 #include <exception>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string_view>
+#include <vector>
 
 struct IRawElementProviderSimple;
 
@@ -93,6 +96,15 @@ public:
     // parent, or by this object's destructor. hwnd() is still valid during the callback.
     Connection on_destroy(std::function<void()> callback) { return destroying_.connect(std::move(callback)); }
 
+    // Key presses before anything else sees them. Application::run gives each WM_KEYDOWN and
+    // WM_SYSKEYDOWN aimed at this window, or at any window inside it, to these handlers before
+    // the dialog manager, the focused control or a retained tree. The innermost window's handlers
+    // run first, in the order they were connected. A handler returns true to consume the key,
+    // which then reaches nothing else and produces no character. Use it for accelerators, such
+    // as Ctrl+N anywhere in a window, or arrow keys in a search field that move a list's
+    // selection. Keep the Connection for as long as the handler should run.
+    Connection on_key_preview(std::function<bool(const KeyEvent&)> handler);
+
     // The UI Automation provider returned for WM_GETOBJECT (UiaRootObjectId); null leaves the
     // system's default HWND provider. The window holds a reference until the provider is replaced
     // or the HWND is destroyed. Accessible sets this.
@@ -137,6 +149,7 @@ private:
     void remember_focus(HWND) noexcept;
     bool restore_focus();
     void notify_destroy();
+    bool preview_key(const KeyEvent&);
 
     Application& application_;
     bool topLevel_{}, unredirected_{};
@@ -149,6 +162,8 @@ private:
     bool paintPending_{}, painting_{};
     Signal<bool> hoverChanged_, focusChanged_, enabledChanged_;
     Signal<> captureLost_, destroying_;
+    struct KeyPreview { std::shared_ptr<bool> active; std::function<bool(const KeyEvent&)> handler; };
+    std::vector<std::shared_ptr<KeyPreview>> keyPreviews_;
 };
 
 }

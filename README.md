@@ -161,7 +161,7 @@ declarations in your own manifest.
 | --- | --- |
 | `Application.hpp` | The UI thread's message loop, compositor, graphics device recovery, and system appearance |
 | `Appearance.hpp` | Dark mode, high contrast, accent color, text scale, and system colors |
-| `Window.hpp` | An HWND with input, focus, enabled state, invalidation, and DPI tracking |
+| `Window.hpp` | An HWND with input, focus, enabled state, key previews, invalidation, and DPI tracking |
 | `CompositionWindowTarget.hpp` | Standalone or shared pane visuals, clipping, backgrounds, and drawing surfaces |
 | `ScopedSurfaceDraw.hpp` | Direct2D drawing into a Composition surface |
 | `GraphicsDevice.hpp` | The Direct3D 11, Direct2D, DirectWrite, and Composition devices |
@@ -177,6 +177,7 @@ declarations in your own manifest.
 | `Button.hpp` | An accessible push button whose look a painter supplies |
 | `AnimationHelpers.hpp` | Visual and animation shortcuts |
 | `Layout.hpp` | DIP geometry and stack placement |
+| `Input.hpp` | Pointer and key events for retained elements and key previews |
 | `Element.hpp` | Retained elements, layout, clipped drawing, routed input, focus, and dirty regions |
 | `ElementWindow.hpp` | A window or child pane that hosts and repaints an element tree |
 | `HostedWindow.hpp` | A child window placed, clipped and tab-ordered as a retained element |

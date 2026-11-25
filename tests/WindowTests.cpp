@@ -1,9 +1,11 @@
 #include <composia/Application.hpp>
 #include <composia/Button.hpp>
+#include <composia/NativeControl.hpp>
 #include "support/TestSupport.hpp"
 #include <functional>
 #include <stdexcept>
 #include <string_view>
+#include <vector>
 
 // Window and application lifetime: several top-level windows, closed windows and parents, the
 // message loop's exit code, and errors escaping message handlers.
@@ -147,6 +149,66 @@ int callback_rethrow(const testing::Options&) {
 }
 }
 
+// Key presses reach the previews of the target window and its ancestors, innermost first,
+// before the dialog manager and the control; a consumed key produces no character.
+int key_preview(const testing::Options&) {
+    Application app{true};
+    {
+        TestWindow window{app};
+        Window pane{app, L"Pane", 200, 100, window.hwnd()};
+        NativeControl edit{pane, L"EDIT", WS_VISIBLE | WS_TABSTOP};
+        std::vector<std::pair<char, unsigned>> seen;
+        bool control{};
+        auto inner = pane.on_key_preview([&](const KeyEvent& key) {
+            seen.emplace_back('p', key.key);
+            return key.key == 'A';
+        });
+        const auto text = [&] {
+            wchar_t buffer[16]{};
+            GetWindowTextW(edit.hwnd(), buffer, 16);
+            return std::wstring{buffer};
+        };
+        auto outer = window.on_key_preview([&](const KeyEvent& key) {
+            seen.emplace_back('w', key.key);
+            if (key.key != 'N') { return false; }
+            control = key.control;
+            return true;
+        });
+        const auto press = [&](unsigned key) {
+            const auto scan = static_cast<LPARAM>(MapVirtualKeyW(key, MAPVK_VK_TO_VSC));
+            THROW_IF_WIN32_BOOL_FALSE(PostMessageW(edit.hwnd(), WM_KEYDOWN, key, 1 | (scan << 16)));
+        };
+        const auto hold_control = [](bool held) {
+            BYTE keys[256]{};
+            THROW_IF_WIN32_BOOL_FALSE(GetKeyboardState(keys));
+            keys[VK_CONTROL] = held ? 0x80 : 0;
+            THROW_IF_WIN32_BOOL_FALSE(SetKeyboardState(keys));
+        };
+        int step{};
+        window.action = [&] {
+            if (step++ == 0) { hold_control(false); return; }
+            // TranslateMessage queues the character behind this message; look after it arrives.
+            if (step == 2) { THROW_IF_WIN32_BOOL_FALSE(PostMessageW(window.hwnd(), actionMessage, 0, 0)); return; }
+            require(text() == L"b", "A consumed key produced a character, or a free one none");
+            THROW_IF_WIN32_BOOL_FALSE(DestroyWindow(window.hwnd()));
+        };
+        window.show(SW_SHOWNOACTIVATE);
+        hold_control(true);
+        press('N');
+        THROW_IF_WIN32_BOOL_FALSE(PostMessageW(window.hwnd(), actionMessage, 0, 0));
+        press('A');
+        press('B');
+        THROW_IF_WIN32_BOOL_FALSE(PostMessageW(window.hwnd(), actionMessage, 0, 0));
+        require(app.run() == 0, "Message loop");
+        const std::vector<std::pair<char, unsigned>> expected{{'p', 'N'}, {'w', 'N'}, {'p', 'A'}, {'p', 'B'}, {'w', 'B'}};
+        require(seen == expected, "Previews ran out of order, or after a consuming handler");
+        require(control, "The preview did not report the held Ctrl key");
+        hold_control(false);
+    }
+    app.close();
+    return 0;
+}
+
 int main(int argc, char** argv) {
     return testing::run(argc, argv, {
         {"closed", closed_window},
@@ -155,5 +217,6 @@ int main(int argc, char** argv) {
         {"secondary-error", secondary_error},
         {"quit-code", quit_code},
         {"callback-rethrow", callback_rethrow},
+        {"key-preview", key_preview},
     });
 }

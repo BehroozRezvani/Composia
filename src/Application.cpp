@@ -309,6 +309,25 @@ void Application::refresh_appearance() {
     if (firstError) { std::rethrow_exception(firstError); }
 }
 
+bool Application::preview_key(const MSG& message) {
+    std::vector<Window*> chain;
+    for (auto hwnd = message.hwnd; hwnd; hwnd = GetParent(hwnd)) {
+        const auto found = std::ranges::find(windows_, hwnd, &Window::hwnd);
+        if (found != windows_.end()) { chain.push_back(*found); }
+        if (!(GetWindowLongPtrW(hwnd, GWL_STYLE) & WS_CHILD)) { break; }
+    }
+    const auto down = [](int key) { return (GetKeyState(key) & 0x8000) != 0; };
+    const KeyEvent key{static_cast<unsigned>(message.wParam), true, down(VK_SHIFT), down(VK_CONTROL),
+        down(VK_MENU), message.lParam};
+    for (auto* window : chain) {
+        // A handler can destroy windows, this one included.
+        if (std::ranges::find(windows_, window) != windows_.end() && window->hwnd() && window->preview_key(key)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 int Application::run() {
     verify_thread();
     if (closing_ || closed_) { throw std::logic_error("Application is closing"); }
@@ -329,8 +348,10 @@ int Application::run() {
                 rethrow_callback_error();
                 return static_cast<int>(message.wParam);
             }
-            bool handled{};
+            // Key previews come first, so an accelerator works wherever the focus is.
+            bool handled = (message.message == WM_KEYDOWN || message.message == WM_SYSKEYDOWN) && preview_key(message);
             for (const auto window : windows_) {
+                if (handled) { break; }
                 const auto root = window->hwnd();
                 if (window->top_level() && root && (message.hwnd == root || IsChild(root, message.hwnd))) {
                     // A retained control can receive keyboard input on the dialog root itself.

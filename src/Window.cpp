@@ -165,6 +165,23 @@ SIZE Window::client_pixels() const {
     return {rect.right - rect.left, rect.bottom - rect.top};
 }
 
+Connection Window::on_key_preview(std::function<bool(const KeyEvent&)> handler) {
+    if (!handler) { throw std::invalid_argument("A key preview needs a handler"); }
+    std::erase_if(keyPreviews_, [](const auto& preview) { return !*preview->active; });
+    auto active = std::make_shared<bool>(true);
+    keyPreviews_.push_back(std::make_shared<KeyPreview>(KeyPreview{active, std::move(handler)}));
+    return Connection{std::move(active)};
+}
+
+bool Window::preview_key(const KeyEvent& key) {
+    // Handlers connected or disconnected by a handler take effect from the next key.
+    const auto snapshot = keyPreviews_;
+    for (const auto& preview : snapshot) {
+        if (*preview->active && preview->handler(key)) { return true; }
+    }
+    return false;
+}
+
 void Window::focus() { SetFocus(require_hwnd()); }
 bool Window::focused() const noexcept { return hwnd_ && GetFocus() == hwnd_.get(); }
 void Window::set_enabled(bool value) { EnableWindow(require_hwnd(), value); }

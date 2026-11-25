@@ -10,6 +10,9 @@ change the API; each change is listed here.
 - `HostedWindow` places a child window over a retained element: it follows layout and
   scrolling, is clipped by its ancestors, hides when clipped out or detached, is enabled
   with the element, and takes its turn in Tab order (`leave` hands the focus on).
+- `Window::on_key_preview` gives key presses aimed at a window or anything inside it to
+  handlers before the dialog manager and the focused control, for accelerators.
+  `PointerEvent` and `KeyEvent` moved to `composia/Input.hpp`, which `Element.hpp` includes.
 
 ## 0.3.0 (2026-11-20)
 
