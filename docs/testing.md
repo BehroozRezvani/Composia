@@ -25,7 +25,10 @@ Tests labeled `core` need no desktop. Tests labeled `desktop` open windows, so t
 interactive session and run one at a time; they send messages rather than moving the
 mouse, so they do not need the foreground and can run while you work. A scenario that the
 machine cannot run, such as screen capture without Windows Graphics Capture, exits with 77,
-which CTest reports as skipped rather than passed. CTest keeps output in
+which CTest reports as skipped rather than passed. The desktop tests also run on a private
+desktop that is never shown, created with `CreateDesktop` and named in the `lpDesktop` of the
+process that starts CTest, so their windows stay off your screen; screen capture sees only the
+desktop on screen, so its scenarios skip there. CTest keeps output in
 `out/build/<preset>/Testing/Temporary/LastTest.log`, and `build.ps1 -Test` also writes JUnit
 results to `out/build/<preset>/test-results-*.xml`.
 

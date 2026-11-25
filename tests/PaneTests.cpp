@@ -246,7 +246,7 @@ struct Image {
 };
 
 int capture_panes(const testing::Options& options) {
-    if (!ScreenCapture::supported()) { return testing::skipped; }
+    if (!ScreenCapture::supported() || !testing::desktop_shown()) { return testing::skipped; }
     Application app{options.warp};
     {
         Pane parent{app}, left{app, parent.hwnd(), listColor}, right{app, parent.hwnd(), readerColor};

@@ -11,6 +11,7 @@
 #include <initializer_list>
 #include <iostream>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 #include <utility>
 
@@ -19,6 +20,22 @@ namespace composia::testing {
 
 // The exit code CTest reports as a skip (SKIP_RETURN_CODE), for checks this machine cannot run.
 inline constexpr int skipped = 77;
+
+// True when this thread's desktop is the one on screen. Windows Graphics Capture sees only that
+// desktop, so capture checks skip on a private desktop made for an unattended test run, and
+// while the workstation is locked.
+inline bool desktop_shown() {
+    const auto name = [](HDESK desktop) {
+        wchar_t buffer[256]{};
+        DWORD needed{};
+        return GetUserObjectInformationW(desktop, UOI_NAME, buffer, sizeof(buffer), &needed) ? std::wstring{buffer} : std::wstring{};
+    };
+    const auto input = OpenInputDesktop(0, FALSE, DESKTOP_READOBJECTS);
+    if (!input) { return false; }
+    const bool shown = name(input) == name(GetThreadDesktop(GetCurrentThreadId()));
+    CloseDesktop(input);
+    return shown;
+}
 
 inline void require(bool value, const char* message) {
     if (!value) { throw std::runtime_error(message); }

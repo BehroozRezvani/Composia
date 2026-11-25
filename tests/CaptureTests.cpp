@@ -197,6 +197,10 @@ int run_capture(const testing::Options& options, bool monitor) {
         std::cout << "skipped: Windows Graphics Capture is unavailable\n";
         return testing::skipped;
     }
+    if (!testing::desktop_shown()) {
+        std::cout << "skipped: this desktop is not on screen\n";
+        return testing::skipped;
+    }
     Application app{options.warp};
     {
         ScreenCapture idle;
