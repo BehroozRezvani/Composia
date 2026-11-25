@@ -426,6 +426,36 @@ top of the canvas and cannot be clipped, transformed, or animated by Composition
 common-controls version 6 manifest dependency, as `resources/composia.manifest` does, for
 the themed look.
 
+### Child windows in a retained tree
+
+A `HostedWindow` gives a child window a place in an `ElementWindow`'s tree, for content
+that keeps its own HWND: a native control, a Composia `Window` that draws on its own, or a
+browser's host window. Create the window as a child of the `ElementWindow`, then add the
+element where the window belongs:
+
+```cpp
+#include <composia/HostedWindow.hpp>
+
+ElementWindow window{app, L"Settings", 480, 320, root};
+NativeControl search{window, L"EDIT", WS_TABSTOP | WS_VISIBLE | ES_AUTOHSCROLL};
+auto slot = std::make_shared<HostedWindow>(search.hwnd());
+slot->set_preferred_size({0, 32});
+form->add(slot);
+```
+
+After each layout the window moves to the element's bounds. Ancestors clip it with a
+rectangular window region, which shared composition targets follow, so a hosted window
+scrolls with its container. It is hidden while it is clipped out of view, while its element
+is detached, and before the element is first placed, and it is disabled with the element.
+Place it nowhere else yourself: the next layout moves it back.
+
+The element is a tab stop in insertion order. When Tab, Shift+Tab or `focus_element`
+reaches it, the window takes the keyboard focus, and Tab in the window continues with the
+next element, or the previous one with Shift. A window that asks for Tab through
+`WM_GETDLGCODE` keeps it. A window that moves the focus out by other means, such as a
+browser raising `MoveFocusRequested`, or whose focus rests in a window inside it, calls
+`leave(backwards)`.
+
 ## System appearance
 
 Composia leaves the look of an application to the application, and tells it what Windows

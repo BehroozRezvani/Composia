@@ -15,6 +15,7 @@ namespace composia {
 class Element;
 class ElementTree;
 class ElementWindow;
+class HostedWindow;
 class ScopedSurfaceDraw;
 struct ElementAccessibility;
 enum class SelectionAction;
@@ -120,6 +121,7 @@ protected:
 
 private:
     friend class ElementTree;
+    friend class HostedWindow;
     friend struct ElementAutomation;
     friend struct ElementProvider;
     void attach(ElementTree*) noexcept;
@@ -151,6 +153,7 @@ private:
     float grow_{}, basis_{}, basisCross_{}, scrollOffset_{}, scrollLimit_{};
     int z_{};
     bool measureDirty_{true}, arrangeDirty_{true}, orderDirty_{true}, orderedBands_{}, focusable_{}, enabled_{true}, detaching_{};
+    bool hostsWindow_{};
 };
 
 // Independent of HWND and graphics device lifetime. requestUpdate should enqueue work on the
@@ -181,8 +184,12 @@ public:
 private:
     friend class Element;
     friend class ElementWindow;
+    friend class HostedWindow;
     friend struct ElementProvider;
     void release_window() noexcept;
+    Element* next_focus_from(Element*, bool backwards, bool wrap);
+    // Moves each hosted window to its element's place in the window, after layout.
+    void place_windows();
     std::shared_ptr<Element> reference(Element*) const noexcept;
     struct Recipient { std::shared_ptr<Element> element; layout::Point origin; };
     template<class Handler> bool bubble(Element&, Handler&&);
@@ -198,6 +205,7 @@ private:
     Element* captured_{};
     bool updatingLayout_{};
     std::vector<std::shared_ptr<Element>> layoutCallbacks_;
+    std::vector<HostedWindow*> hosted_;
     ElementWindow* window_{};
     layout::Size viewport_{};
     std::optional<layout::Rect> dirty_;

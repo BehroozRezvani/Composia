@@ -1,4 +1,5 @@
 #include <composia/Element.hpp>
+#include <composia/HostedWindow.hpp>
 #include "ElementAutomation.hpp"
 #include <composia/ScopedSurfaceDraw.hpp>
 #include <algorithm>
@@ -40,6 +41,14 @@ void Element::attach(ElementTree* tree) noexcept {
         hover_ = false;
         ElementAutomation::detach(*this);
         on_detaching();
+    }
+    if (hostsWindow_ && tree_ != tree) {
+        auto* self = static_cast<HostedWindow*>(this);
+        if (tree_) { std::erase(tree_->hosted_, self); }
+        if (tree) {
+            try { tree->hosted_.push_back(self); }
+            catch (...) { LOG_CAUGHT_EXCEPTION(); }
+        }
     }
     tree_ = tree;
     for (auto& child : children_) { child->attach(tree); }

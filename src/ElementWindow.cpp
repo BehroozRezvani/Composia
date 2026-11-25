@@ -1,5 +1,7 @@
 #include <composia/ElementWindow.hpp>
+#include <composia/HostedWindow.hpp>
 #include <composia/TextBox.hpp>
+#include <algorithm>
 #include "ElementAutomation.hpp"
 
 namespace composia {
@@ -34,13 +36,37 @@ ElementWindow::~ElementWindow() { ElementAutomation::disconnect(*this); tree_.re
 
 bool ElementWindow::focus_element(Element& element) {
     if (!hwnd() || !enabled() || !tree_.focus(&element)) { return false; }
+    if (auto* hosted = dynamic_cast<HostedWindow*>(&element)) {
+        tree_.place_windows();
+        return hosted->take_focus();
+    }
     focus();
     return focused() && tree_.focused() == &element;
+}
+
+HWND ElementWindow::outside_tab_stop(bool backwards) const {
+    const auto root = GetAncestor(hwnd(), GA_ROOT);
+    const auto hosted = [&](HWND window) {
+        return std::ranges::any_of(tree_.hosted_, [&](const HostedWindow* h) { return h->hwnd() == window; });
+    };
+    auto other = GetNextDlgTabItem(root, hwnd() == root ? nullptr : hwnd(), backwards);
+    // Hosted windows take their turn in the tree's own order. The dialog manager wraps around,
+    // so a cycle of hosted windows ends where it started.
+    for (const auto first = other; other && other != hwnd() && hosted(other);) {
+        other = GetNextDlgTabItem(root, other, backwards);
+        if (other == first) { return nullptr; }
+    }
+    return other == hwnd() ? nullptr : other;
+}
+
+void ElementWindow::hand_focus_to_hosted_window() {
+    if (auto* hosted = dynamic_cast<HostedWindow*>(tree_.focused()); hosted && focused()) { hosted->take_focus(); }
 }
 
 void ElementWindow::on_resize() {
     const auto b = client_bounds();
     tree_.set_viewport({b.width, b.height});
+    tree_.place_windows();
     invalidate();
 }
 
@@ -61,6 +87,8 @@ void ElementWindow::on_focus(bool value) {
         }
     }
     else if (auto current = tree_.reference(tree_.focused())) {
+        // A hosted window takes the focus in the next update, outside this focus change.
+        if (dynamic_cast<HostedWindow*>(current.get())) { PostMessageW(hwnd(), update_message(), 0, 0); return; }
         if (auto* editor = dynamic_cast<TextBox*>(current.get())) { editor->on_focus_changed(true); }
         if (current->focused()) { ElementAutomation::focus_changed(*current, true); }
     }
@@ -79,6 +107,8 @@ std::optional<LRESULT> ElementWindow::on_message(UINT message, WPARAM wparam, LP
     if (message == WM_GETOBJECT && static_cast<LONG>(lparam) == UiaRootObjectId) { ElementAutomation::attach(*this); }
     if (message == update_message()) {
         if (const auto region = tree_.take_dirty_bounds()) { invalidate(*region); }
+        tree_.place_windows();
+        hand_focus_to_hosted_window();
         ElementAutomation::refresh(*this);
         return 0;
     }
@@ -113,9 +143,7 @@ std::optional<LRESULT> ElementWindow::on_message(UINT message, WPARAM wparam, LP
     case WM_GETDLGCODE: {
         if (wparam == VK_TAB) {
             const bool backwards = key_down(VK_SHIFT);
-            const auto root = GetAncestor(hwnd(), GA_ROOT);
-            const auto other = GetNextDlgTabItem(root, hwnd() == root ? nullptr : hwnd(), backwards);
-            return tree_.next_focus(backwards, !other || other == hwnd()) ? DLGC_WANTTAB : 0;
+            return tree_.next_focus(backwards, !outside_tab_stop(backwards)) ? DLGC_WANTTAB : 0;
         }
         return tree_.focused() ? DLGC_WANTARROWS | DLGC_WANTCHARS |
             ((wparam == VK_RETURN || wparam == VK_ESCAPE) ? DLGC_WANTMESSAGE : 0) : 0;

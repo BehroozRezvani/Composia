@@ -1,4 +1,5 @@
 #include <composia/Element.hpp>
+#include <composia/HostedWindow.hpp>
 #include <composia/Native.hpp>
 #include "ElementAutomation.hpp"
 #include <algorithm>
@@ -157,13 +158,15 @@ Element* Element::adjacent(bool backwards) noexcept {
     return nullptr;
 }
 
-Element* ElementTree::next_focus(bool backwards, bool wrap) {
+Element* ElementTree::next_focus(bool backwards, bool wrap) { return next_focus_from(focused_, backwards, wrap); }
+
+Element* ElementTree::next_focus_from(Element* from, bool backwards, bool wrap) {
     update_layout();
     const auto first = [&] { return backwards ? root_->last_descendant() : root_.get(); };
-    auto* candidate = focused_ ? focused_->adjacent(backwards) : first();
+    auto* candidate = from ? from->adjacent(backwards) : first();
     for (;;) {
         if (!candidate) {
-            if (!wrap || !focused_) { return nullptr; }
+            if (!wrap || !from) { return nullptr; }
             candidate = first();
             wrap = false;
         }
@@ -175,6 +178,16 @@ Element* ElementTree::next_focus(bool backwards, bool wrap) {
 bool ElementTree::move_focus(bool backwards, bool wrap) {
     auto* next = next_focus(backwards, wrap);
     return next && focus(next);
+}
+
+void ElementTree::place_windows() {
+    if (!window_ || hosted_.empty()) { return; }
+    update_layout();
+    // Moving a window sends messages; a handler can detach other hosted elements meanwhile.
+    const auto snapshot = hosted_;
+    for (auto* hosted : snapshot) {
+        if (std::ranges::find(hosted_, hosted) != hosted_.end()) { hosted->place(*window_); }
+    }
 }
 
 }

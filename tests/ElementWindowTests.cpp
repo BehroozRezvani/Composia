@@ -1,7 +1,10 @@
 #include <composia/ElementWindow.hpp>
+#include <composia/HostedWindow.hpp>
 #include <composia/NativeControl.hpp>
 #include <composia/ScopedSurfaceDraw.hpp>
 #include "support/TestSupport.hpp"
+#include <cmath>
+#include <optional>
 
 using namespace composia;
 using testing::require;
@@ -154,8 +157,114 @@ int navigation(const testing::Options& options) {
     app.close();
     return 0;
 }
+
+int hosted(const testing::Options& options) {
+    Application app{options.warp};
+    {
+        auto root = std::make_shared<Element>(ElementLayout{Kind::stack});
+        auto before = std::make_shared<Tile>(0x203040);
+        before->set_preferred_size({100, 20});
+        before->set_focusable(true);
+        auto scroll = std::make_shared<Element>(ElementLayout{Kind::scroll, layout::Axis::vertical, 0, 1, 100.f});
+        auto content = std::make_shared<Element>(ElementLayout{Kind::stack});
+        auto spacer = std::make_shared<Element>();
+        spacer->set_preferred_size({100, 30});
+        auto tail = std::make_shared<Element>();
+        tail->set_preferred_size({100, 200});
+        auto after = std::make_shared<Tile>(0x406080);
+        after->set_preferred_size({100, 20});
+        after->set_focusable(true);
+        content->add(spacer);
+        scroll->add(content);
+        root->add(before);
+        root->add(scroll);
+        root->add(after);
+        ElementWindow window{app, L"Hosted windows", 200, 160, root};
+        NativeControl edit{window, L"EDIT", WS_TABSTOP | WS_VISIBLE | ES_AUTOHSCROLL};
+        auto host = std::make_shared<HostedWindow>(edit.hwnd());
+        const auto shown = [&] { return (GetWindowLongPtrW(edit.hwnd(), GWL_STYLE) & WS_VISIBLE) != 0; };
+        require(!shown(), "A detached hosted window was left visible");
+        host->set_preferred_size({120, 40});
+        content->add(host);
+        content->add(tail);
+        window.show(SW_SHOWNOACTIVATE);
+        flush(window);
+
+        // The scroll viewport spans 20 to 120 DIPs; the hosted element starts 30 DIPs into it.
+        const auto scale = window.scale();
+        const auto px = [&](float dips) { return static_cast<LONG>(std::lround(dips * scale)); };
+        const auto placed = [&] {
+            RECT r{};
+            GetWindowRect(edit.hwnd(), &r);
+            MapWindowPoints(nullptr, window.hwnd(), reinterpret_cast<POINT*>(&r), 2);
+            return r;
+        };
+        const auto visible_part = [&] {
+            RECT r{};
+            return GetWindowRgnBox(edit.hwnd(), &r) == ERROR ? std::optional<RECT>{} : std::optional<RECT>{r};
+        };
+        auto r = placed();
+        require(shown() && r.left == 0 && r.top == px(50) && r.right == window.client_pixels().cx &&
+            r.bottom == px(90) && !visible_part(), "Hosted window placement");
+
+        scroll->set_scroll_offset(40);
+        flush(window);
+        r = placed();
+        const auto part = visible_part();
+        require(r.top == px(10) && r.bottom == px(50) && part && part->left == 0 && part->top == px(20) - px(10) &&
+            part->bottom == px(50) - px(10), "Scrolling did not move the hosted window or clip it to the viewport");
+        scroll->set_scroll_offset(80);
+        flush(window);
+        require(!shown(), "A scrolled-out hosted window was left visible");
+        scroll->set_scroll_offset(0);
+        flush(window);
+        require(shown() && placed().top == px(50) && !visible_part(), "Revealing a hosted window kept its old place or region");
+
+        scroll->set_enabled(false);
+        flush(window);
+        require(!IsWindowEnabled(edit.hwnd()), "A disabled ancestor left the hosted window enabled");
+        scroll->set_enabled(true);
+        flush(window);
+        require(IsWindowEnabled(edit.hwnd()), "Enabling the ancestor left the hosted window disabled");
+
+        // Tab as Application::run delivers it: keys aimed at the root that it wants go straight to it.
+        const auto tab = [&](HWND from, bool backwards = false) {
+            BYTE keys[256]{};
+            GetKeyboardState(keys);
+            const auto shift = keys[VK_SHIFT];
+            keys[VK_SHIFT] = backwards ? 0x80 : 0;
+            SetKeyboardState(keys);
+            MSG message{};
+            message.hwnd = from;
+            message.message = WM_KEYDOWN;
+            message.wParam = VK_TAB;
+            const bool wanted = from == window.hwnd() &&
+                (SendMessageW(from, WM_GETDLGCODE, VK_TAB, reinterpret_cast<LPARAM>(&message)) & DLGC_WANTTAB);
+            if (wanted || !IsDialogMessageW(window.hwnd(), &message)) { DispatchMessageW(&message); }
+            keys[VK_SHIFT] = shift;
+            SetKeyboardState(keys);
+            flush(window);
+        };
+        require(window.focus_element(*before), "Focus before the hosted window");
+        tab(window.hwnd());
+        require(GetFocus() == edit.hwnd(), "Tab did not enter the hosted window");
+        tab(edit.hwnd());
+        require(window.focused() && after->focused(), "Tab from the hosted window skipped the next element");
+        tab(window.hwnd(), true);
+        require(GetFocus() == edit.hwnd(), "Shift+Tab did not return to the hosted window");
+        tab(edit.hwnd(), true);
+        require(window.focused() && before->focused(), "Shift+Tab from the hosted window skipped the previous element");
+        require(window.focus_element(*host) && GetFocus() == edit.hwnd(), "focus_element did not focus the hosted window");
+
+        content->remove(*host);
+        flush(window);
+        require(!shown() && GetFocus() != edit.hwnd(), "A removed hosted window kept its place or the focus");
+    }
+    app.close();
+    return 0;
+}
 }
 
 int main(int argc, char** argv) {
-    return testing::run(argc, argv, {{"pixels", pixels}, {"navigation", navigation}});
+    return testing::run(argc, argv, {{"pixels", pixels}, {"navigation", navigation}, {"hosted", hosted}});
 }

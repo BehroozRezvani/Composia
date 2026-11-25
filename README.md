@@ -179,6 +179,7 @@ declarations in your own manifest.
 | `Layout.hpp` | DIP geometry and stack placement |
 | `Element.hpp` | Retained elements, layout, clipped drawing, routed input, focus, and dirty regions |
 | `ElementWindow.hpp` | A window or child pane that hosts and repaints an element tree |
+| `HostedWindow.hpp` | A child window placed, clipped and tab-ordered as a retained element |
 | `Signal.hpp` | Signals and connections |
 | `Log.hpp` | A handler for Composia's diagnostic events |
 | `Version.hpp` | The library version |

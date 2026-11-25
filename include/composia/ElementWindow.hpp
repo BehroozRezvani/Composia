@@ -17,7 +17,8 @@ public:
     ElementWindow(Application&, std::wstring_view title, int widthDip, int heightDip,
         Content, std::shared_ptr<Element> root, HWND parent = nullptr);
     ~ElementWindow() override;
-    // Gives keyboard focus to this window and reveals the requested retained tab stop.
+    // Gives keyboard focus to this window and reveals the requested retained tab stop. For a
+    // HostedWindow element, the focus goes to its window.
     bool focus_element(Element&);
     [[nodiscard]] ElementTree& elements() noexcept { return tree_; }
     [[nodiscard]] CompositionWindowTarget& composition_target() noexcept { return target_; }
@@ -33,6 +34,11 @@ protected:
 
 private:
     friend struct ElementAutomation;
+    friend class HostedWindow;
+    // The tab stop outside this window that Tab or Shift+Tab reaches from it, skipping windows
+    // its tree hosts; null when there is none.
+    [[nodiscard]] HWND outside_tab_stop(bool backwards) const;
+    void hand_focus_to_hosted_window();
     winrt::com_ptr<struct ElementAutomation> automation_;
     ElementTree tree_;
     CompositionWindowTarget target_;
