@@ -190,6 +190,13 @@ void Element::set_scroll_offset(float value) {
 
 bool Element::focused() const noexcept { return tree_ && tree_->focused_ == this; }
 
+void Element::set_tooltip(std::wstring value) {
+    if (tooltip_ == value) { return; }
+    tooltip_ = std::move(value);
+    // The hosting window shows the new text, or hides a tooltip that became empty.
+    if (tree_) { tree_->schedule(); }
+}
+
 ElementWindow* Element::host_window() const noexcept { return tree_ ? tree_->window_ : nullptr; }
 void Element::update_host_layout() { if (tree_) { tree_->update_layout(); } }
 

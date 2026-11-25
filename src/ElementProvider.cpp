@@ -173,7 +173,7 @@ HRESULT ElementAutomation::metadata(Element& e, PROPERTYID id, VARIANT* out) {
     case UIA_AutomationIdPropertyId:
         return string_value(a.automationId, out);
     case UIA_HelpTextPropertyId:
-        return string_value(a.helpText, out);
+        return string_value(a.helpText.empty() ? e.tooltip() : a.helpText, out);
     case UIA_ItemStatusPropertyId:
         return string_value(a.itemStatus, out);
     case UIA_LocalizedControlTypePropertyId:

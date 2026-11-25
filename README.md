@@ -178,7 +178,7 @@ declarations in your own manifest.
 | `AnimationHelpers.hpp` | Visual and animation shortcuts |
 | `Layout.hpp` | DIP geometry and stack placement |
 | `Input.hpp` | Pointer and key events for retained elements and key previews |
-| `Element.hpp` | Retained elements, layout, clipped drawing, routed input, focus, and dirty regions |
+| `Element.hpp` | Retained elements, layout, clipped drawing, routed input, focus, tooltips, and dirty regions |
 | `ElementWindow.hpp` | A window or child pane that hosts and repaints an element tree |
 | `HostedWindow.hpp` | A child window placed, clipped and tab-ordered as a retained element |
 | `Signal.hpp` | Signals and connections |

@@ -8,6 +8,10 @@ namespace composia {
 
 // A window or child pane that hosts one retained tree on one Composition drawing surface.
 // Composition-backed windows use shared hosting when top-level or when the parent has a shared target.
+// It shows element tooltips in a native tooltip window: below the pointer once it rests on an
+// element for the system's hover time, and below the element when keyboard focus reaches it.
+// A press, a key, the wheel, or the pointer leaving the element hides it; it shows again only
+// after the pointer or focus moves to another element.
 class ElementWindow : public Window {
 public:
     ElementWindow(Application&, std::wstring_view title, int widthDip, int heightDip,
@@ -39,11 +43,21 @@ private:
     // its tree hosts; null when there is none.
     [[nodiscard]] HWND outside_tab_stop(bool backwards) const;
     void hand_focus_to_hosted_window();
+    // Starts the tooltip delay for an element, or hides the tooltip when it changes.
+    void follow_tooltip(Element* source, bool keyboard);
+    void show_tooltip();
+    void hide_tooltip() noexcept;
+    void refresh_tooltip();
     winrt::com_ptr<struct ElementAutomation> automation_;
     ElementTree tree_;
     CompositionWindowTarget target_;
     bool pointerFocus_{};
     std::weak_ptr<Element> previousFocus_;
+    wil::unique_hwnd tooltip_;
+    std::weak_ptr<Element> tipSource_;
+    std::wstring tipText_;
+    layout::Point lastPointer_{};
+    bool tipShown_{}, tipKeyboard_{};
     Connection destroying_;
 };
 

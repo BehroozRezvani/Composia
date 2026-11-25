@@ -3,7 +3,9 @@
 #include <composia/NativeControl.hpp>
 #include <composia/ScopedSurfaceDraw.hpp>
 #include "support/TestSupport.hpp"
+#include <chrono>
 #include <cmath>
+#include <commctrl.h>
 #include <optional>
 
 using namespace composia;
@@ -263,8 +265,103 @@ int hosted(const testing::Options& options) {
     app.close();
     return 0;
 }
+
+int tooltips(const testing::Options& options) {
+    Application app{options.warp};
+    {
+        auto root = std::make_shared<Element>(ElementLayout{Kind::stack});
+        auto plain = std::make_shared<Tile>(0x203040);
+        auto archive = std::make_shared<Tile>(0x406080);
+        for (auto& tile : {plain, archive}) {
+            tile->set_preferred_size({100, 30});
+            tile->set_focusable(true);
+            root->add(tile);
+        }
+        archive->set_tooltip(L"Archive (Backspace)");
+        ElementWindow window{app, L"Tooltips", 200, 100, root};
+        window.show(SW_SHOWNOACTIVATE);
+        flush(window);
+
+        // The tooltip window belongs to this thread; find the visible one and read its text.
+        const auto shown_tip = [] {
+            HWND found{};
+            EnumThreadWindows(GetCurrentThreadId(), [](HWND hwnd, LPARAM out) {
+                wchar_t name[64]{};
+                GetClassNameW(hwnd, name, 64);
+                if (std::wstring_view{name} == TOOLTIPS_CLASSW && IsWindowVisible(hwnd)) {
+                    *reinterpret_cast<HWND*>(out) = hwnd;
+                    return FALSE;
+                }
+                return TRUE;
+            }, reinterpret_cast<LPARAM>(&found));
+            return found;
+        };
+        const auto tip_text = [&](HWND tip) {
+            wchar_t text[64]{};
+            TOOLINFOW tool{};
+            tool.cbSize = sizeof(tool);
+            tool.hwnd = window.hwnd();
+            tool.uId = reinterpret_cast<UINT_PTR>(window.hwnd());
+            tool.lpszText = text;
+            SendMessageW(tip, TTM_GETTEXTW, 64, reinterpret_cast<LPARAM>(&tool));
+            return std::wstring{text};
+        };
+        // Runs messages, timers and the tooltip's fades included, until the condition holds or the
+        // time passes. The pointer moves are synthetic and the real cursor is elsewhere, so the
+        // WM_MOUSELEAVE that Windows posts for them is dropped.
+        const auto pump_until = [&](auto&& condition, std::chrono::milliseconds limit) {
+            const auto end = std::chrono::steady_clock::now() + limit;
+            while (!condition() && std::chrono::steady_clock::now() < end) {
+                MsgWaitForMultipleObjects(0, nullptr, FALSE, 20, QS_ALLINPUT);
+                MSG message{};
+                while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
+                    if (message.message != WM_MOUSELEAVE) { DispatchMessageW(&message); }
+                }
+                window.rethrow_callback_error();
+            }
+            return condition();
+        };
+        const auto hidden = [&] { return !shown_tip(); };
+        const auto delay = std::chrono::milliseconds{GetDoubleClickTime()};
+        const auto at = [&](float x, float y) {
+            return MAKELPARAM(static_cast<int>(x * window.scale()), static_cast<int>(y * window.scale()));
+        };
+
+        SendMessageW(window.hwnd(), WM_MOUSEMOVE, 0, at(10, 10));
+        require(!pump_until(shown_tip, delay * 2), "An element without a tooltip showed one");
+        SendMessageW(window.hwnd(), WM_MOUSEMOVE, 0, at(10, 40));
+        require(!shown_tip(), "The tooltip showed before the hover time");
+        require(pump_until(shown_tip, delay * 4) && tip_text(shown_tip()) == L"Archive (Backspace)",
+            "Resting on the element did not show its tooltip");
+        RECT r{};
+        GetWindowRect(shown_tip(), &r);
+        POINT below{0, static_cast<LONG>(40 * window.scale())};
+        ClientToScreen(window.hwnd(), &below);
+        require(r.top > below.y, "The tooltip covered the pointer");
+
+        SendMessageW(window.hwnd(), WM_LBUTTONDOWN, MK_LBUTTON, at(10, 40));
+        SendMessageW(window.hwnd(), WM_LBUTTONUP, 0, at(10, 40));
+        require(pump_until(hidden, delay), "A press did not hide the tooltip");
+        SendMessageW(window.hwnd(), WM_MOUSEMOVE, 0, at(12, 41));
+        require(!pump_until(shown_tip, delay * 2), "The tooltip came back before the pointer left the element");
+
+        SendMessageW(window.hwnd(), WM_MOUSEMOVE, 0, at(10, 80));
+        require(window.focus_element(*plain), "Focus the first element");
+        SendMessageW(window.hwnd(), WM_KEYDOWN, VK_TAB, 0);
+        require(archive->focused() && pump_until(shown_tip, delay * 4), "Keyboard focus did not show the tooltip");
+        GetWindowRect(shown_tip(), &r);
+        POINT bottom{0, static_cast<LONG>(60 * window.scale())};
+        ClientToScreen(window.hwnd(), &bottom);
+        require(r.top >= bottom.y - 1, "The keyboard tooltip was not placed below the element");
+        archive->set_tooltip(L"");
+        require(pump_until(hidden, delay), "Clearing the text left the tooltip showing");
+    }
+    app.close();
+    return 0;
+}
 }
 
 int main(int argc, char** argv) {
-    return testing::run(argc, argv, {{"pixels", pixels}, {"navigation", navigation}, {"hosted", hosted}});
+    return testing::run(argc, argv, {{"pixels", pixels}, {"navigation", navigation}, {"hosted", hosted},
+        {"tooltips", tooltips}});
 }

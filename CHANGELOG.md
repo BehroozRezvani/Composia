@@ -22,6 +22,9 @@ change the API; each change is listed here.
   `set_scrollbar_renderer` draws it instead, from its track, thumb and state, and
   `set_scrollbar` hides it. Elements can draw above their children (`paint_over`) and take
   pointer input before them (`claims_pointer`).
+- `Element::set_tooltip`: an `ElementWindow` shows the text in a native tooltip after the
+  pointer rests on the element or keyboard focus reaches it, and serves it as the UI
+  Automation help text when the element has none.
 
 ### Changed
 

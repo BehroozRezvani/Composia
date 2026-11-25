@@ -2,6 +2,7 @@
 #include <composia/HostedWindow.hpp>
 #include <composia/TextBox.hpp>
 #include <algorithm>
+#include <commctrl.h>
 #include "ElementAutomation.hpp"
 
 namespace composia {
@@ -13,6 +14,14 @@ UINT update_message() {
 }
 
 bool key_down(int key) { return (GetKeyState(key) & 0x8000) != 0; }
+
+constexpr UINT_PTR tooltipTimer = 0x54495053; // 'TIPS'
+
+// The element whose tooltip applies: the nearest one, from the element up, that has one.
+Element* tooltip_owner(Element* element) {
+    while (element && element->tooltip().empty()) { element = element->parent(); }
+    return element;
+}
 }
 
 ElementWindow::ElementWindow(Application& app, std::wstring_view title, int widthDip, int heightDip,
@@ -28,11 +37,80 @@ ElementWindow::ElementWindow(Application& app, std::wstring_view title, int widt
       target_(*this, content == Content::composition && (!parent || CompositionWindowTarget::hosts_children(parent))
           ? CompositionWindowTarget::Hosting::shared : CompositionWindowTarget::Hosting::standalone) {
     tree_.window_ = this;
-    destroying_ = on_destroy([this] { ElementAutomation::disconnect(*this); tree_.release_window(); });
+    destroying_ = on_destroy([this] {
+        hide_tooltip();
+        tooltip_.reset();
+        ElementAutomation::disconnect(*this);
+        tree_.release_window();
+    });
     on_resize();
 }
 
 ElementWindow::~ElementWindow() { ElementAutomation::disconnect(*this); tree_.release_window(); }
+
+void ElementWindow::follow_tooltip(Element* source, bool keyboard) {
+    const auto current = tipSource_.lock();
+    if (current.get() == source) { return; }
+    hide_tooltip();
+    tipSource_ = tree_.reference(source);
+    tipKeyboard_ = keyboard;
+    if (source && hwnd()) { SetTimer(hwnd(), tooltipTimer, GetDoubleClickTime(), nullptr); }
+}
+
+void ElementWindow::show_tooltip() {
+    KillTimer(hwnd(), tooltipTimer);
+    const auto source = tipSource_.lock();
+    if (!source || source->tooltip().empty() || !hwnd() || !IsWindowVisible(hwnd())) { return; }
+    TOOLINFOW tool{};
+    tool.cbSize = sizeof(tool);
+    tool.uFlags = TTF_TRACK | TTF_ABSOLUTE | TTF_IDISHWND;
+    tool.hwnd = hwnd();
+    tool.uId = reinterpret_cast<UINT_PTR>(hwnd());
+    tipText_ = source->tooltip();
+    tool.lpszText = tipText_.data();
+    if (!tooltip_) {
+        tooltip_.reset(CreateWindowExW(WS_EX_TOPMOST | WS_EX_NOACTIVATE, TOOLTIPS_CLASSW, nullptr,
+            WS_POPUP | TTS_NOPREFIX | TTS_ALWAYSTIP, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+            hwnd(), nullptr, GetModuleHandleW(nullptr), nullptr));
+        THROW_LAST_ERROR_IF_NULL(tooltip_.get());
+        THROW_LAST_ERROR_IF(!SendMessageW(tooltip_.get(), TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&tool)));
+    }
+    SendMessageW(tooltip_.get(), TTM_SETMAXTIPWIDTH, 0, MulDiv(400, static_cast<int>(dpi()), 96));
+    SendMessageW(tooltip_.get(), TTM_UPDATETIPTEXTW, 0, reinterpret_cast<LPARAM>(&tool));
+    // Below the element for keyboard focus, below the pointer's hot spot otherwise.
+    const auto box = source->viewport_bounds(true);
+    const auto anchor = tipKeyboard_ ? layout::Point{box.x, box.y + box.height}
+                                     : layout::Point{lastPointer_.x, lastPointer_.y + 20};
+    POINT at{static_cast<LONG>(anchor.x * scale()), static_cast<LONG>(anchor.y * scale())};
+    ClientToScreen(hwnd(), &at);
+    SendMessageW(tooltip_.get(), TTM_TRACKPOSITION, 0, MAKELPARAM(at.x, at.y));
+    SendMessageW(tooltip_.get(), TTM_TRACKACTIVATE, TRUE, reinterpret_cast<LPARAM>(&tool));
+    tipShown_ = true;
+}
+
+void ElementWindow::hide_tooltip() noexcept {
+    if (hwnd()) { KillTimer(hwnd(), tooltipTimer); }
+    if (tooltip_ && tipShown_) {
+        TOOLINFOW tool{};
+        tool.cbSize = sizeof(tool);
+        tool.hwnd = hwnd();
+        tool.uId = reinterpret_cast<UINT_PTR>(hwnd());
+        SendMessageW(tooltip_.get(), TTM_TRACKACTIVATE, FALSE, reinterpret_cast<LPARAM>(&tool));
+    }
+    tipShown_ = false;
+}
+
+void ElementWindow::refresh_tooltip() {
+    const auto source = tipSource_.lock();
+    if (!source) { return; }
+    // The element was removed, lost the focus or the pointer, or its text changed.
+    auto* expected = tooltip_owner(tipKeyboard_ ? tree_.focused() : tree_.hovered_);
+    if (expected != source.get()) { follow_tooltip(expected, tipKeyboard_); return; }
+    if (tipShown_ && source->tooltip() != tipText_) {
+        hide_tooltip();
+        show_tooltip();
+    }
+}
 
 bool ElementWindow::focus_element(Element& element) {
     if (!hwnd() || !enabled() || !tree_.focus(&element)) { return false; }
@@ -79,6 +157,7 @@ void ElementWindow::on_paint() {
 
 void ElementWindow::on_focus(bool value) {
     if (!value) {
+        if (tipKeyboard_) { follow_tooltip(nullptr, false); }
         tree_.release_capture();
         previousFocus_ = tree_.reference(tree_.focused());
         tree_.focus(nullptr);
@@ -109,7 +188,12 @@ std::optional<LRESULT> ElementWindow::on_message(UINT message, WPARAM wparam, LP
         if (const auto region = tree_.take_dirty_bounds()) { invalidate(*region); }
         tree_.place_windows();
         hand_focus_to_hosted_window();
+        refresh_tooltip();
         ElementAutomation::refresh(*this);
+        return 0;
+    }
+    if (message == WM_TIMER && wparam == tooltipTimer) {
+        show_tooltip();
         return 0;
     }
     using Kind = PointerEvent::Kind;
@@ -149,11 +233,19 @@ std::optional<LRESULT> ElementWindow::on_message(UINT message, WPARAM wparam, LP
             ((wparam == VK_RETURN || wparam == VK_ESCAPE) ? DLGC_WANTMESSAGE : 0) : 0;
     }
     case WM_SYSKEYDOWN: case WM_SYSKEYUP:
-    case WM_KEYDOWN: case WM_KEYUP:
-        if (enabled() && tree_.key({static_cast<unsigned>(wparam), message == WM_KEYDOWN || message == WM_SYSKEYDOWN,
-                key_down(VK_SHIFT), key_down(VK_CONTROL), key_down(VK_MENU), lparam})) { return 0; }
+    case WM_KEYDOWN: case WM_KEYUP: {
+        const bool down = message == WM_KEYDOWN || message == WM_SYSKEYDOWN;
+        if (down) { hide_tooltip(); }
+        auto* before = tree_.focused();
+        const bool handled = enabled() && tree_.key({static_cast<unsigned>(wparam), down,
+            key_down(VK_SHIFT), key_down(VK_CONTROL), key_down(VK_MENU), lparam});
+        // Keyboard focus that moved to another element shows its tooltip.
+        if (down && tree_.focused() != before) { follow_tooltip(tooltip_owner(tree_.focused()), true); }
+        if (handled) { return 0; }
         return std::nullopt;
+    }
     case WM_MOUSEWHEEL: case WM_MOUSEHWHEEL:
+        hide_tooltip();
         if (!enabled()) { return std::nullopt; }
         event.kind = Kind::wheel;
         event.position = pointer_position_from_screen(lparam);
@@ -178,12 +270,18 @@ std::optional<LRESULT> ElementWindow::on_message(UINT message, WPARAM wparam, LP
     }
     if (!enabled()) { return std::nullopt; }
     event.position = pointer_position(lparam);
+    if (event.kind == Kind::down) { hide_tooltip(); }
     if (event.kind == Kind::down && event.button == Button::left && !focused()) {
         pointerFocus_ = true;
         const auto reset = wil::scope_exit([&] { pointerFocus_ = false; });
         focus();
     }
-    if (tree_.pointer(event)) { return event.button == Button::x1 || event.button == Button::x2 ? TRUE : 0; }
+    const bool handled = tree_.pointer(event);
+    if (event.kind == Kind::move) {
+        lastPointer_ = event.position;
+        follow_tooltip(tooltip_owner(tree_.hovered_), false);
+    }
+    if (handled) { return event.button == Button::x1 || event.button == Button::x2 ? TRUE : 0; }
     return std::nullopt;
 }
 
@@ -193,7 +291,12 @@ void ElementWindow::on_enabled(bool enabled) {
     if (automation_) { automation_->geometryDirty = true; ElementAutomation::refresh(*this); }
 }
 
-void ElementWindow::on_hover(bool inside) { if (!inside) { tree_.pointer_leave(); } }
+void ElementWindow::on_hover(bool inside) {
+    if (!inside) {
+        tree_.pointer_leave();
+        if (!tipKeyboard_) { follow_tooltip(nullptr, false); }
+    }
+}
 void ElementWindow::on_capture_lost() { tree_.release_capture(); }
 
 }

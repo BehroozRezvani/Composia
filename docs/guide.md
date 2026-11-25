@@ -203,6 +203,13 @@ unbounded measurement axis is positive infinity. Return finite, nonnegative dime
 | Grid | Equal-width columns in insertion order. Each row takes the height of its tallest child. The gap applies in both directions. |
 | Scroll | One child measured without a limit on the scrolling axis. The viewport clips its content and clamps the offset. Nest scroll containers for two axes. |
 
+`set_tooltip` gives an element a tooltip, which its `ElementWindow` shows in a native tooltip
+window: below the pointer once it rests on the element, or on a descendant without a
+tooltip of its own, for the system's hover time, and below the element when keyboard focus
+reaches it. A press, a key, the wheel, or the pointer leaving hides it, and it shows again
+only after the pointer or focus moves on. The text is also the element's UI Automation help
+text when its accessibility description has none, so icon-only controls are described.
+
 `set_offset` translates a whole subtree after layout. Every ancestor clips both drawing
 and hit-testing. Pointer and key events bubble up the original path until a handler
 returns true. Pointer positions are relative to each recipient. Input handlers can remove

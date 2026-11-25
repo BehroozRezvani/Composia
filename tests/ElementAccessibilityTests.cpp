@@ -86,6 +86,7 @@ struct Controls {
         a.controllerFor = {slider};
         button->set_accessibility(std::move(a));
         button->set_focusable(true);
+        button->set_tooltip(L"Apply the device settings");
         root->add(button);
         window = std::make_unique<ElementWindow>(app, L"Composia accessibility test", 360, 310, root);
         window->show(SW_SHOWNOACTIVATE);
@@ -174,6 +175,10 @@ int inspect(const testing::Options& options) {
             Node label;
             THROW_IF_FAILED(slider->get_CurrentLabeledBy(label.put()));
             same(client.get(), label.get(), byId(L"label").get(), "Label relation");
+            wil::unique_bstr help;
+            THROW_IF_FAILED(button->get_CurrentHelpText(help.put()));
+            require(help && std::wstring_view{help.get()} == L"Apply the device settings",
+                "The tooltip was not the help text of an element without one");
             wil::com_ptr<IUIAutomationElementArray> targets;
             THROW_IF_FAILED(button->get_CurrentControllerFor(targets.put()));
             Node target;

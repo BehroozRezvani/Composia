@@ -59,6 +59,12 @@ public:
     void clear_accessibility();
     void set_accessible_value(double);         // Update RangeValue and notify clients.
     void set_accessible_value(std::wstring);   // Update Value and notify clients.
+    // Text an ElementWindow shows in a tooltip after the pointer rests on the element, or on a
+    // descendant without a tooltip of its own, and after keyboard focus reaches it. It is also
+    // the element's UI Automation help text when the accessibility description has none.
+    // Empty for no tooltip.
+    void set_tooltip(std::wstring);
+    [[nodiscard]] const std::wstring& tooltip() const noexcept { return tooltip_; }
     [[nodiscard]] const ElementAccessibility* accessibility() const noexcept { return accessibility_.get(); }
     bool select_item(SelectionAction);
     // Scroll containers have at most one child. Scroll distance is clamped during layout.
@@ -130,6 +136,7 @@ private:
     bool observeLayout_{}, hover_{}, available_{true};
     Element* parent_{};
     std::unique_ptr<ElementAccessibility> accessibility_;
+    std::wstring tooltip_;
     ElementTree* tree_{};
     std::size_t siblingIndex_{};
     std::vector<std::shared_ptr<Element>> children_;
