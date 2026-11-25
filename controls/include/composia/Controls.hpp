@@ -138,14 +138,42 @@ private:
     Signal<double> changed_;
 };
 
+// Scrolls its content on one axis. While the content overflows, a scrollbar lies over its far
+// edge: it widens under the pointer, its thumb can be dragged, and a press on its track pages
+// towards the press. A scrollbar renderer draws it; without one it is a thin bar in the
+// foreground color.
 class ScrollView : public Control {
 public:
+    // The scrollbar as its renderer draws it, in the view's local DIPs: the track and the thumb
+    // at the current thickness, wider while hovered or dragged.
+    struct Scrollbar {
+        layout::Rect track{}, thumb{};
+        bool hovered{}, dragging{};
+    };
+    using ScrollbarRenderer = std::function<void(ScopedSurfaceDraw&, const ScrollView&, const Scrollbar&, const StyleTokens&)>;
+
     explicit ScrollView(std::wstring name, layout::Axis = layout::Axis::vertical, float viewportLength = 160);
     void set_content(std::shared_ptr<Element>);
+    // An empty renderer restores the thin bar.
+    void set_scrollbar_renderer(ScrollbarRenderer);
+    // Hides or shows the scrollbar; scrolling by wheel, keyboard and automation is unaffected.
+    void set_scrollbar(bool visible);
+    [[nodiscard]] bool scrollbar() const noexcept { return scrollbar_; }
 protected:
     bool on_key(const KeyEvent&) override;
+    bool on_pointer(const PointerEvent&) override;
+    void on_hover_changed(bool) override;
+    void on_capture_lost() noexcept override;
+    void paint_over(ScopedSurfaceDraw&) override;
+    [[nodiscard]] bool claims_pointer(layout::Point) const override;
 private:
+    struct Thumb { float start, length, track; };
+    [[nodiscard]] std::optional<Thumb> thumb() const;
+    void set_bar_hovered(bool);
+    ScrollbarRenderer scrollbarRenderer_;
     layout::Axis axis_;
+    bool scrollbar_{true}, barHovered_{}, dragging_{};
+    float grab_{};
 };
 
 struct Items {

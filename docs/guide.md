@@ -189,7 +189,9 @@ window.show();
 `ElementTree` retains custom-drawn elements on one surface. Each parent owns its
 children through `shared_ptr`. Remove a child before adding it elsewhere. Work with the
 tree on the UI thread. Override `measure_content` for intrinsic sizing such as wrapped
-text, `paint` for drawing in local DIPs, and `on_pointer` or `on_key` for input. An
+text, `paint` for drawing in local DIPs, `paint_over` for drawing above the children, and
+`on_pointer` or `on_key` for input. `claims_pointer` lets an element take pointer input
+at a point before its children there, as a scrollbar over content does. An
 unbounded measurement axis is positive infinity. Return finite, nonnegative dimensions.
 
 | Container | Placement |
@@ -264,7 +266,7 @@ auto follow = app.on_appearance_changed([&](const composia::Appearance& appearan
 | Toggle | Pointer release, Space, Enter or UIA Toggle changes the checked state. `on_change` also observes programmatic changes. |
 | Slider | Drag on either axis, including past its ends. Arrows, Home, End and Page Up/Down adjust the same value exposed by RangeValue. Vertical sliders increase upwards. |
 | TextBox | The retained editor handles text selection, clipboard, undo, IME and UIA Text. |
-| ScrollView | Set its content, axis and preferred viewport length. Wheel, arrows, paging and UIA Scroll share its offset. |
+| ScrollView | Set its content, axis and preferred viewport length. Wheel, arrows, paging and UIA Scroll share its offset. While the content overflows, a scrollbar over the far edge widens under the pointer; drag its thumb, or press its track to page. `set_scrollbar_renderer` draws it from its track, thumb and state, instead of the thin bar in the foreground color. `set_scrollbar(false)` hides it. |
 | List | One tab stop supports arrows, paging, Home/End, prefix search and single selection. Double-click or Enter activates an item. |
 | Dropdown | Open with a press, Enter, Space, F4 or an arrow. Preview with arrows or typing. Click or Enter commits. Escape discards the preview. |
 | Menu | The popup uses menu-item roles, skips disabled commands during navigation and dismisses before executing a choice. |

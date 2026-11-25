@@ -94,6 +94,43 @@ int style(const testing::Options&) {
     return 0;
 }
 
+int scrollbar(const testing::Options&) {
+    using Kind = PointerEvent::Kind;
+    using Mouse = PointerEvent::Button;
+    auto view = std::make_shared<ui::ScrollView>(L"Messages", layout::Axis::vertical, 100);
+    auto content = std::make_shared<Element>();
+    content->set_preferred_size({96, 400});
+    view->set_content(content);
+    ElementTree tree(view);
+    tree.set_viewport({96, 100});
+    tree.update_layout();
+    // The track spans 96 DIPs below a 2 DIP inset, and the thumb shows 100 of 400 DIPs: 24 long.
+    require(view->scroll_limit() == 300 && tree.hit_test({90, 50}) == view.get() && tree.hit_test({40, 50}) == content.get(),
+        "The scrollbar did not claim its edge");
+    tree.pointer({Kind::down, {90, 10}, Mouse::left});
+    tree.pointer({Kind::move, {90, 46}});
+    tree.update_layout();
+    require(view->scroll_offset() == 150, "Dragging the thumb half way did not scroll half way");
+    tree.pointer({Kind::move, {90, 500}});
+    tree.pointer({Kind::up, {90, 500}, Mouse::left});
+    tree.update_layout();
+    require(view->scroll_offset() == 300, "Dragging past the end did not stop at the limit");
+    tree.pointer({Kind::down, {90, 5}, Mouse::left});
+    tree.pointer({Kind::up, {90, 5}, Mouse::left});
+    tree.update_layout();
+    require(view->scroll_offset() == 200, "A press on the track above the thumb did not page up");
+    tree.pointer({PointerEvent::Kind::wheel, {40, 50}, Mouse::none, 1});
+    tree.update_layout();
+    require(view->scroll_offset() < 200, "Wheel scrolling stopped working");
+    view->set_scrollbar(false);
+    require(tree.hit_test({90, 50}) == content.get(), "A hidden scrollbar claimed the pointer");
+    view->set_scrollbar(true);
+    content->set_preferred_size({96, 80});
+    tree.update_layout();
+    require(view->scroll_limit() == 0 && tree.hit_test({90, 50}) == content.get(), "Content that fits showed a scrollbar");
+    return 0;
+}
+
 int popup(const testing::Options&) {
     auto content = std::make_shared<Element>(ElementLayout{ElementLayout::Kind::stack});
     auto dropdown = std::make_shared<ui::Dropdown>(L"Output", ui::Items::strings({L"Stereo", L"Mono", L"Surround"}), 20, 60);
@@ -169,5 +206,5 @@ int virtualization(const testing::Options&) {
 }
 int main(int argc, char** argv) {
     return testing::run(argc, argv, {{"behaviour", behaviour}, {"virtualization", virtualization}, {"popup", popup},
-        {"style", style}});
+        {"style", style}, {"scrollbar", scrollbar}});
 }

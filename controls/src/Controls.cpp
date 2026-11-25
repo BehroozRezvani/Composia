@@ -1,4 +1,5 @@
 #include <composia/Controls.hpp>
+#include <composia/ScopedSurfaceDraw.hpp>
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
@@ -210,6 +211,98 @@ void ScrollView::set_content(std::shared_ptr<Element> content) {
         try { if (content) { add(std::move(content)); } }
         catch (...) { add(std::move(old)); throw; }
     } else if (content) { add(std::move(content)); }
+}
+namespace {
+constexpr float barInset = 2, barThin = 2, barWide = 6, barReach = 12, thumbMinimum = 24;
+}
+std::optional<ScrollView::Thumb> ScrollView::thumb() const {
+    const auto limit = scroll_limit();
+    const auto viewport = axis_ == layout::Axis::vertical ? bounds().height : bounds().width;
+    const float track = viewport - 2 * barInset;
+    if (!scrollbar_ || limit <= 0 || track <= 0) { return std::nullopt; }
+    const float length = std::min(track, std::max(thumbMinimum, track * viewport / (viewport + limit)));
+    return Thumb{barInset + (track - length) * std::clamp(scroll_offset() / limit, 0.f, 1.f), length, track};
+}
+bool ScrollView::claims_pointer(layout::Point p) const {
+    if (!thumb()) { return false; }
+    return axis_ == layout::Axis::vertical ? p.x >= bounds().width - barReach : p.y >= bounds().height - barReach;
+}
+void ScrollView::set_scrollbar(bool visible) {
+    if (scrollbar_ == visible) { return; }
+    scrollbar_ = visible;
+    if (!visible) { dragging_ = false; barHovered_ = false; release_pointer(); }
+    invalidate();
+}
+void ScrollView::set_scrollbar_renderer(ScrollbarRenderer renderer) {
+    scrollbarRenderer_ = std::move(renderer);
+    invalidate();
+}
+void ScrollView::set_bar_hovered(bool value) {
+    if (barHovered_ != value) { barHovered_ = value; invalidate(); }
+}
+bool ScrollView::on_pointer(const PointerEvent& e) {
+    const bool vertical = axis_ == layout::Axis::vertical;
+    const float along = vertical ? e.position.y : e.position.x;
+    const auto t = thumb();
+    if (dragging_ && t) {
+        if (e.kind == PointerEvent::Kind::move) {
+            const float room = t->track - t->length;
+            const float fraction = room > 0 ? std::clamp((along - grab_ - barInset) / room, 0.f, 1.f) : 0.f;
+            set_scroll_offset(fraction * scroll_limit());
+            return true;
+        }
+        if (e.kind == PointerEvent::Kind::up && e.button == PointerEvent::Button::left) {
+            dragging_ = false;
+            release_pointer();
+            set_bar_hovered(claims_pointer(e.position));
+            return true;
+        }
+    }
+    if (e.kind == PointerEvent::Kind::move) { set_bar_hovered(claims_pointer(e.position)); return false; }
+    if (!t || e.kind != PointerEvent::Kind::down || e.button != PointerEvent::Button::left || !claims_pointer(e.position)) {
+        return false;
+    }
+    if (along >= t->start && along < t->start + t->length) {
+        grab_ = along - t->start;
+        dragging_ = capture_pointer();
+    } else {
+        const auto page = vertical ? bounds().height : bounds().width;
+        const auto next = scroll_offset() + (along < t->start ? -page : page);
+        set_scroll_offset(std::clamp(next, 0.f, scroll_limit()));
+    }
+    return true;
+}
+void ScrollView::on_hover_changed(bool inside) {
+    if (!inside && !dragging_) { barHovered_ = false; }
+    Control::on_hover_changed(inside);
+}
+void ScrollView::on_capture_lost() noexcept {
+    dragging_ = false;
+    Control::on_capture_lost();
+}
+void ScrollView::paint_over(ScopedSurfaceDraw& draw) {
+    const auto t = thumb();
+    if (!t) { return; }
+    const auto tokens = this->tokens();
+    const bool wide = barHovered_ || dragging_;
+    const float thickness = wide ? barWide : barThin;
+    const bool vertical = axis_ == layout::Axis::vertical;
+    const auto b = bounds();
+    const float edge = (vertical ? b.width : b.height) - barInset - thickness;
+    const auto rect = [&](float start, float length) {
+        return vertical ? layout::Rect{edge, start, thickness, length} : layout::Rect{start, edge, length, thickness};
+    };
+    const Scrollbar bar{rect(barInset, t->track), rect(t->start, t->length), barHovered_, dragging_};
+    if (scrollbarRenderer_) {
+        scrollbarRenderer_(draw, *this, bar, tokens);
+        return;
+    }
+    const auto fill = [&](layout::Rect r, float alpha) {
+        draw.context()->FillRoundedRectangle({{r.x, r.y, r.x + r.width, r.y + r.height}, thickness / 2, thickness / 2},
+            draw.solid_brush(tokens.foreground, alpha));
+    };
+    if (wide) { fill(bar.track, 0.08f); }
+    fill(bar.thumb, wide ? 0.6f : 0.4f);
 }
 bool ScrollView::on_key(const KeyEvent& e) {
     if (!e.down || e.control || e.alt || e.shift) { return false; }

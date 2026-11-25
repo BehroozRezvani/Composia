@@ -17,6 +17,11 @@ change the API; each change is listed here.
   and a font size for renderers. `StyleTokens::from(Appearance)` derives tokens from the
   system appearance, high contrast included, for applications that follow it. `StyleScope`
   gives the controls inside it the same tokens.
+- `ScrollView`, and so `List`, draws an overlay scrollbar while its content overflows: thin
+  at rest, wider under the pointer, with a draggable thumb and a track that pages.
+  `set_scrollbar_renderer` draws it instead, from its track, thumb and state, and
+  `set_scrollbar` hides it. Elements can draw above their children (`paint_over`) and take
+  pointer input before them (`claims_pointer`).
 
 ### Changed
 

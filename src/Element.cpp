@@ -272,6 +272,7 @@ std::span<Element* const> Element::visible_children(Rect local, bool point) {
 }
 
 Element* Element::hit(Point local) {
+    if (claims_pointer(local)) { return this; }
     for (auto* child : visible_children({local.x, local.y, 0, 0}, true) | std::views::reverse) {
         const auto box = child->bounds_;
         if (box.contains(local.x, local.y)) { return child->hit({local.x - box.x, local.y - box.y}); }
@@ -295,6 +296,8 @@ void Element::draw(ScopedSurfaceDraw& surface, Point origin, Rect clip) {
     for (auto* child : visible_children({clip.x - origin.x, clip.y - origin.y, clip.width, clip.height})) {
         child->draw(surface, origin, clip);
     }
+    dc->SetTransform(D2D1::Matrix3x2F::Translation(origin.x, origin.y) * base);
+    paint_over(surface);
 }
 
 ElementTree::ElementTree(std::shared_ptr<Element> root, std::function<void()> requestUpdate)

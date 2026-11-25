@@ -97,6 +97,11 @@ protected:
     virtual layout::Size measure_content(layout::Size available) const;
     // Origin is local (0,0). The clip includes the surface update and all ancestor bounds.
     virtual void paint(ScopedSurfaceDraw&) {}
+    // Draws above the children, with the same origin and clip as paint: a scrollbar over content.
+    virtual void paint_over(ScopedSurfaceDraw&) {}
+    // True to receive pointer input at this local point itself rather than through a child
+    // there, such as a scrollbar over content. Hit-testing asks before it looks at children.
+    [[nodiscard]] virtual bool claims_pointer(layout::Point) const { return false; }
     // The deepest hit or focused element is called first. Return true to stop bubbling.
     virtual bool on_pointer(const PointerEvent&) { return false; }
     virtual bool on_key(const KeyEvent&) { return false; }

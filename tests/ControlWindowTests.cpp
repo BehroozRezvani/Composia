@@ -137,6 +137,46 @@ int tokens(const testing::Options& options) {
     require(testing::matches(pixel(10, 10), ui::StyleTokens{}.background), "Without a scope the renderer did not get StyleTokens{}");
     return 0;
 }
+// The scrollbar draws over the content at the right edge, wider under the pointer, or through
+// a renderer that receives its track, thumb and state.
+int scrollbar(const testing::Options& options) {
+    Application app(options.warp);
+    namespace ui = composia::controls;
+    auto view = std::make_shared<ui::ScrollView>(L"Messages", layout::Axis::vertical, 100);
+    auto content = std::make_shared<ui::Button>(L"Content", [] {});
+    content->set_preferred_size({200, 400});
+    content->set_renderer([](ScopedSurfaceDraw& d, const ui::Control& c, ui::State, const ui::StyleTokens&) {
+        d.context()->FillRectangle({0, 0, c.bounds().width, c.bounds().height}, d.solid_brush(0x204060));
+    });
+    view->set_content(content);
+    ElementWindow window(app, L"Scrollbar", 200, 100, view);
+    window.show(SW_SHOWNOACTIVATE);
+    flush(window);
+    auto pixel = [&](float x, float y) {
+        return testing::surface_pixel(app, window.composition_target().surface(), LONG(x * window.scale()),
+                                      LONG(y * window.scale()));
+    };
+    require(testing::matches(pixel(195, 14), 0x204060), "The idle scrollbar was drawn wide");
+    SendMessageW(window.hwnd(), WM_MOUSEMOVE, 0, MAKELPARAM(LONG(195 * window.scale()), LONG(14 * window.scale())));
+    flush(window);
+    require(!testing::matches(pixel(195, 14), 0x204060), "The hovered scrollbar did not draw over the content");
+
+    std::optional<ui::ScrollView::Scrollbar> drawn;
+    view->set_scrollbar_renderer([&](ScopedSurfaceDraw& d, const ui::ScrollView&, const ui::ScrollView::Scrollbar& bar,
+                                     const ui::StyleTokens&) {
+        drawn = bar;
+        const auto t = bar.thumb;
+        d.context()->FillRectangle({t.x, t.y, t.x + t.width, t.y + t.height}, d.solid_brush(0xc03020));
+    });
+    flush(window);
+    // The thumb shows 100 of 400 DIPs of a 96 DIP track: 24 DIPs, from 2 DIPs down.
+    require(drawn && drawn->hovered && !drawn->dragging && drawn->thumb.y == 2 && drawn->thumb.height == 24 &&
+        drawn->track.height == 96 && testing::matches(pixel(195, 14), 0xc03020), "The scrollbar renderer did not draw the thumb");
+    view->set_scroll_offset(300);
+    flush(window);
+    require(drawn->thumb.y == 74 && testing::matches(pixel(195, 86), 0xc03020), "The thumb did not follow the scroll offset");
+    return 0;
+}
 int fixture(const testing::Options& options) {
     Application app(options.warp);
     playback::Playback panel(app);
@@ -147,5 +187,5 @@ int fixture(const testing::Options& options) {
 }
 }
 int main(int argc, char** argv) {
-    return testing::run(argc, argv, {{"interaction", interaction}, {"fixture", fixture}, {"tokens", tokens}});
+    return testing::run(argc, argv, {{"interaction", interaction}, {"fixture", fixture}, {"tokens", tokens}, {"scrollbar-drawing", scrollbar}});
 }
