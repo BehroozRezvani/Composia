@@ -18,6 +18,14 @@ struct PointerEvent {
     bool doubleClick{};
 };
 
+// A request for a context menu: a right click, Shift+F10, or the menu key.
+struct ContextMenuEvent {
+    // Local to the current recipient. The pointer for a click; for the keyboard, the lower-left
+    // corner of the focused element's visible part, where a menu can open below it.
+    layout::Point position{};
+    bool keyboard{};
+};
+
 struct KeyEvent {
     unsigned key{};                           // Windows virtual-key code.
     bool down{}, shift{}, control{}, alt{};

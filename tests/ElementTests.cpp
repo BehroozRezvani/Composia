@@ -13,6 +13,7 @@ public:
     using Element::Element;
     std::function<bool(const PointerEvent&)> pointer;
     std::function<bool(const KeyEvent&)> key;
+    std::function<bool(const ContextMenuEvent&)> menu;
     mutable unsigned measures{};
     std::vector<bool> focusChanges;
     void on_focus_changed(bool value) override { focusChanges.push_back(value); }
@@ -23,6 +24,7 @@ public:
     }
     bool on_pointer(const PointerEvent& e) override { return pointer && pointer(e); }
     bool on_key(const KeyEvent& e) override { return key && key(e); }
+    bool on_context_menu(const ContextMenuEvent& e) override { return menu && menu(e); }
 };
 
 auto leaf(float w, float h) {
@@ -230,8 +232,37 @@ int damage(const testing::Options&) {
     require(moved->parent() == list.get() && moved->bounds().y == 20470, "Detached element could not be reused");
     return 0;
 }
+
+// Context menu requests start at the element under the pointer, or at the focused element for
+// the keyboard, and bubble with positions local to each recipient.
+int context_menu(const testing::Options&) {
+    auto root = std::make_shared<Probe>(ElementLayout{Kind::stack});
+    auto first = leaf(100, 40), second = leaf(100, 40);
+    second->set_focusable(true);
+    root->add(first);
+    root->add(second);
+    ElementTree tree(root);
+    tree.set_viewport({200, 100});
+    std::vector<std::pair<char, ContextMenuEvent>> seen;
+    second->menu = [&](const ContextMenuEvent& e) { seen.emplace_back('s', e); return false; };
+    root->menu = [&](const ContextMenuEvent& e) { seen.emplace_back('r', e); return true; };
+    require(tree.context_menu(layout::Point{10, 50}) && seen.size() == 2 && seen[0].first == 's' &&
+        seen[0].second.position.x == 10 && seen[0].second.position.y == 10 && !seen[0].second.keyboard &&
+        seen[1].first == 'r' && seen[1].second.position.y == 50, "A click's request did not bubble with local positions");
+    seen.clear();
+    require(!tree.context_menu(std::nullopt) && seen.empty(), "A keyboard request without focus reached an element");
+    tree.focus(second.get());
+    require(tree.context_menu(std::nullopt) && seen.size() == 2 && seen[0].second.keyboard &&
+        seen[0].second.position.x == 0 && seen[0].second.position.y == 40 && seen[1].second.position.y == 80,
+        "A keyboard request did not start at the focused element's lower-left corner");
+    seen.clear();
+    second->set_enabled(false);
+    require(!tree.context_menu(layout::Point{10, 50}) && seen.empty(), "A disabled element received a request");
+    return 0;
+}
 }
 
 int main(int argc, char** argv) {
-    return testing::run(argc, argv, {{"layout", arrangement}, {"routing", routing}, {"damage", damage}});
+    return testing::run(argc, argv, {{"layout", arrangement}, {"routing", routing}, {"damage", damage},
+        {"context-menu", context_menu}});
 }

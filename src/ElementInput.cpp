@@ -103,6 +103,24 @@ bool ElementTree::key(const KeyEvent& event) {
     constexpr unsigned tab = 0x09;
     return event.down && event.key == tab && !event.alt && !event.control && move_focus(event.shift);
 }
+bool ElementTree::context_menu(std::optional<layout::Point> position) {
+    update_layout();
+    Element* target{};
+    layout::Point at{};
+    if (position) {
+        target = hit_test(*position);
+        at = *position;
+    } else if (focused_) {
+        target = focused_;
+        const auto visible = focused_->viewport_bounds(true);
+        at = {visible.x, visible.y + visible.height};
+    }
+    if (!target || !target->enabled()) { return false; }
+    return bubble(*target, [&](Element& element, layout::Point origin) {
+        return element.on_context_menu({{at.x - origin.x, at.y - origin.y}, !position});
+    });
+}
+
 bool ElementTree::text_input(std::wstring_view text) {
     return focused_ && focused_->enabled() && bubble(*focused_, [&](Element& e, layout::Point) {
         return e.on_text_input(text);

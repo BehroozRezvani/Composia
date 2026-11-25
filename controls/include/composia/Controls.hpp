@@ -78,8 +78,12 @@ public:
     [[nodiscard]] const std::optional<StyleTokens>& own_tokens() const noexcept { return tokens_; }
     [[nodiscard]] virtual State state() const;
     [[nodiscard]] std::wstring_view name() const noexcept;
+    // A context menu request on the control or inside it. While a callback is connected, the
+    // control handles the request, so it goes no further up.
+    Connection on_context_requested(std::function<void(const ContextMenuEvent&)> f) { return contextMenu_.connect(std::move(f)); }
 protected:
     Control(std::wstring name, long role, ElementLayout = {});
+    bool on_context_menu(const ContextMenuEvent&) override;
     void paint(ScopedSurfaceDraw&) override;
     void on_hover_changed(bool) override { invalidate(); }
     void on_capture_lost() noexcept override;
@@ -89,6 +93,7 @@ private:
     bool pressed_{};
     Renderer renderer_;
     std::optional<StyleTokens> tokens_;
+    Signal<const ContextMenuEvent&> contextMenu_;
 };
 
 class Pressable : public Control {
@@ -211,6 +216,8 @@ private:
     Row& realize(std::size_t);
     void synchronize_selection();
     void on_layout_updated() override;
+    // Selects the row under a right click first; the keyboard's position is the selected row's.
+    bool on_context_menu(const ContextMenuEvent&) override;
     bool on_key(const KeyEvent& e) override { return navigate(e); }
     bool on_text_input(std::wstring_view text) override { return type_ahead(text); }
     std::shared_ptr<Element> rows_;

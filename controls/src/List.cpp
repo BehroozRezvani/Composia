@@ -122,6 +122,16 @@ void List::on_layout_updated() {
     }
     for (auto i = start; i < end; ++i) { realize(i); }
 }
+bool List::on_context_menu(const ContextMenuEvent& e) {
+    auto event = e;
+    if (!e.keyboard) {
+        const auto row = (double(e.position.y) + scroll_offset()) / rowHeight_;
+        if (row >= 0 && row < double(items_.count)) { select(static_cast<std::size_t>(row)); }
+    } else if (selected_) {
+        event.position = {0, static_cast<float>(double(*selected_ + 1) * rowHeight_) - scroll_offset()};
+    }
+    return Control::on_context_menu(event);
+}
 void List::synchronize_selection() {
     Index next;
     for (const auto& child : rows_->children()) {

@@ -203,6 +203,13 @@ unbounded measurement axis is positive infinity. Return finite, nonnegative dime
 | Grid | Equal-width columns in insertion order. Each row takes the height of its tallest child. The gap applies in both directions. |
 | Scroll | One child measured without a limit on the scrolling axis. The viewport clips its content and clamps the offset. Nest scroll containers for two axes. |
 
+A right click, Shift+F10 or the menu key reaches the tree as `on_context_menu`. It starts at
+the element under the pointer, or at the focused element for the keyboard, and bubbles like
+other input until a handler returns true. The position is local to each recipient: the
+pointer, or for the keyboard the lower-left corner of the focused element's visible part.
+An unhandled request goes on to the parent window, as `DefWindowProc` sends it. Custom
+hosts call `ElementTree::context_menu`.
+
 `set_tooltip` gives an element a tooltip, which its `ElementWindow` shows in a native tooltip
 window: below the pointer once it rests on the element, or on a descendant without a
 tooltip of its own, for the system's hover time, and below the element when keyboard focus
@@ -244,7 +251,9 @@ find_package(Composia CONFIG REQUIRED COMPONENTS Controls)
 target_link_libraries(my_app PRIVATE Composia::Controls)
 ```
 
-The controls live in `composia::controls`. A renderer receives the drawing scope, control,
+The controls live in `composia::controls`. Every control raises `on_context_requested` for
+a context menu request on it or inside it, and handles the request while a callback is
+connected. A renderer receives the drawing scope, control,
 current `State` and the control's `StyleTokens`. It draws in local DIPs. Set the control's
 preferred size for your design. Focus, hover, press, selected state and disabled state
 are available on every `Control`. The retained textbox keeps its Rich Edit painter and
@@ -274,7 +283,7 @@ auto follow = app.on_appearance_changed([&](const composia::Appearance& appearan
 | Slider | Drag on either axis, including past its ends. Arrows, Home, End and Page Up/Down adjust the same value exposed by RangeValue. Vertical sliders increase upwards. |
 | TextBox | The retained editor handles text selection, clipboard, undo, IME and UIA Text. |
 | ScrollView | Set its content, axis and preferred viewport length. Wheel, arrows, paging and UIA Scroll share its offset. While the content overflows, a scrollbar over the far edge widens under the pointer; drag its thumb, or press its track to page. `set_scrollbar_renderer` draws it from its track, thumb and state, instead of the thin bar in the foreground color. `set_scrollbar(false)` hides it. |
-| List | One tab stop supports arrows, paging, Home/End, prefix search and single selection. Double-click or Enter activates an item. |
+| List | One tab stop supports arrows, paging, Home/End, prefix search and single selection. Double-click or Enter activates an item. A right click selects the row under it before `on_context_requested` runs; for the keyboard the request is placed below the selected row. |
 | Dropdown | Open with a press, Enter, Space, F4 or an arrow. Preview with arrows or typing. Click or Enter commits. Escape discards the preview. |
 | Menu | The popup uses menu-item roles, skips disabled commands during navigation and dismisses before executing a choice. |
 

@@ -111,6 +111,8 @@ protected:
     // The deepest hit or focused element is called first. Return true to stop bubbling.
     virtual bool on_pointer(const PointerEvent&) { return false; }
     virtual bool on_key(const KeyEvent&) { return false; }
+    // A context menu request, from the element under the pointer or the focused element up.
+    virtual bool on_context_menu(const ContextMenuEvent&) { return false; }
     virtual bool on_text_input(std::wstring_view) { return false; }
 
 private:
@@ -171,6 +173,9 @@ public:
     void pointer_leave();
     bool key(const KeyEvent&);
     bool text_input(std::wstring_view);
+    // Offers a context menu request to the element at a viewport position, or without one to the
+    // focused element, then to their ancestors until one handles it.
+    bool context_menu(std::optional<layout::Point> position);
     bool focus(Element*);                      // nullptr clears focus.
     [[nodiscard]] Element* focused() const noexcept { return focused_; }
     [[nodiscard]] Element* next_focus(bool backwards = false, bool wrap = true);

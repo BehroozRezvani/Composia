@@ -94,6 +94,11 @@ StyleTokens Control::tokens() const {
     }
     return {};
 }
+bool Control::on_context_menu(const ContextMenuEvent& e) {
+    if (!contextMenu_.connected()) { return false; }
+    contextMenu_.emit(e);
+    return true;
+}
 void Control::paint(ScopedSurfaceDraw& draw) {
     if (renderer_) { renderer_(draw, *this, state(), tokens()); }
 }

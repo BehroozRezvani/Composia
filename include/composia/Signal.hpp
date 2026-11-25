@@ -41,6 +41,10 @@ public:
         return Connection{std::move(active)};
     }
 
+    // True while any callback is connected.
+    [[nodiscard]] bool connected() const noexcept {
+        return std::ranges::any_of(slots_, [](const auto& slot) { return *slot->active; });
+    }
     // Calls the callbacks connected when it starts, skipping any disconnected meanwhile; callbacks
     // connected during the call first run on the next one. Every callback runs even if one
     // throws, and the first exception is rethrown afterwards.

@@ -131,6 +131,30 @@ int scrollbar(const testing::Options&) {
     return 0;
 }
 
+int context(const testing::Options&) {
+    auto root = std::make_shared<Element>(ElementLayout{ElementLayout::Kind::stack});
+    auto button = std::make_shared<ui::Button>(L"Reply", [] {});
+    auto list = std::make_shared<ui::List>(L"Messages", ui::Items::strings({L"A", L"B", L"C", L"D", L"E", L"F"}), 24, 96);
+    root->add(button);
+    root->add(list);
+    ElementTree tree(root);
+    tree.set_viewport({120, 128});
+    require(!tree.context_menu(layout::Point{8, 8}), "A control without subscribers handled a request");
+    std::vector<ContextMenuEvent> buttonMenus, listMenus;
+    auto onButton = button->on_context_requested([&](const ContextMenuEvent& e) { buttonMenus.push_back(e); });
+    auto onList = list->on_context_requested([&](const ContextMenuEvent& e) { listMenus.push_back(e); });
+    require(tree.context_menu(layout::Point{8, 8}) && buttonMenus.size() == 1 && !buttonMenus[0].keyboard,
+        "The button's subscriber missed a click's request");
+    // The list starts 32 DIPs down, below the button; its fourth row spans 72 to 96 DIPs inside it.
+    require(tree.context_menu(layout::Point{8, 32 + 80}) && list->selected() == 3 && listMenus.size() == 1,
+        "A right click did not select the row under it");
+    require(list->request_focus() && tree.context_menu(std::nullopt) && listMenus.size() == 2 &&
+        listMenus[1].keyboard && listMenus[1].position.y == 96, "A keyboard request was not placed at the selected row");
+    onButton.disconnect();
+    require(!tree.context_menu(layout::Point{8, 8}), "A disconnected subscriber still handled requests");
+    return 0;
+}
+
 int popup(const testing::Options&) {
     auto content = std::make_shared<Element>(ElementLayout{ElementLayout::Kind::stack});
     auto dropdown = std::make_shared<ui::Dropdown>(L"Output", ui::Items::strings({L"Stereo", L"Mono", L"Surround"}), 20, 60);
@@ -206,5 +230,5 @@ int virtualization(const testing::Options&) {
 }
 int main(int argc, char** argv) {
     return testing::run(argc, argv, {{"behaviour", behaviour}, {"virtualization", virtualization}, {"popup", popup},
-        {"style", style}, {"scrollbar", scrollbar}});
+        {"style", style}, {"scrollbar", scrollbar}, {"context", context}});
 }

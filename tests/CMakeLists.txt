@@ -124,7 +124,7 @@ composia_add_scenarios(composia-animation-tests animation WARP SCENARIOS helpers
 
 # Retained layout, routing, focus, and damage on the UI thread.
 composia_test_target(composia-element-tests ElementTests.cpp)
-composia_add_scenarios(composia-element-tests element CORE SCENARIOS layout routing damage)
+composia_add_scenarios(composia-element-tests element CORE SCENARIOS layout routing damage context-menu)
 composia_test_target(composia-element-window-tests ElementWindowTests.cpp)
 composia_add_scenarios(composia-element-window-tests element-window WARP SCENARIOS pixels navigation)
 composia_add_scenarios(composia-element-window-tests element-window SCENARIOS hosted tooltips)
@@ -150,7 +150,7 @@ endif()
 # Optional appearance-independent controls.
 if(COMPOSIA_BUILD_CONTROLS)
     composia_test_target(composia-controls-tests ControlsTests.cpp Composia::Controls)
-    composia_add_scenarios(composia-controls-tests controls CORE SCENARIOS behaviour virtualization popup style scrollbar)
+    composia_add_scenarios(composia-controls-tests controls CORE SCENARIOS behaviour virtualization popup style scrollbar context)
     composia_test_target(composia-control-window-tests ControlWindowTests.cpp Composia::Controls)
     composia_add_scenarios(composia-control-window-tests controls WARP SCENARIOS interaction tokens scrollbar-drawing)
     if(COMPOSIA_TEST_NVDA AND COMPOSIA_TEST_ACCCHECK)

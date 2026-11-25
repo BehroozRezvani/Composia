@@ -25,6 +25,10 @@ change the API; each change is listed here.
 - `Element::set_tooltip`: an `ElementWindow` shows the text in a native tooltip after the
   pointer rests on the element or keyboard focus reaches it, and serves it as the UI
   Automation help text when the element has none.
+- Context menu requests reach elements: `Element::on_context_menu` and
+  `ElementTree::context_menu`, with `ContextMenuEvent` telling a click from the keyboard.
+  `ElementWindow` routes `WM_CONTEXTMENU`, controls raise `on_context_requested`, and a list
+  selects the row under a right click first. `Signal::connected` reports a subscriber.
 
 ### Changed
 

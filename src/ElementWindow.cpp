@@ -192,6 +192,15 @@ std::optional<LRESULT> ElementWindow::on_message(UINT message, WPARAM wparam, LP
         ElementAutomation::refresh(*this);
         return 0;
     }
+    if (message == WM_CONTEXTMENU && reinterpret_cast<HWND>(wparam) == hwnd()) {
+        if (!enabled()) { return std::nullopt; }
+        hide_tooltip();
+        // Shift+F10 and the menu key send (-1, -1) instead of a screen position.
+        const bool keyboard = lparam == static_cast<LPARAM>(-1) || (LOWORD(lparam) == 0xFFFF && HIWORD(lparam) == 0xFFFF);
+        const auto handled = keyboard ? tree_.context_menu(std::nullopt)
+                                      : tree_.context_menu(pointer_position_from_screen(lparam));
+        return handled ? std::optional<LRESULT>{0} : std::nullopt;
+    }
     if (message == WM_TIMER && wparam == tooltipTimer) {
         show_tooltip();
         return 0;

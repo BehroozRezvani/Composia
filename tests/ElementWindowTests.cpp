@@ -17,6 +17,7 @@ class Tile : public Element {
 public:
     explicit Tile(UINT32 color) : color(color) {}
     UINT32 color;
+    std::function<bool(const ContextMenuEvent&)> menu;
     unsigned paints{};
     layout::Point lastPress{};
     unsigned lastKey{};
@@ -37,6 +38,7 @@ private:
         lastKey = e.key;
         return true;
     }
+    bool on_context_menu(const ContextMenuEvent& e) override { return menu && menu(e); }
 };
 
 void flush(ElementWindow& window) {
@@ -355,6 +357,17 @@ int tooltips(const testing::Options& options) {
         require(r.top >= bottom.y - 1, "The keyboard tooltip was not placed below the element");
         archive->set_tooltip(L"");
         require(pump_until(hidden, delay), "Clearing the text left the tooltip showing");
+
+        // WM_CONTEXTMENU reaches the tree: a click by screen position, the keyboard by (-1, -1).
+        std::vector<ContextMenuEvent> menus;
+        archive->menu = [&](const ContextMenuEvent& e) { menus.push_back(e); return true; };
+        POINT screen{static_cast<LONG>(10 * window.scale()), static_cast<LONG>(40 * window.scale())};
+        ClientToScreen(window.hwnd(), &screen);
+        require(SendMessageW(window.hwnd(), WM_CONTEXTMENU, reinterpret_cast<WPARAM>(window.hwnd()),
+            MAKELPARAM(screen.x, screen.y)) == 0 && menus.size() == 1 && !menus[0].keyboard &&
+            std::abs(menus[0].position.y - 10) < 1, "A right click's WM_CONTEXTMENU missed the element");
+        SendMessageW(window.hwnd(), WM_CONTEXTMENU, reinterpret_cast<WPARAM>(window.hwnd()), static_cast<LPARAM>(-1));
+        require(menus.size() == 2 && menus[1].keyboard, "Shift+F10's WM_CONTEXTMENU missed the focused element");
     }
     app.close();
     return 0;
