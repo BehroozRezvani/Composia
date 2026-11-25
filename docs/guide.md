@@ -236,10 +236,27 @@ target_link_libraries(my_app PRIVATE Composia::Controls)
 ```
 
 The controls live in `composia::controls`. A renderer receives the drawing scope, control,
-current `State` and optional `StyleTokens`. It draws in local DIPs. Set the control's
+current `State` and the control's `StyleTokens`. It draws in local DIPs. Set the control's
 preferred size for your design. Focus, hover, press, selected state and disabled state
 are available on every `Control`. The retained textbox keeps its Rich Edit painter and
 text operations. Use `state_of(box)` in that painter and call `draw_text` and `draw_caret`.
+
+Composia draws nothing for a control without a renderer. The tokens hold the colors for the
+foreground, background, accent and the text on it, hover, pressed, border, focus ring and
+disabled content, with padding, corner radius and font size. A control passes its renderer
+its own tokens, else those of the nearest ancestor control or `StyleScope` that has some,
+else `StyleTokens{}`. Wrap content in a `StyleScope` to theme everything inside it at once.
+`StyleTokens::from` turns the system appearance into tokens, dark mode, the accent color,
+the text size and high contrast included, for an application that chooses to follow it:
+
+```cpp
+namespace ui = composia::controls;
+auto scope = std::make_shared<ui::StyleScope>(ui::StyleTokens::from(app.appearance()),
+    composia::ElementLayout{composia::ElementLayout::Kind::stack});
+auto follow = app.on_appearance_changed([&](const composia::Appearance& appearance) {
+    scope->set_tokens(ui::StyleTokens::from(appearance));
+});
+```
 
 | Control | Interaction |
 | --- | --- |

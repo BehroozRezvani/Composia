@@ -13,6 +13,18 @@ change the API; each change is listed here.
 - `Window::on_key_preview` gives key presses aimed at a window or anything inside it to
   handlers before the dialog manager and the focused control, for accelerators.
   `PointerEvent` and `KeyEvent` moved to `composia/Input.hpp`, which `Element.hpp` includes.
+- `StyleTokens` adds accent foreground, hover, pressed, border, focus and disabled colors
+  and a font size for renderers. `StyleTokens::from(Appearance)` derives tokens from the
+  system appearance, high contrast included, for applications that follow it. `StyleScope`
+  gives the controls inside it the same tokens.
+
+### Changed
+
+- A control without tokens of its own passes its renderer those of the nearest ancestor
+  control or `StyleScope` with tokens, and `StyleTokens{}` only when there are none.
+  `Control::set_tokens` and `Picker::set_popup_tokens` take `std::optional<StyleTokens>`,
+  where `nullopt` inherits again, and `Control::tokens()` returns the resolved tokens by
+  value; `own_tokens()` returns what was set.
 
 ## 0.3.0 (2026-11-20)
 

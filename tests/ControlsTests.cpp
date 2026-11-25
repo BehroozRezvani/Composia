@@ -52,6 +52,48 @@ int behaviour(const testing::Options&) {
     return 0;
 }
 
+int style(const testing::Options&) {
+    Appearance dark;
+    dark.dark = true;
+    dark.accent = 0xffd700;
+    dark.textScale = 1.5f;
+    auto t = ui::StyleTokens::from(dark);
+    require(t.foreground == 0xffffff && t.background == 0x2b2b2b && t.accent == 0xffd700 &&
+        t.accentForeground == 0x000000 && t.fontSize == 21, "Dark appearance tokens");
+    Appearance contrast;
+    contrast.highContrast = true;
+    contrast.colors = {.window = 0x000000, .windowText = 0xfffffe, .buttonFace = 0x000001, .buttonText = 0xffff00,
+        .highlight = 0x00ffff, .highlightText = 0x000002, .grayText = 0x00ff00, .hotlight = 0x8080ff};
+    t = ui::StyleTokens::from(contrast);
+    require(t.background == 0x000001 && t.hover == 0x000001 && t.foreground == 0xffff00 && t.accent == 0x00ffff &&
+        t.accentForeground == 0x000002 && t.disabled == 0x00ff00 && t.focus == 0xfffffe, "High contrast tokens");
+
+    const ui::StyleTokens brand{0x111111, 0x222222, 0x333333};
+    auto root = std::make_shared<Element>(ElementLayout{ElementLayout::Kind::stack});
+    auto scope = std::make_shared<ui::StyleScope>(brand, ElementLayout{ElementLayout::Kind::stack});
+    auto inherits = std::make_shared<ui::Button>(L"Inherits", [] {});
+    auto own = std::make_shared<ui::Button>(L"Own", [] {});
+    own->set_tokens(ui::StyleTokens{0x444444});
+    auto panel = std::make_shared<ui::ScrollView>(L"Panel");
+    auto inner = std::make_shared<ui::Toggle>(L"Inner");
+    panel->set_content(inner);
+    panel->set_tokens(ui::StyleTokens{0x555555});
+    auto outside = std::make_shared<ui::Slider>(L"Outside", 0, 1, 0);
+    scope->add(inherits);
+    scope->add(own);
+    scope->add(panel);
+    root->add(scope);
+    root->add(outside);
+    ElementTree tree(root);
+    require(inherits->tokens() == brand && own->tokens().foreground == 0x444444 && inner->tokens().foreground == 0x555555 &&
+        outside->tokens() == ui::StyleTokens{}, "Tokens were not inherited from the nearest ancestor with tokens");
+    scope->set_tokens(std::nullopt);
+    own->set_tokens(std::nullopt);
+    require(inherits->tokens() == ui::StyleTokens{} && own->tokens() == ui::StyleTokens{} && !own->own_tokens(),
+        "Clearing tokens did not inherit again");
+    return 0;
+}
+
 int popup(const testing::Options&) {
     auto content = std::make_shared<Element>(ElementLayout{ElementLayout::Kind::stack});
     auto dropdown = std::make_shared<ui::Dropdown>(L"Output", ui::Items::strings({L"Stereo", L"Mono", L"Surround"}), 20, 60);
@@ -126,5 +168,6 @@ int virtualization(const testing::Options&) {
 }
 }
 int main(int argc, char** argv) {
-    return testing::run(argc, argv, {{"behaviour", behaviour}, {"virtualization", virtualization}, {"popup", popup}});
+    return testing::run(argc, argv, {{"behaviour", behaviour}, {"virtualization", virtualization}, {"popup", popup},
+        {"style", style}});
 }

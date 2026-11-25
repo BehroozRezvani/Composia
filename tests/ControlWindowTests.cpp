@@ -105,6 +105,38 @@ int interaction(const testing::Options& options) {
     }
     return 0;
 }
+// A renderer receives the tokens its control inherits and repaints when they change; a control
+// without a renderer draws nothing.
+int tokens(const testing::Options& options) {
+    Application app(options.warp);
+    namespace ui = composia::controls;
+    ui::StyleTokens theme{0xf0f0f0, 0x204060, 0xc03020};
+    auto scope = std::make_shared<ui::StyleScope>(theme, ElementLayout{ElementLayout::Kind::stack});
+    auto drawn = std::make_shared<ui::Button>(L"Apply", [] {});
+    drawn->set_renderer([](ScopedSurfaceDraw& d, const ui::Control& c, ui::State, const ui::StyleTokens& t) {
+        d.context()->FillRectangle({0, 0, c.bounds().width, c.bounds().height}, d.solid_brush(t.background));
+    });
+    auto bare = std::make_shared<ui::Button>(L"Cancel", [] {});
+    scope->add(drawn);
+    scope->add(bare);
+    ElementWindow window(app, L"Style tokens", 200, 100, scope);
+    window.show(SW_SHOWNOACTIVATE);
+    flush(window);
+    auto pixel = [&](float x, float y) {
+        return testing::surface_pixel(app, window.composition_target().surface(), LONG(x * window.scale()),
+                                      LONG(y * window.scale()));
+    };
+    require(testing::matches(pixel(10, 10), 0x204060), "The renderer did not receive the scope's tokens");
+    require(pixel(10, 40).a == 0, "A control without a renderer drew something");
+    theme.background = 0x408020;
+    scope->set_tokens(theme);
+    flush(window);
+    require(testing::matches(pixel(10, 10), 0x408020), "Changing the scope's tokens did not repaint");
+    scope->set_tokens(std::nullopt);
+    flush(window);
+    require(testing::matches(pixel(10, 10), ui::StyleTokens{}.background), "Without a scope the renderer did not get StyleTokens{}");
+    return 0;
+}
 int fixture(const testing::Options& options) {
     Application app(options.warp);
     playback::Playback panel(app);
@@ -115,5 +147,5 @@ int fixture(const testing::Options& options) {
 }
 }
 int main(int argc, char** argv) {
-    return testing::run(argc, argv, {{"interaction", interaction}, {"fixture", fixture}});
+    return testing::run(argc, argv, {{"interaction", interaction}, {"fixture", fixture}, {"tokens", tokens}});
 }

@@ -1,7 +1,9 @@
 #pragma once
+#include <composia/Appearance.hpp>
 #include <composia/ElementAccessibility.hpp>
 #include <composia/TextBox.hpp>
 #include <cstdint>
+#include <optional>
 
 namespace composia::controls {
 
@@ -33,20 +35,47 @@ private:
 };
 
 struct State { bool hovered{}, pressed{}, focused{}, disabled{}, selected{}; };
+// The colors and metrics a renderer draws with. Colors are 0xRRGGBB.
 struct StyleTokens {
     std::uint32_t foreground{0x202020}, background{0xffffff}, accent{0x0067c0};
     float padding{6}, radius{4};
+    std::uint32_t accentForeground{0xffffff};         // Text and glyphs on the accent.
+    std::uint32_t hover{0xf0f0f0}, pressed{0xe4e4e4}; // Backgrounds under the pointer and while pressed.
+    std::uint32_t border{0x8a8a8a}, focus{0x000000};  // Outlines, and the keyboard focus ring.
+    std::uint32_t disabled{0x9e9e9e};                 // Text and glyphs of a disabled control.
+    float fontSize{14};                               // DIPs.
+    bool operator==(const StyleTokens&) const = default;
+
+    // A starting point for an application that follows the system appearance: light or dark
+    // neutrals around its accent, or under high contrast the theme's own colors, with the font
+    // size scaled by the text size setting. Controls use it only when the application passes it.
+    [[nodiscard]] static StyleTokens from(const Appearance&);
+};
+
+// Gives the controls inside it that have no tokens of their own the same tokens, such as an
+// application's theme. A scope without tokens passes on what it inherits.
+class StyleScope : public Element {
+public:
+    explicit StyleScope(std::optional<StyleTokens> tokens = std::nullopt, ElementLayout layout = {});
+    void set_tokens(std::optional<StyleTokens>);
+    [[nodiscard]] const std::optional<StyleTokens>& tokens() const noexcept { return tokens_; }
+private:
+    std::optional<StyleTokens> tokens_;
 };
 
 using TextBox = composia::TextBox;
 [[nodiscard]] State state_of(const TextBox&);
 
+// A control draws only through its renderer, which receives its tokens: its own, else those of
+// the nearest ancestor control or StyleScope that has some, else StyleTokens{}.
 class Control : public Element {
 public:
     using Renderer = std::function<void(ScopedSurfaceDraw&, const Control&, State, const StyleTokens&)>;
     void set_renderer(Renderer);
-    void set_tokens(StyleTokens);
-    [[nodiscard]] const StyleTokens& tokens() const noexcept { return tokens_; }
+    // nullopt inherits tokens again.
+    void set_tokens(std::optional<StyleTokens>);
+    [[nodiscard]] StyleTokens tokens() const;
+    [[nodiscard]] const std::optional<StyleTokens>& own_tokens() const noexcept { return tokens_; }
     [[nodiscard]] virtual State state() const;
     [[nodiscard]] std::wstring_view name() const noexcept;
 protected:
@@ -59,7 +88,7 @@ protected:
 private:
     bool pressed_{};
     Renderer renderer_;
-    StyleTokens tokens_;
+    std::optional<StyleTokens> tokens_;
 };
 
 class Pressable : public Control {
@@ -196,7 +225,7 @@ public:
     [[nodiscard]] const List& popup() const noexcept { return *list_; }
     void set_row_renderer(List::RowRenderer renderer) { list_->set_row_renderer(std::move(renderer)); }
     void set_popup_renderer(Renderer renderer) { list_->set_renderer(std::move(renderer)); }
-    void set_popup_tokens(StyleTokens tokens) { list_->set_tokens(tokens); }
+    void set_popup_tokens(std::optional<StyleTokens> tokens) { list_->set_tokens(tokens); }
     Connection on_selection(std::function<void(List::Index)> f) { return changed_.connect(std::move(f)); }
 protected:
     Picker(std::wstring name, Items, bool menu, float rowHeight, float maxPopupHeight);

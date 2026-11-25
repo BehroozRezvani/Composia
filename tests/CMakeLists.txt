@@ -150,9 +150,9 @@ endif()
 # Optional appearance-independent controls.
 if(COMPOSIA_BUILD_CONTROLS)
     composia_test_target(composia-controls-tests ControlsTests.cpp Composia::Controls)
-    composia_add_scenarios(composia-controls-tests controls CORE SCENARIOS behaviour virtualization popup)
+    composia_add_scenarios(composia-controls-tests controls CORE SCENARIOS behaviour virtualization popup style)
     composia_test_target(composia-control-window-tests ControlWindowTests.cpp Composia::Controls)
-    composia_add_scenarios(composia-control-window-tests controls WARP SCENARIOS interaction)
+    composia_add_scenarios(composia-control-window-tests controls WARP SCENARIOS interaction tokens)
     if(COMPOSIA_TEST_NVDA AND COMPOSIA_TEST_ACCCHECK)
         add_test(NAME accessibility-playback COMMAND "${Python3_EXECUTABLE}"
             "${CMAKE_CURRENT_SOURCE_DIR}/accessibility_tools.py" --playback

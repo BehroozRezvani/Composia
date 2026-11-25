@@ -4,6 +4,55 @@
 #include <stdexcept>
 
 namespace composia::controls {
+namespace {
+bool light(std::uint32_t rgb) {
+    const auto r = (rgb >> 16) & 0xff, g = (rgb >> 8) & 0xff, b = rgb & 0xff;
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.5 * 255;
+}
+}
+
+StyleTokens StyleTokens::from(const Appearance& appearance) {
+    StyleTokens t;
+    t.fontSize = 14 * appearance.textScale;
+    if (appearance.highContrast) {
+        const auto& c = appearance.colors;
+        t.foreground = c.buttonText;
+        t.background = t.hover = t.pressed = c.buttonFace;
+        t.accent = c.highlight;
+        t.accentForeground = c.highlightText;
+        t.border = c.buttonText;
+        t.focus = c.windowText;
+        t.disabled = c.grayText;
+        return t;
+    }
+    t.accent = appearance.accent;
+    t.accentForeground = light(appearance.accent) ? 0x000000 : 0xffffff;
+    if (appearance.dark) {
+        t.foreground = t.focus = 0xffffff;
+        t.background = 0x2b2b2b;
+        t.hover = 0x363636;
+        t.pressed = 0x262626;
+        t.border = 0x5a5a5a;
+        t.disabled = 0x787878;
+    } else {
+        t.foreground = 0x1b1b1b;
+        t.focus = 0x000000;
+        t.background = 0xfbfbfb;
+        t.hover = 0xf0f0f0;
+        t.pressed = 0xe6e6e6;
+        t.border = 0x8a8a8a;
+        t.disabled = 0xa0a0a0;
+    }
+    return t;
+}
+
+StyleScope::StyleScope(std::optional<StyleTokens> tokens, ElementLayout layout)
+    : Element(layout), tokens_(std::move(tokens)) {}
+void StyleScope::set_tokens(std::optional<StyleTokens> tokens) {
+    if (tokens == tokens_) { return; }
+    tokens_ = std::move(tokens);
+    invalidate();
+}
 Command::Command(std::function<void()> action) : execute_(std::move(action)) {
     if (!execute_) { throw std::invalid_argument("A command needs an action"); }
 }
@@ -31,9 +80,21 @@ std::wstring_view Control::name() const noexcept {
     return accessibility() ? std::wstring_view(accessibility()->name) : std::wstring_view{};
 }
 void Control::set_renderer(Renderer fn) { renderer_ = std::move(fn); invalidate(); }
-void Control::set_tokens(StyleTokens tokens) { tokens_ = tokens; invalidate(); }
+void Control::set_tokens(std::optional<StyleTokens> tokens) {
+    if (tokens == tokens_) { return; }
+    tokens_ = std::move(tokens);
+    invalidate();
+}
+StyleTokens Control::tokens() const {
+    if (tokens_) { return *tokens_; }
+    for (auto* p = parent(); p; p = p->parent()) {
+        if (auto* control = dynamic_cast<const Control*>(p); control && control->tokens_) { return *control->tokens_; }
+        if (auto* scope = dynamic_cast<const StyleScope*>(p); scope && scope->tokens()) { return *scope->tokens(); }
+    }
+    return {};
+}
 void Control::paint(ScopedSurfaceDraw& draw) {
-    if (renderer_) { renderer_(draw, *this, state(), tokens_); }
+    if (renderer_) { renderer_(draw, *this, state(), tokens()); }
 }
 void Control::set_pressed(bool value) {
     if (pressed_ != value) { pressed_ = value; invalidate(); }
