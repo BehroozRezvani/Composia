@@ -208,7 +208,12 @@ public:
                                             layout::Size, State, const StyleTokens&)>;
     List(std::wstring name, Items, float rowHeight = 32, float viewportHeight = 160);
     ~List() override;
+    // New rows: the selection, the current row and the scroll position start over.
     void set_items(Items);
+    // New rows for the same view, as when a tree row opens: the scroll position stays where it
+    // can, the given row is selected (or none), and the keyboard rests on `current` if given,
+    // else on the selected row. Raises no selection change; the rows are realized again.
+    void replace_items(Items, Index selected, Index current = std::nullopt);
     void set_row_renderer(RowRenderer);
     [[nodiscard]] const Items& items() const noexcept { return items_; }
     [[nodiscard]] Index selected() const noexcept { return selected_; }
@@ -238,6 +243,7 @@ private:
     friend class PopupHost;
     class Row;
     List(std::wstring, Items, float, float, bool menu);
+    void assign(Items, Index selected, Index current, bool keepView);
     Row& realize(std::size_t);
     // Where row i starts in the content, and how tall it is, in DIPs; top(count) is the extent.
     [[nodiscard]] double top(std::size_t) const noexcept;

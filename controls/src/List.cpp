@@ -82,7 +82,21 @@ List::~List() {
     for (auto& child : rows_->children()) { static_cast<Row&>(*child).owner = nullptr; }
 }
 void List::set_items(Items items) {
+    const bool notify = selected_.has_value();
+    assign(std::move(items), {}, {}, false);
+    if (notify) { changed_.emit({}); }
+}
+void List::replace_items(Items items, Index selected, Index current) {
+    assign(std::move(items), selected, current ? current : selected, true);
+}
+void List::assign(Items items, Index selected, Index current, bool keepView) {
     if (items.count && !items.label) { throw std::invalid_argument("A list needs row labels"); }
+    if ((selected && *selected >= items.count) || (current && *current >= items.count)) {
+        throw std::out_of_range("Invalid list index");
+    }
+    if (selected && items.selectable && !items.selectable(*selected)) {
+        throw std::invalid_argument("The row cannot be selected");
+    }
     std::vector<double> tops;
     float shortest = rowHeight_;
     double extent = double(items.count) * rowHeight_;
@@ -108,7 +122,6 @@ void List::set_items(Items items) {
         static_cast<Row&>(*row).owner = nullptr;
         rows_->remove(*row);
     }
-    const bool notify = selected_.has_value();
     selected_.reset();
     current_.reset();
     prefix_.clear();
@@ -123,9 +136,17 @@ void List::set_items(Items items) {
         }
     }
     rows_->set_preferred_size({0, static_cast<float>(extent)});
-    set_scroll_offset(0);
+    if (!keepView) { set_scroll_offset(0); }
     invalidate_measure();
-    if (notify) { changed_.emit({}); }
+    selected_ = selected;
+    current_ = current;
+    if (selected_) {
+        auto& row = realize(*selected_);
+        auto a = *row.accessibility();
+        a.selected = true;
+        row.set_accessibility(std::move(a));
+    }
+    if (current_) { realize(*current_); }
 }
 void List::set_row_renderer(RowRenderer renderer) { renderer_ = std::move(renderer); invalidate(); }
 std::size_t List::realized_count() const noexcept { return rows_->children().size(); }

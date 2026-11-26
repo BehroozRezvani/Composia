@@ -286,6 +286,38 @@ int tree(const testing::Options&) {
     return 0;
 }
 
+int replace(const testing::Options&) {
+    const auto numbered = [](std::size_t count) {
+        return ui::Items{count, [](std::size_t i) { return L"Row " + std::to_wstring(i); }};
+    };
+    auto list = std::make_shared<ui::List>(L"Folders", numbered(10), 24, 72);
+    int selections{};
+    auto onSelection = list->on_selection([&](ui::List::Index) { ++selections; });
+    ElementTree tree(list);
+    tree.set_viewport({200, 72});
+    tree.update_layout();
+    require(list->go_to(5), "go_to");
+    tree.update_layout();
+    require(list->scroll_offset() == 72 && selections == 1, "go_to did not reveal the row");
+    list->replace_items(numbered(12), 4);
+    tree.update_layout();
+    const auto* row = tree.hit_test({8, 30});
+    require(list->selected() == 4 && list->current() == 4 && list->scroll_offset() == 72 && selections == 1,
+        "Replacing the rows moved the view or raised a selection change");
+    require(row && row->accessibility()->selected == true, "The selected row was not exposed as selected");
+    require(list->request_focus(), "List focus");
+    tree.key({VK_DOWN, true});
+    require(list->selected() == 5, "The keyboard did not go on from the row given");
+    list->replace_items(numbered(3), std::nullopt, 2);
+    tree.update_layout();
+    require(!list->selected() && list->current() == 2 && list->scroll_offset() == 0,
+        "Fewer rows did not clamp the view or keep the current row");
+    bool rejected{};
+    try { list->replace_items(numbered(3), 3); } catch (const std::out_of_range&) { rejected = true; }
+    require(rejected && list->items().count == 3, "A selection past the rows was accepted");
+    return 0;
+}
+
 int popup(const testing::Options&) {
     auto content = std::make_shared<Element>(ElementLayout{ElementLayout::Kind::stack});
     auto dropdown = std::make_shared<ui::Dropdown>(L"Output", ui::Items::strings({L"Stereo", L"Mono", L"Surround"}), 20, 60);
@@ -362,5 +394,5 @@ int virtualization(const testing::Options&) {
 int main(int argc, char** argv) {
     return testing::run(argc, argv, {{"behaviour", behaviour}, {"virtualization", virtualization}, {"popup", popup},
         {"style", style}, {"scrollbar", scrollbar}, {"context", context}, {"heights", heights},
-        {"current", current}, {"tree", tree}});
+        {"current", current}, {"tree", tree}, {"replace", replace}});
 }

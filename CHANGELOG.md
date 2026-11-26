@@ -39,6 +39,8 @@ change the API; each change is listed here.
   and Left open and fold rows or move to a child or the parent, and `List::on_expand` asks the
   owner to change its rows. Tree items report their level and support ExpandCollapse.
   `ElementAccessibility::level` serves the UI Automation Level property.
+- `List::replace_items` changes the rows under a view that stays: it keeps the scroll position
+  and selects the row the owner gives without raising a selection change.
 
 ### Changed
 
