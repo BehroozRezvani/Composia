@@ -400,6 +400,14 @@ void ElementTree::paint(ScopedSurfaceDraw& surface) {
     root_->draw(surface, {}, {r.left, r.top, r.right - r.left, r.bottom - r.top});
 }
 
+void ElementTree::paint(ScopedSurfaceDraw& surface, Rect area) {
+    update_layout();
+    traversing_ = true;
+    const auto reset = wil::scope_exit([&] { traversing_ = false; });
+    surface.context()->Clear(D2D1::ColorF(0, 0.0f));
+    root_->draw(surface, {-area.x, -area.y}, {0, 0, area.width, area.height});
+}
+
 Element* ElementTree::hit_test(Point p) {
     update_layout();
     const auto r = root_->bounds_;

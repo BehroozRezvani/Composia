@@ -1,7 +1,11 @@
 #include <composia/ElementWindow.hpp>
+#include <composia/Application.hpp>
+#include <composia/ScopedSurfaceDraw.hpp>
 #include <composia/HostedWindow.hpp>
 #include <composia/TextBox.hpp>
 #include <algorithm>
+#include <cmath>
+#include <stdexcept>
 #include <commctrl.h>
 #include "ElementAutomation.hpp"
 
@@ -139,6 +143,30 @@ HWND ElementWindow::outside_tab_stop(bool backwards) const {
 
 void ElementWindow::hand_focus_to_hosted_window() {
     if (auto* hosted = dynamic_cast<HostedWindow*>(tree_.focused()); hosted && focused()) { hosted->take_focus(); }
+}
+
+composition::SpriteVisual ElementWindow::snapshot(layout::Rect area) {
+    if (!std::isfinite(area.x) || !std::isfinite(area.y) || !std::isfinite(area.width) || !std::isfinite(area.height) ||
+        area.width <= 0 || area.height <= 0) {
+        throw std::invalid_argument("Expected an area with a size");
+    }
+    auto& app = application();
+    const double scale = this->scale();
+    const winrt::Windows::Foundation::Size pixels{static_cast<float>(std::ceil(area.width * scale)),
+                                                  static_cast<float>(std::ceil(area.height * scale))};
+    composition::CompositionDrawingSurface surface{nullptr};
+    app.render([&] {
+        surface = app.graphics().composition_device().CreateDrawingSurface(pixels,
+            winrt::Windows::Graphics::DirectX::DirectXPixelFormat::B8G8R8A8UIntNormalized,
+            winrt::Windows::Graphics::DirectX::DirectXAlphaMode::Premultiplied);
+        ScopedSurfaceDraw draw{surface, app.graphics(), dpi()};
+        tree_.paint(draw, area);
+        draw.finish();
+    });
+    auto sprite = app.compositor().CreateSpriteVisual();
+    sprite.Brush(app.compositor().CreateSurfaceBrush(surface));
+    sprite.Size({area.width, area.height});
+    return sprite;
 }
 
 void ElementWindow::on_resize() {

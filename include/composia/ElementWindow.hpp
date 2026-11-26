@@ -25,6 +25,12 @@ public:
     // HostedWindow element, the focus goes to its window.
     bool focus_element(Element&);
     [[nodiscard]] ElementTree& elements() noexcept { return tree_; }
+    // A picture of an area of the tree (viewport DIPs) as it draws now: a sprite of the area's
+    // size with a surface of its own, painted once. It holds the tree's own drawing, not hosted
+    // windows or visuals, and does not follow later changes. Place it in a HostedVisual and
+    // animate it in the compositor while the tree changes underneath, as in a transition, then
+    // drop it. A graphics device loss can empty it.
+    [[nodiscard]] composition::SpriteVisual snapshot(layout::Rect area);
     [[nodiscard]] CompositionWindowTarget& composition_target() noexcept { return target_; }
 
 protected:

@@ -170,6 +170,9 @@ public:
     [[nodiscard]] std::optional<layout::Rect> take_dirty_bounds();
     // Reconstructs the entire update_bounds(), including transparent gaps and overlapping layers.
     void paint(ScopedSurfaceDraw&);
+    // Paints an area of the viewport into the whole surface, with the area's top-left corner at
+    // the surface's origin: a picture of part of the tree, such as for a snapshot.
+    void paint(ScopedSurfaceDraw&, layout::Rect area);
     [[nodiscard]] Element* hit_test(layout::Point);
     bool pointer(PointerEvent);                // Input position in viewport DIPs.
     void pointer_leave();

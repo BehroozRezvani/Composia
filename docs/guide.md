@@ -560,6 +560,12 @@ auto progress = std::make_shared<composia::HostedVisual>(track);
 progress->set_preferred_size({0, 3});
 ```
 
+`ElementWindow::snapshot(area)` pictures an area of the tree as it draws now, in a sprite with
+a surface of its own, for a transition: put it in a `HostedVisual` over the area, change the
+tree underneath, and animate the picture away in the compositor (sliding rows apart, fading
+out a page), then drop it. It holds the tree's own drawing only and keeps what it showed.
+Custom hosts paint an area with `ElementTree::paint(draw, area)`.
+
 ## System appearance
 
 Composia leaves the look of an application to the application, and tells it what Windows

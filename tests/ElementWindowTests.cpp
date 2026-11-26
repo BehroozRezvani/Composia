@@ -328,6 +328,39 @@ int visuals(const testing::Options& options) {
     return 0;
 }
 
+int snapshot(const testing::Options& options) {
+    Application app{options.warp};
+    {
+        auto root = std::make_shared<Element>(ElementLayout{Kind::stack});
+        auto top = std::make_shared<Tile>(0x203040);
+        top->set_preferred_size({100, 20});
+        auto bottom = std::make_shared<Tile>(0x406080);
+        bottom->set_preferred_size({100, 40});
+        root->add(top);
+        root->add(bottom);
+        ElementWindow window{app, L"Snapshots", 200, 100, root};
+        window.show(SW_SHOWNOACTIVATE);
+        flush(window);
+        // From 10 DIPs down: the top tile's last 10 DIPs, then the bottom tile.
+        const auto sprite = window.snapshot({10, 10, 50, 30});
+        require(sprite.Size().x == 50 && sprite.Size().y == 30 && !sprite.Parent(), "Snapshot size");
+        const auto surface = sprite.Brush().as<composition::CompositionSurfaceBrush>().Surface();
+        const auto px = [&](float dips) { return static_cast<LONG>(std::lround(dips * window.scale())); };
+        require(testing::matches(testing::surface_pixel(app, surface, px(2), px(2)), 0x203040) &&
+            testing::matches(testing::surface_pixel(app, surface, px(2), px(20)), 0x406080),
+            "The snapshot did not picture the area");
+        top->color = 0xc03020;
+        top->invalidate();
+        flush(window);
+        require(testing::matches(testing::surface_pixel(app, surface, px(2), px(2)), 0x203040),
+            "The snapshot followed a later change");
+        bool rejected{};
+        try { (void)window.snapshot({0, 0, 0, 10}); } catch (const std::invalid_argument&) { rejected = true; }
+        require(rejected, "An empty area was accepted");
+    }
+    return 0;
+}
+
 int tooltips(const testing::Options& options) {
     Application app{options.warp};
     {
@@ -436,5 +469,5 @@ int tooltips(const testing::Options& options) {
 
 int main(int argc, char** argv) {
     return testing::run(argc, argv, {{"pixels", pixels}, {"navigation", navigation}, {"hosted", hosted},
-        {"tooltips", tooltips}, {"visuals", visuals}});
+        {"tooltips", tooltips}, {"visuals", visuals}, {"snapshot", snapshot}});
 }

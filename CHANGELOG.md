@@ -49,6 +49,8 @@ change the API; each change is listed here.
   pointer through, so applications animate content in a tree with the compositor.
 - `List::set_overlay` lays a `HostedVisual` over the rows that scrolls with them, and
   `List::row_bounds` gives each row's place in it.
+- `ElementWindow::snapshot` pictures an area of the tree in a sprite of its own, to animate in
+  the compositor during a transition; `ElementTree::paint` can paint an area of the viewport.
 
 ### Changed
 
