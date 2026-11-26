@@ -37,6 +37,9 @@ public:
             }
         }
         set_offset({0, static_cast<float>(list.top(i))});
+        if (list.items_.content) {
+            if (auto content = list.items_.content(i)) { add(std::move(content)); }
+        }
     }
     void activate() override {
         choose(doubleClick || (owner && owner->popupFocus_));
@@ -249,6 +252,25 @@ bool List::go_to(std::size_t index) {
     if (!move_to(index)) { return false; }
     if (current_ == index) { reveal(index); }
     return true;
+}
+List::Index List::index_at(layout::Point point) const noexcept {
+    if (point.x < 0 || point.x >= bounds().width || point.y < 0 || point.y >= bounds().height) { return std::nullopt; }
+    return row_at(double(point.y) + scroll_offset());
+}
+void List::refresh(std::size_t index) {
+    if (index >= items_.count) { throw std::out_of_range("Invalid list index"); }
+    for (const auto& child : rows_->children()) {
+        auto& row = static_cast<Row&>(*child);
+        if (row.index != index) { continue; }
+        auto label = items_.label(index);
+        if (row.name() != label) {
+            auto a = *row.accessibility();
+            a.name = std::move(label);
+            row.set_accessibility(std::move(a));
+        }
+        row.invalidate();
+        return;
+    }
 }
 void List::reveal(std::size_t index) {
     if (index >= items_.count) { throw std::out_of_range("Invalid list index"); }

@@ -198,6 +198,10 @@ struct Items {
     std::function<std::size_t(std::size_t)> level{};
     // Optional: whether a row's children show (true), are folded away (false), or it has none.
     std::function<std::optional<bool>(std::size_t)> expanded{};
+    // Optional elements over a row, made each time the row is realized and filling it: controls
+    // inside a row, such as a button. They draw above the row renderer and take pointer input
+    // before the row; what they leave goes on to the row.
+    std::function<std::shared_ptr<Element>(std::size_t)> content{};
     static Items strings(std::vector<std::wstring>);
 };
 
@@ -226,6 +230,12 @@ public:
     // current one, and reveals it.
     bool go_to(std::size_t);
     void reveal(std::size_t);
+    // The row at a point in the list's own DIPs, as its pointer and context menu events give
+    // them, or nullopt.
+    [[nodiscard]] Index index_at(layout::Point) const noexcept;
+    // Reads a realized row's label again and repaints it, for a change that keeps its height,
+    // such as a count, or a look the renderer gives it, such as a drop target.
+    void refresh(std::size_t);
     bool navigate(const KeyEvent&);
     bool type_ahead(std::wstring_view);
     // Activates the current row: the selected one, unless the keyboard rests on a row that

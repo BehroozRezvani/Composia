@@ -328,6 +328,11 @@ also reports its level; the owner changes its rows and sets them again. The list
 rows for the pointer: a renderer draws the expander, and the owner toggles from `on_activate`
 or from a control in the row.
 
+`Items::content` puts elements over a row each time it is realized, such as a button inside
+it. They draw above the row renderer and take the pointer first; a press they leave selects
+the row. `index_at` finds the row at a point in the list, for a drop target, and `refresh`
+reads a row's label again and repaints it after a change that keeps its height.
+
 For large lists, supply an `Items` count and indexed label callback. The list realizes
 the rows covering the viewport, including partially visible rows, and retains
 the selected row when it scrolls offscreen. Rows take the list's row height, or each its own

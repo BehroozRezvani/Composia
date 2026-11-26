@@ -318,6 +318,47 @@ int replace(const testing::Options&) {
     return 0;
 }
 
+int content(const testing::Options&) {
+    // Even rows carry a button near their right end.
+    std::vector<std::wstring> labels;
+    for (int i = 0; i < 20; ++i) { labels.push_back(L"Row " + std::to_wstring(i)); }
+    int presses{}, made{};
+    ui::Items items{labels.size(), [&](std::size_t i) { return labels[i]; }};
+    items.content = [&](std::size_t i) -> std::shared_ptr<Element> {
+        if (i % 2) { return nullptr; }
+        ++made;
+        auto content = std::make_shared<Element>(ElementLayout{ElementLayout::Kind::canvas});
+        auto button = std::make_shared<ui::Button>(L"Sync " + std::to_wstring(i), [&] { ++presses; });
+        button->set_preferred_size({40, 22});
+        button->set_offset({150, 4});
+        content->add(button);
+        return content;
+    };
+    auto list = std::make_shared<ui::List>(L"Folders", items, 30, 90);
+    ElementTree tree(list);
+    tree.set_viewport({200, 90});
+    tree.update_layout();
+    require(made == 2, "Content was not made for the realized rows only");
+    using Kind = PointerEvent::Kind;
+    using Mouse = PointerEvent::Button;
+    tree.pointer({Kind::down, {160, 10}, Mouse::left});
+    tree.pointer({Kind::up, {160, 10}, Mouse::left});
+    require(presses == 1 && !list->selected(), "A row's button did not take the press before the row");
+    tree.pointer({Kind::down, {8, 10}, Mouse::left});
+    tree.pointer({Kind::up, {8, 10}, Mouse::left});
+    require(list->selected() == 0, "A press beside a row's button did not reach the row");
+    require(list->index_at({8, 45}) == 1 && !list->index_at({8, -1}) && !list->index_at({8, 95}), "index_at");
+    list->set_scroll_offset(30);
+    tree.update_layout();
+    require(list->index_at({8, 45}) == 2, "index_at did not follow the scroll position");
+    labels[2] = L"Row 2, 5 unread";
+    list->refresh(2);
+    const Element* row = tree.hit_test({8, 40});
+    while (row && !(row->accessibility() && row->accessibility()->name.starts_with(L"Row 2"))) { row = row->parent(); }
+    require(row && row->accessibility()->name == L"Row 2, 5 unread", "refresh did not read the label again");
+    return 0;
+}
+
 int popup(const testing::Options&) {
     auto content = std::make_shared<Element>(ElementLayout{ElementLayout::Kind::stack});
     auto dropdown = std::make_shared<ui::Dropdown>(L"Output", ui::Items::strings({L"Stereo", L"Mono", L"Surround"}), 20, 60);
@@ -394,5 +435,6 @@ int virtualization(const testing::Options&) {
 int main(int argc, char** argv) {
     return testing::run(argc, argv, {{"behaviour", behaviour}, {"virtualization", virtualization}, {"popup", popup},
         {"style", style}, {"scrollbar", scrollbar}, {"context", context}, {"heights", heights},
-        {"current", current}, {"tree", tree}, {"replace", replace}});
+        {"current", current}, {"tree", tree}, {"replace", replace},
+        {"content", content}});
 }

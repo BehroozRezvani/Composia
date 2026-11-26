@@ -41,6 +41,9 @@ change the API; each change is listed here.
   `ElementAccessibility::level` serves the UI Automation Level property.
 - `List::replace_items` changes the rows under a view that stays: it keeps the scroll position
   and selects the row the owner gives without raising a selection change.
+- `Items::content` places elements over a realized row, such as a button, ahead of the row for
+  the pointer. `List::index_at` finds the row at a point and `List::refresh` reads a row's
+  label again and repaints it.
 
 ### Changed
 
