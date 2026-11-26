@@ -190,6 +190,9 @@ struct Items {
     // Optional height of each row in DIPs, positive and finite. Without it, every row takes the
     // list's row height. The list reads every height when the items are set.
     std::function<float(std::size_t)> height{};
+    // Optional: whether a row can be selected. A row that cannot, such as a heading, can still be
+    // the current row, where the keyboard acts, but is never selected.
+    std::function<bool(std::size_t)> selectable{};
     static Items strings(std::vector<std::wstring>);
 };
 
@@ -204,10 +207,19 @@ public:
     void set_row_renderer(RowRenderer);
     [[nodiscard]] const Items& items() const noexcept { return items_; }
     [[nodiscard]] Index selected() const noexcept { return selected_; }
+    // The row the keyboard acts on: the selected row, or a row that cannot be selected once the
+    // keyboard or the pointer moved to it.
+    [[nodiscard]] Index current() const noexcept { return current_; }
+    // False for a row that cannot be selected.
     bool select(Index);
+    // Moves to a row as the arrow keys do: selects it, or makes a row that cannot be selected the
+    // current one, and reveals it.
+    bool go_to(std::size_t);
     void reveal(std::size_t);
     bool navigate(const KeyEvent&);
     bool type_ahead(std::wstring_view);
+    // Activates the current row: the selected one, unless the keyboard rests on a row that
+    // cannot be selected.
     bool activate_selected();
     [[nodiscard]] std::size_t realized_count() const noexcept;
     Connection on_selection(std::function<void(Index)> f) { return changed_.connect(std::move(f)); }
@@ -225,6 +237,11 @@ private:
     [[nodiscard]] std::size_t rows_before(double y) const noexcept;
     // The row at the content offset y, or nullopt past either end.
     [[nodiscard]] Index row_at(double y) const noexcept;
+    [[nodiscard]] bool selectable(std::size_t) const;
+    // Selects a row, or makes a row that cannot be selected current, without scrolling.
+    bool move_to(std::size_t);
+    void set_current(Index);
+    void invalidate_row(std::size_t);
     void synchronize_selection();
     void on_layout_updated() override;
     // Selects the row under a right click first; the keyboard's position is the selected row's.
@@ -234,7 +251,7 @@ private:
     std::shared_ptr<Element> rows_;
     Items items_;
     std::vector<double> tops_;   // With Items::height: each row's top, then the extent.
-    Index selected_;
+    Index selected_, current_;
     float rowHeight_;
     bool menu_;
     bool popupFocus_{};

@@ -186,6 +186,45 @@ int heights(const testing::Options&) {
     return 0;
 }
 
+int current(const testing::Options&) {
+    // The headings Mail and Work take the keyboard but are never selected.
+    auto items = ui::Items::strings({L"Mail", L"Inbox", L"Sent", L"Work", L"Projects", L"Archive"});
+    items.selectable = [](std::size_t i) { return i != 0 && i != 3; };
+    auto list = std::make_shared<ui::List>(L"Folders", items, 24, 144);
+    std::vector<std::size_t> activated;
+    std::vector<ContextMenuEvent> menus;
+    auto onActivate = list->on_activate([&](std::size_t i) { activated.push_back(i); });
+    auto onMenu = list->on_context_requested([&](const ContextMenuEvent& e) { menus.push_back(e); });
+    ElementTree tree(list);
+    tree.set_viewport({200, 144});
+    tree.update_layout();
+    require(list->request_focus(), "List focus");
+    tree.key({VK_DOWN, true});
+    require(list->current() == 0 && !list->selected(), "The keyboard selected a heading or passed it by");
+    tree.key({VK_DOWN, true});
+    tree.key({VK_DOWN, true});
+    tree.key({VK_DOWN, true});
+    require(list->current() == 3 && list->selected() == 2, "Moving onto a heading changed the selection");
+    tree.key({VK_RETURN, true});
+    require(activated == std::vector<std::size_t>{3}, "Enter did not activate the current heading");
+    require(!list->select(3) && list->selected() == 2, "A heading could be selected");
+    tree.update_layout();
+    tree.context_menu(layout::Point{8, 10});
+    require(list->current() == 0 && list->selected() == 2, "A right click on a heading selected it");
+    require(tree.context_menu(std::nullopt) && menus.size() == 2 && menus[1].position.y == 24,
+        "A keyboard request was not placed below the current row");
+    const auto* heading = tree.hit_test({8, 10});
+    const auto* folder = tree.hit_test({8, 30});
+    require(heading && !heading->accessibility()->selected && folder && folder->accessibility()->selected,
+        "A heading was exposed as a selection item, or a folder was not");
+    tree.text_input(L"p");
+    require(list->selected() == 4 && list->current() == 4, "Typing did not select the match after a heading");
+    require(list->go_to(3) && list->current() == 3 && list->selected() == 4, "go_to did not rest on a heading");
+    list->set_items(items);
+    require(!list->current() && !list->selected(), "New items kept the current row");
+    return 0;
+}
+
 int popup(const testing::Options&) {
     auto content = std::make_shared<Element>(ElementLayout{ElementLayout::Kind::stack});
     auto dropdown = std::make_shared<ui::Dropdown>(L"Output", ui::Items::strings({L"Stereo", L"Mono", L"Surround"}), 20, 60);
@@ -261,5 +300,6 @@ int virtualization(const testing::Options&) {
 }
 int main(int argc, char** argv) {
     return testing::run(argc, argv, {{"behaviour", behaviour}, {"virtualization", virtualization}, {"popup", popup},
-        {"style", style}, {"scrollbar", scrollbar}, {"context", context}, {"heights", heights}});
+        {"style", style}, {"scrollbar", scrollbar}, {"context", context}, {"heights", heights},
+        {"current", current}});
 }

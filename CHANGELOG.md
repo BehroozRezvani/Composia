@@ -32,6 +32,9 @@ change the API; each change is listed here.
   `ElementWindow` routes `WM_CONTEXTMENU`, controls raise `on_context_requested`, and a list
   selects the row under a right click first. `Signal::connected` reports a subscriber.
 - `Items::height` gives each list row its own height; a list without it keeps one row height.
+- `Items::selectable` marks rows that cannot be selected, such as headings. The keyboard and
+  the pointer can still rest on them: `List::current` is that row, `go_to` moves there as the
+  arrows do, and Enter and the keyboard's context menu request act on it.
 
 ### Changed
 

@@ -17,7 +17,7 @@ public:
           owner(&list), index(i) {
         set_focusable(false);
         auto a = *accessibility();
-        a.selected = false;
+        if (list.selectable(i)) { a.selected = false; }
         a.invoke = [this] { choose(true); };
         set_accessibility(std::move(a));
         if (list.items_.command) {
@@ -37,14 +37,14 @@ public:
         return Pressable::on_pointer(e);
     }
     void choose(bool invoke) {
-        if (owner && owner->select(index) && owner && owner->selected() == index && invoke) {
+        if (owner && owner->move_to(index) && owner && owner->current() == index && invoke) {
             owner->activate_selected();
         }
     }
     void paint(ScopedSurfaceDraw& draw) override {
         if (!owner || !owner->renderer_) { return; }
         auto s = state();
-        s.focused = s.selected && (owner->focused() || owner->popupFocus_);
+        s.focused = owner->current_ == index && (owner->focused() || owner->popupFocus_);
         auto b = bounds();
         owner->renderer_(draw, index, name(), {b.width, b.height}, s, owner->tokens());
     }
@@ -101,6 +101,7 @@ void List::set_items(Items items) {
     }
     const bool notify = selected_.has_value();
     selected_.reset();
+    current_.reset();
     prefix_.clear();
     items_ = std::move(items);
     tops_ = std::move(tops);
@@ -129,6 +130,25 @@ List::Index List::row_at(double y) const noexcept {
     return static_cast<std::size_t>(std::upper_bound(tops_.begin(), tops_.end() - 1, y) - tops_.begin()) - 1;
 }
 
+bool List::selectable(std::size_t index) const { return !items_.selectable || items_.selectable(index); }
+void List::invalidate_row(std::size_t index) {
+    for (const auto& child : rows_->children()) {
+        if (static_cast<Row&>(*child).index == index) { child->invalidate(); return; }
+    }
+}
+void List::set_current(Index index) {
+    if (index == current_) { return; }
+    if (current_) { invalidate_row(*current_); }
+    current_ = index;
+    if (current_) { invalidate_row(*current_); }
+}
+bool List::move_to(std::size_t index) {
+    if (selectable(index)) { return select(index); }
+    realize(index);
+    set_current(index);
+    return true;
+}
+
 List::Row& List::realize(std::size_t index) {
     auto rows = rows_->children();
     auto it = std::lower_bound(rows.begin(), rows.end(), index, [](const auto& child, auto i) {
@@ -148,7 +168,7 @@ void List::on_layout_updated() {
     const auto end = rows_before(offset + bounds().height);
     for (auto n = realized_count(); n > 0; --n) {
         auto& row = static_cast<Row&>(*rows_->children()[n - 1]);
-        if (selected_ != row.index && (row.index < start || row.index >= end)) {
+        if (selected_ != row.index && current_ != row.index && (row.index < start || row.index >= end)) {
             row.owner = nullptr;
             rows_->remove(row);
         } else { row.set_preferred_size({bounds().width, row_height(row.index)}); }
@@ -158,9 +178,9 @@ void List::on_layout_updated() {
 bool List::on_context_menu(const ContextMenuEvent& e) {
     auto event = e;
     if (!e.keyboard) {
-        if (const auto row = row_at(double(e.position.y) + scroll_offset())) { select(*row); }
-    } else if (selected_) {
-        event.position = {0, static_cast<float>(top(*selected_ + 1)) - scroll_offset()};
+        if (const auto row = row_at(double(e.position.y) + scroll_offset())) { move_to(*row); }
+    } else if (current_) {
+        event.position = {0, static_cast<float>(top(*current_ + 1)) - scroll_offset()};
     }
     return Control::on_context_menu(event);
 }
@@ -172,14 +192,25 @@ void List::synchronize_selection() {
     }
     if (next == selected_) { return; }
     selected_ = next;
+    if (next) { set_current(next); }
     invalidate_measure();
     changed_.emit(next);
 }
 bool List::select(Index index) {
     if (index && *index >= items_.count) { throw std::out_of_range("Invalid list index"); }
-    if (index == selected_) { return true; }
+    if (index && !selectable(*index)) { return false; }
+    if (index == selected_) {
+        if (index) { set_current(index); }
+        return true;
+    }
     if (!index) { return realize(*selected_).select_item(SelectionAction::remove); }
     return realize(*index).select_item(SelectionAction::select);
+}
+bool List::go_to(std::size_t index) {
+    if (index >= items_.count) { throw std::out_of_range("Invalid list index"); }
+    if (!move_to(index)) { return false; }
+    if (current_ == index) { reveal(index); }
+    return true;
 }
 void List::reveal(std::size_t index) {
     if (index >= items_.count) { throw std::out_of_range("Invalid list index"); }
@@ -191,8 +222,8 @@ void List::reveal(std::size_t index) {
     }
 }
 bool List::activate_selected() {
-    if (!selected_ || !interactive()) { return false; }
-    const auto index = *selected_;
+    if (!current_ || !interactive()) { return false; }
+    const auto index = *current_;
     auto& row = realize(index);
     if (!row.interactive()) { return false; }
     auto command = row.command;
@@ -209,18 +240,18 @@ bool List::type_ahead(std::wstring_view text) {
     const bool fresh = prefix_.empty() || cycle;
     if (!cycle) { prefix_.append(text); }
     lastText_ = now;
-    const auto start = selected_ ? (*selected_ + (fresh ? 1 : 0)) % items_.count : 0;
+    const auto start = current_ ? (*current_ + (fresh ? 1 : 0)) % items_.count : 0;
     if (items_.findPrefix) {
         auto match = items_.findPrefix(prefix_, start);
-        if (match && select(match) && selected_ == match) { reveal(*match); }
+        if (match && move_to(*match) && current_ == match) { reveal(*match); }
     } else {
         auto i = start;
         do {
             auto label = items_.label(i);
             if (label.size() >= prefix_.size() && prefix_.size() <= INT_MAX &&
                 CompareStringOrdinal(label.data(), static_cast<int>(prefix_.size()), prefix_.data(),
-                                     static_cast<int>(prefix_.size()), TRUE) == CSTR_EQUAL && select(i)) {
-                if (selected_ == i) { reveal(i); }
+                                     static_cast<int>(prefix_.size()), TRUE) == CSTR_EQUAL && move_to(i)) {
+                if (current_ == i) { reveal(i); }
                 break;
             }
             i = (i + 1) % items_.count;
@@ -237,24 +268,24 @@ bool List::navigate(const KeyEvent& e) {
     switch (e.key) {
     case VK_HOME: candidate = 0; break;
     case VK_END: candidate = last; break;
-    case VK_DOWN: candidate = selected_ ? std::min(last, *selected_ + 1) : 0; break;
-    case VK_UP: candidate = selected_ ? *selected_ - std::min<std::size_t>(*selected_, 1) : last; break;
+    case VK_DOWN: candidate = current_ ? std::min(last, *current_ + 1) : 0; break;
+    case VK_UP: candidate = current_ ? *current_ - std::min<std::size_t>(*current_, 1) : last; break;
     case VK_NEXT:
         // A page on: the row a viewport's height below the top of this one, at least the next.
-        candidate = !selected_ ? 0 : std::min(last, std::max(*selected_ + 1,
-            row_at(top(*selected_) + bounds().height).value_or(last)));
+        candidate = !current_ ? 0 : std::min(last, std::max(*current_ + 1,
+            row_at(top(*current_) + bounds().height).value_or(last)));
         break;
     case VK_PRIOR:
         // A page back: the first row that starts within a viewport's height above this one.
-        candidate = !selected_ ? last : std::min(*selected_ - std::min<std::size_t>(*selected_, 1),
-            rows_before(top(*selected_) - bounds().height));
+        candidate = !current_ ? last : std::min(*current_ - std::min<std::size_t>(*current_, 1),
+            rows_before(top(*current_) - bounds().height));
         break;
     default: return false;
     }
     for (;;) {
         auto command = items_.command ? items_.command(candidate) : nullptr;
-        if ((!command || command->enabled.get()) && select(candidate)) {
-            if (selected_ == candidate) { reveal(candidate); }
+        if ((!command || command->enabled.get()) && move_to(candidate)) {
+            if (current_ == candidate) { reveal(candidate); }
             return true;
         }
         if (backwards ? candidate == 0 : candidate == last) { return true; }
