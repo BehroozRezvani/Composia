@@ -209,6 +209,7 @@ private:
     Element* focused_{};
     Element* hovered_{};
     Element* captured_{};
+    std::optional<layout::Point> pointerAt_;   // Where the pointer rests over the viewport, if it does.
     bool updatingLayout_{};
     std::vector<std::shared_ptr<Element>> layoutCallbacks_;
     std::vector<HostedWindow*> hosted_;

@@ -223,7 +223,9 @@ padded element without children is as large as its padding, and a scroll viewpor
 content inside it.
 
 `set_offset` translates a whole subtree after layout. Every ancestor clips both drawing
-and hit-testing. Pointer and key events bubble up the original path until a handler
+and hit-testing. Hover follows the pointer, and after each layout the tree finds the element
+under the pointer's resting place again, so content that appears, goes or moves under a still
+pointer, as when rows are replaced or a view scrolls, is hovered without the pointer moving. Pointer and key events bubble up the original path until a handler
 returns true. Pointer positions are relative to each recipient. Input handlers can remove
 elements during dispatch. Layout and paint hooks must leave tree properties and structure
 alone. A painter can use the supplied surface's brushes and must balance any drawing

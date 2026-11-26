@@ -28,6 +28,7 @@ bool ElementTree::bubble(Element& target, Handler&& handle) {
 }
 
 bool ElementTree::pointer(PointerEvent event) {
+    pointerAt_ = event.position;
     auto* hit = hit_test(event.position);
     update_hover(hit);
     auto* target = captured_ && event.kind != PointerEvent::Kind::wheel ? captured_ : hit;
@@ -71,7 +72,10 @@ void ElementTree::update_hover(Element* next) {
         p->on_hover_changed(true);
     }
 }
-void ElementTree::pointer_leave() { update_hover(nullptr); }
+void ElementTree::pointer_leave() {
+    pointerAt_.reset();
+    update_hover(nullptr);
+}
 
 bool Element::request_focus() {
     return host_window() ? host_window()->focus_element(*this) : tree_ && tree_->focus(this);

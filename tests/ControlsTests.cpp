@@ -305,6 +305,11 @@ int replace(const testing::Options&) {
     require(list->selected() == 4 && list->current() == 4 && list->scroll_offset() == 72 && selections == 1,
         "Replacing the rows moved the view or raised a selection change");
     require(row && row->accessibility()->selected == true, "The selected row was not exposed as selected");
+    tree.pointer({PointerEvent::Kind::move, {8, 30}});
+    list->replace_items(numbered(12), 4);
+    tree.update_layout();
+    const auto* hovered = tree.hit_test({8, 30});
+    require(hovered && hovered->hovered(), "A row realized again under a still pointer was not hovered");
     require(list->request_focus(), "List focus");
     tree.key({VK_DOWN, true});
     require(list->selected() == 5, "The keyboard did not go on from the row given");

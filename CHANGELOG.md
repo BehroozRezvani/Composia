@@ -54,6 +54,10 @@ change the API; each change is listed here.
 
 ### Changed
 
+- After each layout the tree hovers the element under the pointer's resting place, so content
+  that appears, goes or moves under a still pointer (replaced rows, scrolling) is hovered
+  without the pointer moving.
+
 - A control without tokens of its own passes its renderer those of the nearest ancestor
   control or `StyleScope` with tokens, and `StyleTokens{}` only when there are none.
   `Control::set_tokens` and `Picker::set_popup_tokens` take `std::optional<StyleTokens>`,

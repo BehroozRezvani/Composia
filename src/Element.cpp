@@ -378,6 +378,9 @@ void ElementTree::update_layout() {
             layoutCallbacks_.pop_back();
         }
     } while (root_->arrangeDirty_);
+    // Content that appeared, went or moved under a still pointer (rows replaced, a scroll) takes
+    // the hover where the pointer rests, as if it had moved there.
+    if (pointerAt_) { update_hover(hit_test(*pointerAt_)); }
     if (focused_ && !focused_->reveal(false)) {
         auto old = reference(std::exchange(focused_, nullptr));
         old->on_focus_changed(false);

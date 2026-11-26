@@ -287,7 +287,48 @@ int context_menu(const testing::Options&) {
 }
 }
 
+int hover(const testing::Options&) {
+    using Kind = PointerEvent::Kind;
+    auto root = std::make_shared<Probe>(ElementLayout{ElementLayout::Kind::stack});
+    auto first = leaf(100, 40), second = leaf(100, 40);
+    root->add(first);
+    root->add(second);
+    ElementTree tree(root);
+    tree.set_viewport({200, 100});
+    tree.pointer({Kind::move, {10, 10}});
+    require(first->hovered() && !second->hovered(), "The pointer did not hover the element under it");
+    root->remove(*first);
+    tree.update_layout();
+    require(second->hovered() && !first->hovered(), "An element that moved under a still pointer was not hovered");
+    auto replacement = leaf(100, 40);
+    root->insert(0, replacement);
+    tree.update_layout();
+    require(replacement->hovered() && !second->hovered(), "An element added under a still pointer was not hovered");
+    tree.pointer_leave();
+    root->remove(*replacement);
+    tree.update_layout();
+    require(!second->hovered() && !root->hovered(), "Hover came back after the pointer left");
+
+    // Scrolling moves the next element under a still pointer.
+    auto scroll = std::make_shared<Probe>(ElementLayout{ElementLayout::Kind::scroll, Axis::vertical, 0, 1, 100.f});
+    auto content = std::make_shared<Probe>(ElementLayout{ElementLayout::Kind::stack});
+    std::vector<std::shared_ptr<Probe>> rows;
+    for (int i = 0; i < 5; ++i) {
+        rows.push_back(leaf(100, 40));
+        content->add(rows.back());
+    }
+    scroll->add(content);
+    ElementTree scrolled(scroll);
+    scrolled.set_viewport({100, 100});
+    scrolled.pointer({Kind::move, {10, 10}});
+    require(rows[0]->hovered(), "The first row was not hovered");
+    scroll->set_scroll_offset(40);
+    scrolled.update_layout();
+    require(rows[1]->hovered() && !rows[0]->hovered(), "Scrolling did not move the hover to the row under the pointer");
+    return 0;
+}
+
 int main(int argc, char** argv) {
     return testing::run(argc, argv, {{"layout", arrangement}, {"routing", routing}, {"damage", damage},
-        {"context-menu", context_menu}});
+        {"context-menu", context_menu}, {"hover", hover}});
 }
