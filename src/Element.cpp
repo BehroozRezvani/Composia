@@ -1,4 +1,5 @@
 #include <composia/Element.hpp>
+#include <composia/HostedVisual.hpp>
 #include <composia/HostedWindow.hpp>
 #include "ElementAutomation.hpp"
 #include <composia/ScopedSurfaceDraw.hpp>
@@ -47,6 +48,14 @@ void Element::attach(ElementTree* tree) noexcept {
         if (tree_) { std::erase(tree_->hosted_, self); }
         if (tree) {
             try { tree->hosted_.push_back(self); }
+            catch (...) { LOG_CAUGHT_EXCEPTION(); }
+        }
+    }
+    if (hostsVisual_ && tree_ != tree) {
+        auto* self = static_cast<HostedVisual*>(this);
+        if (tree_) { std::erase(tree_->visuals_, self); }
+        if (tree) {
+            try { tree->visuals_.push_back(self); }
             catch (...) { LOG_CAUGHT_EXCEPTION(); }
         }
     }
@@ -281,6 +290,7 @@ std::span<Element* const> Element::visible_children(Rect local, bool point) {
 Element* Element::hit(Point local) {
     if (claims_pointer(local)) { return this; }
     for (auto* child : visible_children({local.x, local.y, 0, 0}, true) | std::views::reverse) {
+        if (child->hostsVisual_) { continue; }   // Hosted visuals let the pointer through.
         const auto box = child->bounds_;
         if (box.contains(local.x, local.y)) { return child->hit({local.x - box.x, local.y - box.y}); }
     }

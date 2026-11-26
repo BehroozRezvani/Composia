@@ -127,7 +127,7 @@ composia_test_target(composia-element-tests ElementTests.cpp)
 composia_add_scenarios(composia-element-tests element CORE SCENARIOS layout routing damage context-menu)
 composia_test_target(composia-element-window-tests ElementWindowTests.cpp)
 composia_add_scenarios(composia-element-window-tests element-window WARP SCENARIOS pixels navigation)
-composia_add_scenarios(composia-element-window-tests element-window SCENARIOS hosted tooltips)
+composia_add_scenarios(composia-element-window-tests element-window SCENARIOS hosted tooltips visuals)
 
 composia_test_target(composia-text-box-tests TextBoxTests.cpp)
 composia_add_scenarios(composia-text-box-tests text-box WARP SCENARIOS editing rendering)

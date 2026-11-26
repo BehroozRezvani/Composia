@@ -44,6 +44,9 @@ change the API; each change is listed here.
 - `Items::content` places elements over a realized row, such as a button, ahead of the row for
   the pointer. `List::index_at` finds the row at a point and `List::refresh` reads a row's
   label again and repaints it.
+- `HostedVisual` places a Composition visual over a retained element: it follows layout and
+  scrolling, is clipped by its ancestors, hides when clipped out or detached, and lets the
+  pointer through, so applications animate content in a tree with the compositor.
 
 ### Changed
 

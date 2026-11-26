@@ -1,4 +1,5 @@
 #include <composia/ElementWindow.hpp>
+#include <composia/HostedVisual.hpp>
 #include <composia/HostedWindow.hpp>
 #include <composia/NativeControl.hpp>
 #include <composia/ScopedSurfaceDraw.hpp>
@@ -268,6 +269,65 @@ int hosted(const testing::Options& options) {
     return 0;
 }
 
+int visuals(const testing::Options& options) {
+    Application app{options.warp};
+    {
+        auto root = std::make_shared<Element>(ElementLayout{Kind::stack});
+        auto before = std::make_shared<Tile>(0x203040);
+        before->set_preferred_size({100, 20});
+        auto scroll = std::make_shared<Element>(ElementLayout{Kind::scroll, layout::Axis::vertical, 0, 1, 100.f});
+        auto content = std::make_shared<Element>(ElementLayout{Kind::stack});
+        auto spacer = std::make_shared<Element>();
+        spacer->set_preferred_size({100, 30});
+        // The visual lies over a tile, which keeps the pointer.
+        auto layer = std::make_shared<Element>(ElementLayout{Kind::overlay});
+        auto under = std::make_shared<Tile>(0x406080);
+        under->set_preferred_size({120, 40});
+        auto tail = std::make_shared<Element>();
+        tail->set_preferred_size({100, 200});
+        const auto sprite = app.compositor().CreateSpriteVisual();
+        sprite.RelativeSizeAdjustment({1, 1});
+        sprite.Brush(app.compositor().CreateColorBrush({255, 255, 0, 0}));
+        auto host = std::make_shared<HostedVisual>(sprite);
+        layer->add(under);
+        layer->add(host);
+        content->add(spacer);
+        content->add(layer);
+        content->add(tail);
+        scroll->add(content);
+        root->add(before);
+        root->add(scroll);
+        ElementWindow window{app, L"Hosted visuals", 200, 160, root};
+        window.show(SW_SHOWNOACTIVATE);
+        flush(window);
+
+        // The scroll viewport spans 20 to 120 DIPs; the visual's element starts 30 DIPs into it.
+        const auto frame = sprite.Parent();
+        require(frame && frame.Parent() == window.composition_target().root() && frame.IsVisible() &&
+            frame.Offset().y == 50 && frame.Size().y == 40 && frame.Size().x == window.client_bounds().width,
+            "Hosted visual placement");
+        const auto clip = frame.Clip().as<composition::InsetClip>();
+        require(clip.TopInset() == 0 && clip.BottomInset() == 0, "An unclipped hosted visual was clipped");
+        require(window.elements().hit_test({10, 60}) == under.get(), "A hosted visual took the pointer");
+        scroll->set_scroll_offset(40);
+        flush(window);
+        require(frame.Offset().y == 10 && clip.TopInset() == 10 && clip.BottomInset() == 0 && frame.IsVisible(),
+            "Scrolling did not move the hosted visual or clip it to the viewport");
+        scroll->set_scroll_offset(80);
+        flush(window);
+        require(!frame.IsVisible(), "A scrolled-out hosted visual was left visible");
+        scroll->set_scroll_offset(0);
+        flush(window);
+        require(frame.IsVisible() && frame.Offset().y == 50 && clip.TopInset() == 0, "Revealing a hosted visual kept its old place");
+        layer->remove(*host);
+        flush(window);
+        require(!frame.IsVisible(), "A detached hosted visual was left visible");
+        host.reset();
+        require(!frame.Parent() && !sprite.Parent(), "A destroyed hosted visual left its visual in the window");
+    }
+    return 0;
+}
+
 int tooltips(const testing::Options& options) {
     Application app{options.warp};
     {
@@ -376,5 +436,5 @@ int tooltips(const testing::Options& options) {
 
 int main(int argc, char** argv) {
     return testing::run(argc, argv, {{"pixels", pixels}, {"navigation", navigation}, {"hosted", hosted},
-        {"tooltips", tooltips}});
+        {"tooltips", tooltips}, {"visuals", visuals}});
 }

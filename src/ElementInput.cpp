@@ -1,4 +1,5 @@
 #include <composia/Element.hpp>
+#include <composia/HostedVisual.hpp>
 #include <composia/HostedWindow.hpp>
 #include <composia/Native.hpp>
 #include "ElementAutomation.hpp"
@@ -199,8 +200,9 @@ bool ElementTree::move_focus(bool backwards, bool wrap) {
 }
 
 void ElementTree::place_windows() {
-    if (!window_ || hosted_.empty()) { return; }
+    if (!window_ || (hosted_.empty() && visuals_.empty())) { return; }
     update_layout();
+    for (auto* visual : visuals_) { visual->place(*window_); }
     // Moving a window sends messages; a handler can detach other hosted elements meanwhile.
     const auto snapshot = hosted_;
     for (auto* hosted : snapshot) {

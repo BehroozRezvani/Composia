@@ -53,6 +53,7 @@ set(COMPOSIA_SOURCES
     ElementLayout.cpp
     ElementWindow.cpp
     GraphicsDevice.cpp
+    HostedVisual.cpp
     HostedWindow.cpp
     Layout.cpp
     Log.cpp

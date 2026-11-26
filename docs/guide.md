@@ -528,6 +528,35 @@ next element, or the previous one with Shift. A window that asks for Tab through
 browser raising `MoveFocusRequested`, or whose focus rests in a window inside it, calls
 `leave(backwards)`.
 
+### Composition content in a retained tree
+
+A `HostedVisual` gives a Composition visual a place in the tree, for content the application
+builds and animates in the compositor: a progress bar, an indicator that glides from row to
+row, or a picture of part of the tree during a transition. The tree keeps the visual over the
+element's bounds as layout and scrolling move it, clips it by the element's ancestors, and
+hides it while the element is out of view or detached. The visual's parent takes the
+element's size, so `RelativeSizeAdjustment({1, 1})` fills it. It lies above the tree's own
+drawing, and the pointer passes through it to the elements underneath.
+
+```cpp
+#include <composia/HostedVisual.hpp>
+
+// A busy bar that sweeps along a 3 DIP strip, in the compositor, with no render loop.
+auto track = app.compositor().CreateContainerVisual();
+auto bar = app.compositor().CreateSpriteVisual();
+bar.Size({60, 3});
+bar.Brush(app.compositor().CreateColorBrush(accent));
+track.Children().InsertAtTop(bar);
+auto sweep = app.compositor().CreateScalarKeyFrameAnimation();
+sweep.InsertKeyFrame(0, -60);
+sweep.InsertKeyFrame(1, 240);
+sweep.Duration(std::chrono::seconds{1});
+sweep.IterationBehavior(composia::composition::AnimationIterationBehavior::Forever);
+bar.StartAnimation(L"Offset.X", sweep);
+auto progress = std::make_shared<composia::HostedVisual>(track);
+progress->set_preferred_size({0, 3});
+```
+
 ## System appearance
 
 Composia leaves the look of an application to the application, and tells it what Windows
