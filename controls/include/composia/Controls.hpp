@@ -5,6 +5,10 @@
 #include <cstdint>
 #include <optional>
 
+namespace composia {
+class HostedVisual;
+}
+
 namespace composia::controls {
 
 // UI-thread state. Each observer receives the value of that particular change, even on reentry.
@@ -236,6 +240,12 @@ public:
     // Reads a realized row's label again and repaints it, for a change that keeps its height,
     // such as a count, or a look the renderer gives it, such as a drop target.
     void refresh(std::size_t);
+    // Lays Composition content over all the rows, in their coordinates: it scrolls with them and
+    // spans the whole list, for decorations across rows, such as an indicator that glides from
+    // row to row. Null removes it.
+    void set_overlay(std::shared_ptr<HostedVisual>);
+    // Where a row is in the overlay's coordinates, realized or not.
+    [[nodiscard]] layout::Rect row_bounds(std::size_t) const;
     bool navigate(const KeyEvent&);
     bool type_ahead(std::wstring_view);
     // Activates the current row: the selected one, unless the keyboard rests on a row that
@@ -280,7 +290,8 @@ private:
     bool on_context_menu(const ContextMenuEvent&) override;
     bool on_key(const KeyEvent& e) override { return navigate(e); }
     bool on_text_input(std::wstring_view text) override { return type_ahead(text); }
-    std::shared_ptr<Element> rows_;
+    std::shared_ptr<Element> content_, rows_;   // The rows, under the overlay.
+    std::shared_ptr<HostedVisual> overlay_;
     Items items_;
     std::vector<double> tops_;   // With Items::height: each row's top, then the extent.
     Index selected_, current_;

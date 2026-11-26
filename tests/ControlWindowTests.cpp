@@ -1,5 +1,6 @@
 #include "../examples/controls/Playback.hpp"
 #include "support/TestSupport.hpp"
+#include <composia/HostedVisual.hpp>
 #include <thread>
 
 using namespace composia;
@@ -177,6 +178,36 @@ int scrollbar(const testing::Options& options) {
     require(drawn->thumb.y == 74 && testing::matches(pixel(195, 86), 0xc03020), "The thumb did not follow the scroll offset");
     return 0;
 }
+int overlay(const testing::Options& options) {
+    Application app(options.warp);
+    namespace ui = composia::controls;
+    auto list = std::make_shared<ui::List>(L"Folders",
+        ui::Items{10, [](std::size_t i) { return L"Row " + std::to_wstring(i); }}, 24, 72);
+    const auto layer = app.compositor().CreateContainerVisual();
+    list->set_overlay(std::make_shared<HostedVisual>(layer));
+    ElementWindow window(app, L"List overlay", 200, 72, list);
+    window.show(SW_SHOWNOACTIVATE);
+    flush(window);
+    const auto frame = layer.Parent();
+    require(frame && frame.IsVisible() && frame.Size().y == 240 && frame.Offset().y == 0, "The overlay did not span the rows");
+    const auto third = list->row_bounds(3);
+    require(third.y == 72 && third.height == 24 && third.width == list->bounds().width, "row_bounds");
+    list->set_scroll_offset(48);
+    flush(window);
+    const auto clip = frame.Clip().as<composition::InsetClip>();
+    require(frame.Offset().y == -48 && clip.TopInset() == 48 && list->row_bounds(3).y == 72,
+        "The overlay did not scroll with the rows");
+    // Row 3 now starts 24 DIPs down; a press there goes through the overlay to it.
+    const auto px = [&](float dips) { return static_cast<LONG>(std::lround(dips * window.scale())); };
+    SendMessageW(window.hwnd(), WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(px(10), px(30)));
+    SendMessageW(window.hwnd(), WM_LBUTTONUP, 0, MAKELPARAM(px(10), px(30)));
+    flush(window);
+    require(list->selected() == 3, "The overlay took a press meant for a row");
+    list->set_overlay(nullptr);
+    flush(window);
+    require(!layer.Parent(), "Removing the overlay left it in the window");
+    return 0;
+}
 int fixture(const testing::Options& options) {
     Application app(options.warp);
     playback::Playback panel(app);
@@ -187,5 +218,6 @@ int fixture(const testing::Options& options) {
 }
 }
 int main(int argc, char** argv) {
-    return testing::run(argc, argv, {{"interaction", interaction}, {"fixture", fixture}, {"tokens", tokens}, {"scrollbar-drawing", scrollbar}});
+    return testing::run(argc, argv, {{"interaction", interaction}, {"fixture", fixture}, {"tokens", tokens}, {"scrollbar-drawing", scrollbar},
+        {"overlay", overlay}});
 }

@@ -1,4 +1,5 @@
 #include <composia/Controls.hpp>
+#include <composia/HostedVisual.hpp>
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -71,13 +72,15 @@ List::List(std::wstring name, Items items, float rowHeight, float height)
     : List(std::move(name), std::move(items), rowHeight, height, false) {}
 List::List(std::wstring name, Items items, float rowHeight, float height, bool menu)
     : ScrollView(std::move(name), layout::Axis::vertical, height),
+      content_(std::make_shared<Element>(ElementLayout{ElementLayout::Kind::overlay})),
       rows_(std::make_shared<Element>(ElementLayout{ElementLayout::Kind::canvas})), rowHeight_(rowHeight), menu_(menu) {
     if (!std::isfinite(rowHeight) || rowHeight <= 0) { throw std::invalid_argument("Expected a positive row height"); }
     auto a = *accessibility();
     a.controlType = menu ? UIA_MenuControlTypeId : UIA_ListControlTypeId;
     a.selection = ElementAccessibility::Selection{false, false, [this] { synchronize_selection(); }};
     set_accessibility(std::move(a));
-    set_content(rows_);
+    content_->add(rows_);
+    set_content(content_);
     observe_layout();
     set_items(std::move(items));
 }
@@ -271,6 +274,15 @@ void List::refresh(std::size_t index) {
         row.invalidate();
         return;
     }
+}
+void List::set_overlay(std::shared_ptr<HostedVisual> overlay) {
+    if (overlay_) { content_->remove(*overlay_); }
+    overlay_ = std::move(overlay);
+    if (overlay_) { content_->add(overlay_); }
+}
+layout::Rect List::row_bounds(std::size_t index) const {
+    if (index >= items_.count) { throw std::out_of_range("Invalid list index"); }
+    return {0, static_cast<float>(top(index)), bounds().width, row_height(index)};
 }
 void List::reveal(std::size_t index) {
     if (index >= items_.count) { throw std::out_of_range("Invalid list index"); }

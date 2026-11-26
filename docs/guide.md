@@ -332,6 +332,9 @@ or from a control in the row.
 it. They draw above the row renderer and take the pointer first; a press they leave selects
 the row. `index_at` finds the row at a point in the list, for a drop target, and `refresh`
 reads a row's label again and repaints it after a change that keeps its height.
+`set_overlay` lays a `HostedVisual` over all the rows: it scrolls with them, and `row_bounds`
+gives each row's place in it, so an application can glide an indicator from row to row with a
+compositor animation on its own visual.
 
 For large lists, supply an `Items` count and indexed label callback. The list realizes
 the rows covering the viewport, including partially visible rows, and retains

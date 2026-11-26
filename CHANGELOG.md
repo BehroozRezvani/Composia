@@ -47,6 +47,8 @@ change the API; each change is listed here.
 - `HostedVisual` places a Composition visual over a retained element: it follows layout and
   scrolling, is clipped by its ancestors, hides when clipped out or detached, and lets the
   pointer through, so applications animate content in a tree with the compositor.
+- `List::set_overlay` lays a `HostedVisual` over the rows that scrolls with them, and
+  `List::row_bounds` gives each row's place in it.
 
 ### Changed
 
