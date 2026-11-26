@@ -27,7 +27,7 @@ public:
                 availability = command->enabled.on_change([this](bool) { set_available(command->enabled.get()); });
             }
         }
-        set_offset({0, static_cast<float>(double(i) * list.rowHeight_)});
+        set_offset({0, static_cast<float>(list.top(i))});
     }
     void activate() override {
         choose(doubleClick || (owner && owner->popupFocus_));
@@ -74,10 +74,24 @@ List::~List() {
 }
 void List::set_items(Items items) {
     if (items.count && !items.label) { throw std::invalid_argument("A list needs row labels"); }
+    std::vector<double> tops;
+    float shortest = rowHeight_;
+    double extent = double(items.count) * rowHeight_;
+    if (items.height) {
+        tops.reserve(items.count + 1);
+        extent = 0;
+        for (std::size_t i = 0; i < items.count; ++i) {
+            const float height = items.height(i);
+            if (!std::isfinite(height) || height <= 0) { throw std::invalid_argument("Expected a positive row height"); }
+            tops.push_back(extent);
+            extent += height;
+            shortest = i ? std::min(shortest, height) : height;
+        }
+        tops.push_back(extent);
+    }
     // Positions are single-precision DIPs. Reject an extent at which adjacent rows coincide.
-    const double extent = double(items.count) * rowHeight_;
     if (extent > std::numeric_limits<float>::max() ||
-        static_cast<float>(extent) - std::nextafter(static_cast<float>(extent), 0.f) > rowHeight_) {
+        static_cast<float>(extent) - std::nextafter(static_cast<float>(extent), 0.f) > shortest) {
         throw std::length_error("List exceeds the drawing coordinate range");
     }
     while (!rows_->children().empty()) {
@@ -89,6 +103,7 @@ void List::set_items(Items items) {
     selected_.reset();
     prefix_.clear();
     items_ = std::move(items);
+    tops_ = std::move(tops);
     rows_->set_preferred_size({0, static_cast<float>(extent)});
     set_scroll_offset(0);
     invalidate_measure();
@@ -96,6 +111,23 @@ void List::set_items(Items items) {
 }
 void List::set_row_renderer(RowRenderer renderer) { renderer_ = std::move(renderer); invalidate(); }
 std::size_t List::realized_count() const noexcept { return rows_->children().size(); }
+
+double List::top(std::size_t index) const noexcept {
+    return tops_.empty() ? double(index) * rowHeight_ : tops_[index];
+}
+float List::row_height(std::size_t index) const noexcept {
+    return tops_.empty() ? rowHeight_ : static_cast<float>(tops_[index + 1] - tops_[index]);
+}
+std::size_t List::rows_before(double y) const noexcept {
+    if (y <= 0) { return 0; }
+    if (tops_.empty()) { return static_cast<std::size_t>(std::min(double(items_.count), std::ceil(y / rowHeight_))); }
+    return static_cast<std::size_t>(std::lower_bound(tops_.begin(), tops_.end() - 1, y) - tops_.begin());
+}
+List::Index List::row_at(double y) const noexcept {
+    if (y < 0 || y >= top(items_.count)) { return std::nullopt; }
+    if (tops_.empty()) { return std::min(items_.count - 1, static_cast<std::size_t>(y / rowHeight_)); }
+    return static_cast<std::size_t>(std::upper_bound(tops_.begin(), tops_.end() - 1, y) - tops_.begin()) - 1;
+}
 
 List::Row& List::realize(std::size_t index) {
     auto rows = rows_->children();
@@ -105,30 +137,30 @@ List::Row& List::realize(std::size_t index) {
     if (it != rows.end() && static_cast<Row&>(**it).index == index) { return static_cast<Row&>(**it); }
     const auto at = static_cast<std::size_t>(it - rows.begin());
     auto row = std::make_shared<Row>(*this, index);
-    row->set_preferred_size({bounds().width, rowHeight_});
+    row->set_preferred_size({bounds().width, row_height(index)});
     rows_->insert(at, row);
     return *row;
 }
 void List::on_layout_updated() {
-    const auto start = std::min(items_.count, static_cast<std::size_t>(double(scroll_offset()) / rowHeight_));
-    const auto end = static_cast<std::size_t>(std::min(double(items_.count), std::ceil(
-        (double(scroll_offset()) + bounds().height) / rowHeight_)));
+    // The rows from the one at the top of the viewport to the last that starts inside it.
+    const double offset = scroll_offset();
+    const auto start = row_at(offset).value_or(items_.count);
+    const auto end = rows_before(offset + bounds().height);
     for (auto n = realized_count(); n > 0; --n) {
         auto& row = static_cast<Row&>(*rows_->children()[n - 1]);
         if (selected_ != row.index && (row.index < start || row.index >= end)) {
             row.owner = nullptr;
             rows_->remove(row);
-        } else { row.set_preferred_size({bounds().width, rowHeight_}); }
+        } else { row.set_preferred_size({bounds().width, row_height(row.index)}); }
     }
     for (auto i = start; i < end; ++i) { realize(i); }
 }
 bool List::on_context_menu(const ContextMenuEvent& e) {
     auto event = e;
     if (!e.keyboard) {
-        const auto row = (double(e.position.y) + scroll_offset()) / rowHeight_;
-        if (row >= 0 && row < double(items_.count)) { select(static_cast<std::size_t>(row)); }
+        if (const auto row = row_at(double(e.position.y) + scroll_offset())) { select(*row); }
     } else if (selected_) {
-        event.position = {0, static_cast<float>(double(*selected_ + 1) * rowHeight_) - scroll_offset()};
+        event.position = {0, static_cast<float>(top(*selected_ + 1)) - scroll_offset()};
     }
     return Control::on_context_menu(event);
 }
@@ -151,10 +183,11 @@ bool List::select(Index index) {
 }
 void List::reveal(std::size_t index) {
     if (index >= items_.count) { throw std::out_of_range("Invalid list index"); }
-    const auto y = static_cast<float>(double(index) * rowHeight_);
+    const auto y = static_cast<float>(top(index));
+    const auto height = row_height(index);
     if (y < scroll_offset()) { set_scroll_offset(y); }
-    else if (y + rowHeight_ > scroll_offset() + bounds().height) {
-        set_scroll_offset(y + std::min(rowHeight_, bounds().height) - bounds().height);
+    else if (y + height > scroll_offset() + bounds().height) {
+        set_scroll_offset(y + std::min(height, bounds().height) - bounds().height);
     }
 }
 bool List::activate_selected() {
@@ -199,23 +232,23 @@ bool List::navigate(const KeyEvent& e) {
     if (!interactive() || !e.down || e.alt || e.control || e.shift || !items_.count) { return false; }
     if (e.key == VK_RETURN || e.key == VK_SPACE) { return activate_selected(); }
     const auto last = items_.count - 1;
-    const auto page = std::max<std::size_t>(1, static_cast<std::size_t>(
-        std::min(double(items_.count), double(bounds().height) / rowHeight_)));
     const bool backwards = e.key == VK_UP || e.key == VK_PRIOR || e.key == VK_END;
     std::size_t candidate{};
     switch (e.key) {
     case VK_HOME: candidate = 0; break;
     case VK_END: candidate = last; break;
-    case VK_DOWN: case VK_NEXT: {
-        const auto step = e.key == VK_NEXT ? page : 1;
-        candidate = selected_ ? *selected_ + std::min(last - *selected_, step) : 0;
+    case VK_DOWN: candidate = selected_ ? std::min(last, *selected_ + 1) : 0; break;
+    case VK_UP: candidate = selected_ ? *selected_ - std::min<std::size_t>(*selected_, 1) : last; break;
+    case VK_NEXT:
+        // A page on: the row a viewport's height below the top of this one, at least the next.
+        candidate = !selected_ ? 0 : std::min(last, std::max(*selected_ + 1,
+            row_at(top(*selected_) + bounds().height).value_or(last)));
         break;
-    }
-    case VK_UP: case VK_PRIOR: {
-        const auto step = e.key == VK_PRIOR ? page : 1;
-        candidate = selected_ ? *selected_ - std::min(*selected_, step) : last;
+    case VK_PRIOR:
+        // A page back: the first row that starts within a viewport's height above this one.
+        candidate = !selected_ ? last : std::min(*selected_ - std::min<std::size_t>(*selected_, 1),
+            rows_before(top(*selected_) - bounds().height));
         break;
-    }
     default: return false;
     }
     for (;;) {

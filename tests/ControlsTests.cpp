@@ -155,6 +155,37 @@ int context(const testing::Options&) {
     return 0;
 }
 
+int heights(const testing::Options&) {
+    // A 48 DIP heading over two 24 DIP rows, ten times: each group spans 96 DIPs.
+    auto items = ui::Items{30, [](std::size_t i) { return L"Row " + std::to_wstring(i); }};
+    items.height = [](std::size_t i) { return i % 3 == 0 ? 48.f : 24.f; };
+    auto list = std::make_shared<ui::List>(L"Folders", items, 24, 100);
+    ElementTree tree(list);
+    tree.set_viewport({200, 100});
+    tree.update_layout();
+    require(list->scroll_limit() == 860 && list->realized_count() == 4, "Rows of their own heights were not laid out");
+    const auto* second = tree.hit_test({8, 60});
+    require(second && second->viewport_bounds().y == 48 && second->viewport_bounds().height == 24,
+        "A row did not take its own height");
+    require(list->request_focus(), "List focus");
+    tree.key({VK_END, true});
+    tree.update_layout();
+    require(list->selected() == 29 && list->scroll_offset() == 860, "End did not reveal the last row");
+    tree.key({VK_HOME, true});
+    tree.key({VK_NEXT, true});
+    require(list->selected() == 3, "Page Down did not move a viewport's height");
+    tree.key({VK_PRIOR, true});
+    require(list->selected() == 0, "Page Up did not move a viewport's height");
+    tree.update_layout();
+    tree.context_menu(layout::Point{8, 50});
+    require(list->selected() == 1, "A right click did not select the row of its own height under it");
+    items.height = [](std::size_t) { return 0.f; };
+    bool rejected{};
+    try { list->set_items(items); } catch (const std::invalid_argument&) { rejected = true; }
+    require(rejected, "A row without height was accepted");
+    return 0;
+}
+
 int popup(const testing::Options&) {
     auto content = std::make_shared<Element>(ElementLayout{ElementLayout::Kind::stack});
     auto dropdown = std::make_shared<ui::Dropdown>(L"Output", ui::Items::strings({L"Stereo", L"Mono", L"Surround"}), 20, 60);
@@ -230,5 +261,5 @@ int virtualization(const testing::Options&) {
 }
 int main(int argc, char** argv) {
     return testing::run(argc, argv, {{"behaviour", behaviour}, {"virtualization", virtualization}, {"popup", popup},
-        {"style", style}, {"scrollbar", scrollbar}, {"context", context}});
+        {"style", style}, {"scrollbar", scrollbar}, {"context", context}, {"heights", heights}});
 }

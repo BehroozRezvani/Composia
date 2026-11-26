@@ -31,6 +31,7 @@ change the API; each change is listed here.
   `ElementTree::context_menu`, with `ContextMenuEvent` telling a click from the keyboard.
   `ElementWindow` routes `WM_CONTEXTMENU`, controls raise `on_context_requested`, and a list
   selects the row under a right click first. `Signal::connected` reports a subscriber.
+- `Items::height` gives each list row its own height; a list without it keeps one row height.
 
 ### Changed
 

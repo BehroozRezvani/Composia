@@ -187,6 +187,9 @@ struct Items {
     std::function<std::shared_ptr<Command>(std::size_t)> command{};
     // Optional indexed, case-insensitive search from start, wrapping at the end.
     std::function<std::optional<std::size_t>(std::wstring_view prefix, std::size_t start)> findPrefix{};
+    // Optional height of each row in DIPs, positive and finite. Without it, every row takes the
+    // list's row height. The list reads every height when the items are set.
+    std::function<float(std::size_t)> height{};
     static Items strings(std::vector<std::wstring>);
 };
 
@@ -211,9 +214,17 @@ public:
     Connection on_activate(std::function<void(std::size_t)> f) { return activated_.connect(std::move(f)); }
 private:
     friend class Picker;
+    friend class PopupHost;
     class Row;
     List(std::wstring, Items, float, float, bool menu);
     Row& realize(std::size_t);
+    // Where row i starts in the content, and how tall it is, in DIPs; top(count) is the extent.
+    [[nodiscard]] double top(std::size_t) const noexcept;
+    [[nodiscard]] float row_height(std::size_t) const noexcept;
+    // How many rows start before the content offset y.
+    [[nodiscard]] std::size_t rows_before(double y) const noexcept;
+    // The row at the content offset y, or nullopt past either end.
+    [[nodiscard]] Index row_at(double y) const noexcept;
     void synchronize_selection();
     void on_layout_updated() override;
     // Selects the row under a right click first; the keyboard's position is the selected row's.
@@ -222,6 +233,7 @@ private:
     bool on_text_input(std::wstring_view text) override { return type_ahead(text); }
     std::shared_ptr<Element> rows_;
     Items items_;
+    std::vector<double> tops_;   // With Items::height: each row's top, then the extent.
     Index selected_;
     float rowHeight_;
     bool menu_;
@@ -277,7 +289,7 @@ private:
     std::shared_ptr<List> list_;
     List::Index selected_;
     std::wstring selectedText_;
-    float rowHeight_, maxHeight_;
+    float maxHeight_;
     bool menu_, preview_{};
     Signal<List::Index> changed_;
     Connection selection_, activation_;

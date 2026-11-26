@@ -67,7 +67,7 @@ void PopupHost::on_layout_updated() {
     const float below = std::max(0.f, view.y + view.height - anchor.y - anchor.height);
     const float above = std::max(0.f, anchor.y - view.y);
     const float wanted = static_cast<float>(std::min(double(picker->maxHeight_),
-        double(picker->rowHeight_) * picker->list_->items().count));
+        picker->list_->top(picker->list_->items().count)));
     const bool down = below >= wanted || below >= above;
     const float height = std::min(wanted, down ? below : above);
     if (height <= 0) { dismiss(); return; }
@@ -82,7 +82,7 @@ void PopupHost::on_layout_updated() {
 Picker::Picker(std::wstring name, Items items, bool menu, float rowHeight, float maxHeight)
     : Pressable(name, menu ? UIA_MenuItemControlTypeId : UIA_ComboBoxControlTypeId),
       list_(new List(name, std::move(items), rowHeight, maxHeight, menu)),
-      rowHeight_(rowHeight), maxHeight_(maxHeight), menu_(menu) {
+      maxHeight_(maxHeight), menu_(menu) {
     if (!std::isfinite(maxHeight) || maxHeight <= 0) { throw std::invalid_argument("Expected positive popup height"); }
     list_->set_focusable(false);
     auto a = *accessibility();

@@ -320,8 +320,10 @@ publishes unequal values on the UI thread. Change and activation subscriptions r
 `Connection` whose lifetime controls the subscription.
 
 For large lists, supply an `Items` count and indexed label callback. The list realizes
-fixed-height rows covering the viewport, including partially visible rows, and retains
-the selected row when it scrolls offscreen. Existing rows keep their UIA identity while
+the rows covering the viewport, including partially visible rows, and retains
+the selected row when it scrolls offscreen. Rows take the list's row height, or each its own
+from an `Items::height` callback, which the list reads for every row when the items are set;
+paging moves by the viewport's height either way. Existing rows keep their UIA identity while
 realized. For indexed data sources, supply `findPrefix` to search directly. The fallback
 scans labels when the user types. Call `set_items` when the backing collection changes.
 The control owns the child elements used for realization and popup placement.
