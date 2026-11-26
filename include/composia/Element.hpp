@@ -28,6 +28,7 @@ struct ElementLayout {
     float gap{};                              // Both axes for a grid.
     std::size_t columns{1};                   // Equal width, row-major grid.
     std::optional<float> viewportLength{};    // Intrinsic length of a scroll viewport.
+    layout::Insets padding{};                 // Space between the element's edges and its children.
 };
 
 // A UI-thread element. A parent owns its children. Siblings lay out and take focus in
@@ -127,7 +128,7 @@ private:
     void mark_layout(bool measure);
     void arrange(layout::Rect);
     layout::Size measure(layout::Size);
-    layout::Size layout_children(layout::Size, bool arranging);
+    layout::Size layout_children(layout::Size, bool arranging, layout::Point origin = {});
     std::span<Element* const> visible_children(layout::Rect local, bool point = false);
     void draw(ScopedSurfaceDraw&, layout::Point origin, layout::Rect clip);
     Element* hit(layout::Point local);

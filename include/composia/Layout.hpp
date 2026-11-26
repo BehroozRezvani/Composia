@@ -22,6 +22,14 @@ struct Rect {
     }
 };
 
+// Space inside the edges of a box.
+struct Insets {
+    float left{}, top{}, right{}, bottom{};
+    // The same space on every edge.
+    [[nodiscard]] static constexpr Insets all(float value) noexcept { return {value, value, value, value}; }
+    bool operator==(const Insets&) const = default;
+};
+
 enum class Axis { horizontal, vertical };
 
 // Places items one after another along the axis inside bounds, each as long as requested and as

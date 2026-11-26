@@ -7,6 +7,8 @@ change the API; each change is listed here.
 
 ### Added
 
+- `ElementLayout::padding` insets a container's children by `layout::Insets` and adds to its
+  intrinsic size.
 - `HostedWindow` places a child window over a retained element: it follows layout and
   scrolling, is clipped by its ancestors, hides when clipped out or detached, is enabled
   with the element, and takes its turn in Tab order (`leave` hands the focus on).

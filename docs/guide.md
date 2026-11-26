@@ -217,6 +217,11 @@ reaches it. A press, a key, the wheel, or the pointer leaving hides it, and it s
 only after the pointer or focus moves on. The text is also the element's UI Automation help
 text when its accessibility description has none, so icon-only controls are described.
 
+Every container insets its children by its `padding` (`layout::Insets`, or `Insets::all(n)`
+for the same space on each edge). The padding adds to the container's intrinsic size, so a
+padded element without children is as large as its padding, and a scroll viewport scrolls its
+content inside it.
+
 `set_offset` translates a whole subtree after layout. Every ancestor clips both drawing
 and hit-testing. Pointer and key events bubble up the original path until a handler
 returns true. Pointer positions are relative to each recipient. Input handlers can remove

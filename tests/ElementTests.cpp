@@ -68,6 +68,31 @@ int arrangement(const testing::Options&) {
     flex->set_layout({Kind::stack, Axis::horizontal, 1});
     require(tree.hit_test({21, 0}) == b.get() && b->bounds().width == 13, "Replacing a layout left stale hit bounds");
 
+    // Padding insets the children, and an element's intrinsic size includes it.
+    auto padded = std::make_shared<Element>(ElementLayout{.kind = Kind::stack, .gap = 2, .padding = {10, 5, 20, 15}});
+    auto first = leaf(30, 10), second = leaf(30, 6);
+    padded->add(first);
+    padded->add(second);
+    auto bare = std::make_shared<Element>(ElementLayout{.padding = layout::Insets::all(7)});
+    auto paddedColumn = std::make_shared<Element>(ElementLayout{Kind::stack});
+    paddedColumn->add(padded);
+    paddedColumn->add(bare);
+    ElementTree paddedTree(paddedColumn);
+    paddedTree.set_viewport({100, 100});
+    paddedTree.update_layout();
+    require(same(padded->bounds(), {0, 0, 100, 38}) && same(first->bounds(), {10, 5, 70, 10}) &&
+        same(second->bounds(), {10, 17, 70, 6}), "Padding did not inset the children or add to the intrinsic height");
+    require(same(bare->bounds(), {0, 38, 100, 14}), "An element without children was not as tall as its padding");
+    require(paddedTree.hit_test({5, 8}) == padded.get() && paddedTree.hit_test({12, 8}) == first.get(),
+        "Hit-testing in the padding reached a child");
+    padded->remove(*second);
+    padded->set_layout({.kind = Kind::scroll, .viewportLength = 20.f, .padding = {0, 4, 0, 4}});
+    first->set_preferred_size({30, 40});
+    paddedTree.update_layout();
+    require(padded->bounds().height == 28 && first->bounds().y == 4 && padded->scroll_limit() == 20,
+        "A scroll viewport did not scroll its content inside the padding");
+    require(testing::throws<std::invalid_argument>([&] { padded->set_layout({.padding = {-1, 0, 0, 0}}); }), "Negative padding was accepted");
+
     class Wrapping : public Element {
         layout::Size measure_content(layout::Size available) const override {
             const float width = std::clamp(available.width, 1.f, 80.f);

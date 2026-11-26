@@ -15,6 +15,15 @@ void validate(ElementLayout value) {
         (value.viewportLength && (!std::isfinite(*value.viewportLength) || *value.viewportLength < 0))) {
         throw std::invalid_argument("Element layout needs a nonnegative finite gap and at least one column");
     }
+    const auto& p = value.padding;
+    for (const float edge : {p.left, p.top, p.right, p.bottom}) {
+        if (!std::isfinite(edge) || edge < 0) { throw std::invalid_argument("Element padding must be finite and nonnegative"); }
+    }
+}
+
+// The room left for children inside the padding.
+Size inside(Size outer, const layout::Insets& p) {
+    return {std::max(0.0f, outer.width - p.left - p.right), std::max(0.0f, outer.height - p.top - p.bottom)};
 }
 }
 
@@ -26,8 +35,8 @@ void Element::set_layout(ElementLayout value) {
     if (value.kind == ElementLayout::Kind::scroll && children_.size() > 1) {
         throw std::invalid_argument("A scroll element accepts one child");
     }
-    if (layout_.kind == value.kind && layout_.gap == value.gap &&
-        layout_.axis == value.axis && layout_.columns == value.columns && layout_.viewportLength == value.viewportLength) { return; }
+    if (layout_.kind == value.kind && layout_.gap == value.gap && layout_.axis == value.axis &&
+        layout_.columns == value.columns && layout_.viewportLength == value.viewportLength && layout_.padding == value.padding) { return; }
     layout_ = value;
     orderDirty_ = true;
     scrollOffset_ = scrollLimit_ = 0;
@@ -45,9 +54,11 @@ Size Element::measure(Size available) {
     if (!std::isfinite(own.width) || !std::isfinite(own.height) || own.width < 0 || own.height < 0) {
         throw std::invalid_argument("Element measurements must be finite and nonnegative");
     }
-    const auto content = layout_children(available, false);
-    desired_ = {std::min(available.width, std::max(own.width, content.width)),
-                std::min(available.height, std::max(own.height, content.height))};
+    // Padding surrounds the children's extent; an element without children is at least its padding.
+    const auto& p = layout_.padding;
+    const auto content = layout_children(inside(available, p), false);
+    desired_ = {std::min(available.width, std::max(own.width, content.width + p.left + p.right)),
+                std::min(available.height, std::max(own.height, content.height + p.top + p.bottom))};
     if (!std::isfinite(desired_.width) || !std::isfinite(desired_.height)) {
         throw std::overflow_error("Element layout exceeds the DIP coordinate range");
     }
@@ -71,13 +82,13 @@ void Element::arrange(layout::Rect box) {
         invalidate();
     }
     if (arrangeDirty_) {
-        layout_children({box.width, box.height}, true);
+        layout_children(inside({box.width, box.height}, layout_.padding), true, {layout_.padding.left, layout_.padding.top});
         arrangeDirty_ = false;
     }
     if (notify) { tree_->layoutCallbacks_.push_back(tree_->reference(this)); }
 }
 
-Size Element::layout_children(Size available, bool arranging) {
+Size Element::layout_children(Size available, bool arranging, layout::Point origin) {
     if (children_.empty()) {
         scrollLimit_ = 0;
         if (arranging) { scrollOffset_ = 0; }
@@ -95,7 +106,7 @@ Size Element::layout_children(Size available, bool arranging) {
             result.height = std::max(result.height, size.height);
             if (arranging) {
                 const auto slot = kind == canvas ? size : available;
-                child->arrange({0, 0, slot.width, slot.height});
+                child->arrange({origin.x, origin.y, slot.width, slot.height});
             }
         }
         return result;
@@ -123,7 +134,7 @@ Size Element::layout_children(Size available, bool arranging) {
             }
             if (arranging) {
                 for (auto i = first; i < end; ++i) {
-                    children_[i]->arrange({static_cast<float>(i - first) * (cellWidth + gap), y, cellWidth, height});
+                    children_[i]->arrange({origin.x + static_cast<float>(i - first) * (cellWidth + gap), origin.y + y, cellWidth, height});
                 }
             }
             y += height;
@@ -141,7 +152,7 @@ Size Element::layout_children(Size available, bool arranging) {
     };
     const auto place = [&](Element& child, float start, float length) {
         const auto s = size(length, cross(available));
-        child.arrange({vertical ? 0.0f : start, vertical ? start : 0.0f, s.width, s.height});
+        child.arrange({origin.x + (vertical ? 0.0f : start), origin.y + (vertical ? start : 0.0f), s.width, s.height});
     };
     const auto intrinsic = size(unbounded, cross(available));
     if (kind == scroll) {
