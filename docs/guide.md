@@ -319,6 +319,15 @@ and menu entries. Its availability combines with inherited disabled state. `Obse
 publishes unequal values on the UI thread. Change and activation subscriptions return a
 `Connection` whose lifetime controls the subscription.
 
+A list becomes a tree when its `Items` give each row a `level` and, for rows with children, an
+`expanded` state. The rows stay flat, in order, with each row's children after it: the owner
+keeps the tree and lists the rows that show. Right asks to open a folded row or moves to the
+first child of an open one, and Left asks to fold an open row or moves to the parent.
+`on_expand` receives those requests, and UI Automation's ExpandCollapse, on a tree item that
+also reports its level; the owner changes its rows and sets them again. The list does not fold
+rows for the pointer: a renderer draws the expander, and the owner toggles from `on_activate`
+or from a control in the row.
+
 For large lists, supply an `Items` count and indexed label callback. The list realizes
 the rows covering the viewport, including partially visible rows, and retains
 the selected row when it scrolls offscreen. Rows take the list's row height, or each its own
@@ -362,6 +371,7 @@ host window determine whether it can take focus or perform an action.
 | Invoke | Set `invoke` to the control's action. Enter and Space also activate a focused control. |
 | Value | Set `value` to an `ElementAccessibility::Value` containing its current text and an optional setter. |
 | RangeValue | Supply the current value, limits and small/large increments. Arrow keys, Page Up/Down and Home/End use the same setter as automation. |
+| Level | Set `level` to an item's depth in a tree or outline, from 1. |
 | Selection and SelectionItem | Give a container a `Selection`, and give each item an initial `selected` state. Use `select_item` from pointer handlers. Space selects an item and Ctrl+Space adds or removes it. Selection operations enforce the container's single/multiple and required rules and call its `changed` callback. Nested selection containers manage their own items. |
 | Scroll | Describe an element with scroll layout. UIA reads and changes the same horizontal or vertical offset used by the wheel and layout. |
 | Text | Use a `TextBox`, including read-only mode, for native ranges, selections and screen geometry. A custom document renderer can supply an `ITextProvider` through `textProvider`. |

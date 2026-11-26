@@ -13,12 +13,21 @@ Items Items::strings(std::vector<std::wstring> labels) {
 class List::Row final : public Pressable {
 public:
     Row(List& list, std::size_t i)
-        : Pressable(list.items_.label(i), list.menu_ ? UIA_MenuItemControlTypeId : UIA_ListItemControlTypeId),
+        : Pressable(list.items_.label(i), list.menu_ ? UIA_MenuItemControlTypeId
+                                          : list.tree() ? UIA_TreeItemControlTypeId : UIA_ListItemControlTypeId),
           owner(&list), index(i) {
         set_focusable(false);
         auto a = *accessibility();
         if (list.selectable(i)) { a.selected = false; }
         a.invoke = [this] { choose(true); };
+        if (list.tree()) {
+            a.level = static_cast<int>(std::min<std::size_t>(list.level(i), INT_MAX - 1)) + 1;
+            if (const auto open = list.expansion(i)) {
+                a.expansion = ElementAccessibility::Switch{*open, [this](bool on) {
+                    if (owner) { owner->expand_.emit(index, on); }
+                }};
+            }
+        }
         set_accessibility(std::move(a));
         if (list.items_.command) {
             command = list.items_.command(i);
@@ -105,6 +114,14 @@ void List::set_items(Items items) {
     prefix_.clear();
     items_ = std::move(items);
     tops_ = std::move(tops);
+    if (!menu_) {
+        const long role = tree() ? UIA_TreeControlTypeId : UIA_ListControlTypeId;
+        if (accessibility()->controlType != role) {
+            auto a = *accessibility();
+            a.controlType = role;
+            set_accessibility(std::move(a));
+        }
+    }
     rows_->set_preferred_size({0, static_cast<float>(extent)});
     set_scroll_offset(0);
     invalidate_measure();
@@ -259,6 +276,32 @@ bool List::type_ahead(std::wstring_view text) {
     }
     return true;
 }
+bool List::tree_key(bool right) {
+    if (!tree() || !current_) { return false; }
+    const auto index = *current_;
+    const auto open = expansion(index);
+    if (right) {
+        if (open == false) {
+            expand_.emit(index, true);
+        } else if (open == true && index + 1 < items_.count && level(index + 1) > level(index)) {
+            go_to(index + 1);
+        }
+        return true;
+    }
+    if (open == true) {
+        expand_.emit(index, false);
+        return true;
+    }
+    // The parent is the nearest row above at a shallower level.
+    const auto depth = level(index);
+    for (auto row = index; depth > 0 && row-- > 0;) {
+        if (level(row) < depth) {
+            go_to(row);
+            break;
+        }
+    }
+    return true;
+}
 bool List::navigate(const KeyEvent& e) {
     if (!interactive() || !e.down || e.alt || e.control || e.shift || !items_.count) { return false; }
     if (e.key == VK_RETURN || e.key == VK_SPACE) { return activate_selected(); }
@@ -280,6 +323,7 @@ bool List::navigate(const KeyEvent& e) {
         candidate = !current_ ? last : std::min(*current_ - std::min<std::size_t>(*current_, 1),
             rows_before(top(*current_) - bounds().height));
         break;
+    case VK_RIGHT: case VK_LEFT: return tree_key(e.key == VK_RIGHT);
     default: return false;
     }
     for (;;) {

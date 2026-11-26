@@ -225,6 +225,67 @@ int current(const testing::Options&) {
     return 0;
 }
 
+int tree(const testing::Options&) {
+    // Mail holds Inbox and Projects, and Projects holds Website; Projects starts folded.
+    const std::vector<std::wstring> names{L"Mail", L"Inbox", L"Projects", L"Website"};
+    const std::vector<std::size_t> levels{0, 1, 1, 2};
+    bool projectsOpen{};
+    const auto rows = [&] {
+        auto shown = std::make_shared<std::vector<std::size_t>>(std::vector<std::size_t>{0, 1, 2});
+        if (projectsOpen) { shown->push_back(3); }
+        ui::Items items{shown->size(), [shown, &names](std::size_t i) { return names[(*shown)[i]]; }};
+        items.level = [shown, &levels](std::size_t i) { return levels[(*shown)[i]]; };
+        items.expanded = [shown, &projectsOpen](std::size_t i) -> std::optional<bool> {
+            const auto node = (*shown)[i];
+            if (node == 0) { return true; }
+            if (node == 2) { return projectsOpen; }
+            return std::nullopt;
+        };
+        return items;
+    };
+    auto list = std::make_shared<ui::List>(L"Folders", rows(), 24, 120);
+    std::vector<std::pair<std::size_t, bool>> requests;
+    auto onExpand = list->on_expand([&](std::size_t row, bool open) {
+        requests.emplace_back(row, open);
+        if (row != 2) { return; }
+        projectsOpen = open;
+        list->set_items(rows());
+        list->go_to(2);
+    });
+    ElementTree tree(list);
+    tree.set_viewport({200, 120});
+    tree.update_layout();
+    require(list->accessibility()->controlType == UIA_TreeControlTypeId, "A list with levels was not a tree");
+    require(list->request_focus(), "List focus");
+    tree.key({VK_DOWN, true});
+    tree.key({VK_DOWN, true});
+    tree.key({VK_DOWN, true});
+    tree.key({VK_RIGHT, true});
+    require(requests.size() == 1 && requests[0] == std::pair<std::size_t, bool>{2, true} && list->items().count == 4,
+        "Right did not ask to open a folded row");
+    tree.key({VK_RIGHT, true});
+    require(list->selected() == 3, "Right on an open row did not move to its first child");
+    tree.key({VK_LEFT, true});
+    require(list->selected() == 2 && requests.size() == 1, "Left on a leaf did not move to its parent");
+    tree.key({VK_LEFT, true});
+    require(requests.size() == 2 && !requests[1].second && list->items().count == 3, "Left did not ask to fold an open row");
+    tree.key({VK_LEFT, true});
+    require(list->selected() == 0, "Left on a folded row did not move to its parent");
+    tree.update_layout();
+    const auto* projects = tree.hit_test({8, 60});
+    const auto* inbox = tree.hit_test({8, 30});
+    require(projects && projects->accessibility()->controlType == UIA_TreeItemControlTypeId &&
+        projects->accessibility()->level == 2 && projects->accessibility()->expansion &&
+        !projects->accessibility()->expansion->on && inbox && !inbox->accessibility()->expansion,
+        "Tree rows did not expose their level and expansion");
+    projects->accessibility()->expansion->set(true);
+    require(requests.size() == 3 && requests[2] == std::pair<std::size_t, bool>{2, true},
+        "Automation's Expand did not reach the owner");
+    list->set_items(ui::Items::strings({L"Plain"}));
+    require(list->accessibility()->controlType == UIA_ListControlTypeId, "A list without levels stayed a tree");
+    return 0;
+}
+
 int popup(const testing::Options&) {
     auto content = std::make_shared<Element>(ElementLayout{ElementLayout::Kind::stack});
     auto dropdown = std::make_shared<ui::Dropdown>(L"Output", ui::Items::strings({L"Stereo", L"Mono", L"Surround"}), 20, 60);
@@ -301,5 +362,5 @@ int virtualization(const testing::Options&) {
 int main(int argc, char** argv) {
     return testing::run(argc, argv, {{"behaviour", behaviour}, {"virtualization", virtualization}, {"popup", popup},
         {"style", style}, {"scrollbar", scrollbar}, {"context", context}, {"heights", heights},
-        {"current", current}});
+        {"current", current}, {"tree", tree}});
 }

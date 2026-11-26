@@ -176,6 +176,12 @@ HRESULT ElementAutomation::metadata(Element& e, PROPERTYID id, VARIANT* out) {
         return string_value(a.helpText.empty() ? e.tooltip() : a.helpText, out);
     case UIA_ItemStatusPropertyId:
         return string_value(a.itemStatus, out);
+    case UIA_LevelPropertyId:
+        if (a.level > 0) {
+            out->vt = VT_I4;
+            out->lVal = a.level;
+        }
+        return S_OK;
     case UIA_LocalizedControlTypePropertyId:
         return a.localizedControlType.empty() ? S_OK : string_value(a.localizedControlType, out);
     case UIA_LabeledByPropertyId: {

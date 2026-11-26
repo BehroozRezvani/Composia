@@ -44,5 +44,7 @@ struct ElementAccessibility {
         std::function<void(bool)> set{};
     };
     std::optional<Switch> toggle{}, expansion{};
+    // An item's depth in a tree or an outline, from 1 for the top level; 0 for none.
+    int level{};
 };
 }

@@ -73,6 +73,7 @@ struct Controls {
                                          L"device" + std::to_wstring(i + 1));
             auto item = *last->accessibility();
             item.selected = (i == 0);
+            item.level = 1 + i % 2;
             item.value = ElementAccessibility::Value{L"Stereo", {}};
             last->set_accessibility(std::move(item));
             last->set_focusable(true);
@@ -213,6 +214,9 @@ int inspect(const testing::Options& options) {
             wil::unique_bstr mono{SysAllocString(L"Mono")};
             require(std::wstring_view(mode.get()) == L"Stereo" && readOnly && FAILED(value->SetValue(mono.get())),
                     "Read-only item value");
+            VARIANT level{};
+            THROW_IF_FAILED(item->GetCurrentPropertyValue(UIA_LevelPropertyId, &level));
+            require(level.vt == VT_I4 && level.lVal == 1, "An item's level was not exposed");
             THROW_IF_FAILED(selection->Select());
             require(FAILED(selection->RemoveFromSelection()), "Required selection was cleared");
             auto container = pattern<IUIAutomationSelectionPattern>(list.get(), UIA_SelectionPatternId);

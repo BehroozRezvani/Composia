@@ -193,6 +193,11 @@ struct Items {
     // Optional: whether a row can be selected. A row that cannot, such as a heading, can still be
     // the current row, where the keyboard acts, but is never selected.
     std::function<bool(std::size_t)> selectable{};
+    // Optional depth of each row in a tree, from 0 for the top level, with each row's children
+    // after it. A list with levels or expansion states is a tree.
+    std::function<std::size_t(std::size_t)> level{};
+    // Optional: whether a row's children show (true), are folded away (false), or it has none.
+    std::function<std::optional<bool>(std::size_t)> expanded{};
     static Items strings(std::vector<std::wstring>);
 };
 
@@ -224,6 +229,10 @@ public:
     [[nodiscard]] std::size_t realized_count() const noexcept;
     Connection on_selection(std::function<void(Index)> f) { return changed_.connect(std::move(f)); }
     Connection on_activate(std::function<void(std::size_t)> f) { return activated_.connect(std::move(f)); }
+    // In a tree, asks to show (true) or fold (false) a row's children: Right on a folded row,
+    // Left on an open one, or UI Automation's ExpandCollapse. The list changes nothing itself;
+    // the owner updates its rows and sets them again.
+    Connection on_expand(std::function<void(std::size_t, bool)> f) { return expand_.connect(std::move(f)); }
 private:
     friend class Picker;
     friend class PopupHost;
@@ -238,6 +247,13 @@ private:
     // The row at the content offset y, or nullopt past either end.
     [[nodiscard]] Index row_at(double y) const noexcept;
     [[nodiscard]] bool selectable(std::size_t) const;
+    [[nodiscard]] bool tree() const noexcept { return items_.level || items_.expanded; }
+    [[nodiscard]] std::size_t level(std::size_t i) const { return items_.level ? items_.level(i) : 0; }
+    [[nodiscard]] std::optional<bool> expansion(std::size_t i) const {
+        return items_.expanded ? items_.expanded(i) : std::nullopt;
+    }
+    // Right and Left in a tree: open or fold the current row, or move to its child or parent.
+    bool tree_key(bool right);
     // Selects a row, or makes a row that cannot be selected current, without scrolling.
     bool move_to(std::size_t);
     void set_current(Index);
@@ -260,6 +276,7 @@ private:
     RowRenderer renderer_;
     Signal<Index> changed_;
     Signal<std::size_t> activated_;
+    Signal<std::size_t, bool> expand_;
 };
 
 class Picker;

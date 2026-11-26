@@ -317,6 +317,9 @@ void ElementAutomation::properties(Element& e, const ElementAccessibility* old) 
     if (old->itemStatus != a.itemStatus) {
         changed.push_back(UIA_ItemStatusPropertyId);
     }
+    if (old->level != a.level) {
+        changed.push_back(UIA_LevelPropertyId);
+    }
     if (old->helpText != a.helpText) {
         changed.push_back(UIA_HelpTextPropertyId);
     }

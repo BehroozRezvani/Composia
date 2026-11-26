@@ -35,6 +35,10 @@ change the API; each change is listed here.
 - `Items::selectable` marks rows that cannot be selected, such as headings. The keyboard and
   the pointer can still rest on them: `List::current` is that row, `go_to` moves there as the
   arrows do, and Enter and the keyboard's context menu request act on it.
+- Lists can be trees: `Items::level` and `Items::expanded` describe the rows that show, Right
+  and Left open and fold rows or move to a child or the parent, and `List::on_expand` asks the
+  owner to change its rows. Tree items report their level and support ExpandCollapse.
+  `ElementAccessibility::level` serves the UI Automation Level property.
 
 ### Changed
 
