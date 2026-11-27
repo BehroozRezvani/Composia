@@ -134,7 +134,7 @@ composia_add_scenarios(composia-timer-tests timer SCENARIOS basics errors)
 
 composia_test_target(composia-text-box-tests TextBoxTests.cpp)
 composia_add_scenarios(composia-text-box-tests text-box WARP SCENARIOS editing rendering)
-composia_add_scenarios(composia-text-box-tests text-box SCENARIOS accessibility clipboard composition cursor password)
+composia_add_scenarios(composia-text-box-tests text-box SCENARIOS accessibility accessibility-moved clipboard composition cursor password)
 composia_test_target(composia-element-accessibility-tests ElementAccessibilityTests.cpp)
 composia_add_scenarios(composia-element-accessibility-tests element-accessibility WARP SCENARIOS inspect)
 composia_add_scenarios(composia-element-accessibility-tests element-accessibility CORE SCENARIOS selection)

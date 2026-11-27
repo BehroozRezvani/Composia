@@ -70,6 +70,7 @@ void TextBox::Host::initialize() {
 
 void TextBox::Host::shutdown() noexcept {
     deactivate();
+    provider.reset();
     box = nullptr;
     if (engine && SUCCEEDED(rich_edit().shutdown(engine.get()))) { (void)engine.detach(); }
     engine.reset();
@@ -159,10 +160,9 @@ void TextBox::Host::focus(bool value) {
     invalidate();
 }
 void TextBox::Host::deactivate() noexcept {
-    if (provider) {
-        UiaDisconnectProvider(provider.get());
-        provider.reset();
-    }
+    // Clients let go of the provider, which stays: Rich Edit makes one per text services, and
+    // refuses another for an editor that leaves a tree and joins one again.
+    if (provider) { UiaDisconnectProvider(provider.get()); }
     try {
         focus(false);
     } catch (...) { LOG_CAUGHT_EXCEPTION(); }

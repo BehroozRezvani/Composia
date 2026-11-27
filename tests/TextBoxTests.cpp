@@ -1,5 +1,6 @@
 #include <composia/ElementWindow.hpp>
 #include <composia/ScopedSurfaceDraw.hpp>
+#include <composia/ElementAccessibility.hpp>
 #include <composia/TextBox.hpp>
 #include <vector>
 #include "support/TestSupport.hpp"
@@ -369,6 +370,65 @@ int rendering(const testing::Options& options) {
     return 0;
 }
 }
+// A text box moved from one container to another, as a page built again moves its fields: UI
+// Automation still finds it, and its value.
+int accessibility_moved(const testing::Options& options) {
+    Application app{options.warp};
+    {
+        auto root = std::make_shared<Element>(ElementLayout{ElementLayout::Kind::stack});
+        auto first = std::make_shared<Element>(ElementLayout{ElementLayout::Kind::stack});
+        auto second = std::make_shared<Element>(ElementLayout{ElementLayout::Kind::stack});
+        auto edit = std::make_shared<TextBox>(TextBox::Options{.name = L"Moved"}, L"kept");
+        // Named by its own description, as a labelled field is.
+        edit->set_accessibility({.name = L"Moved", .controlType = UIA_EditControlTypeId});
+        first->add(edit);
+        root->add(first);
+        ElementWindow window{app, L"Moved editor", 240, 160, root};
+        window.show(SW_SHOWNOACTIVATE);
+        flush(window);
+        require(window.focus_element(*edit), "Focus the editor");
+        flush(window);
+        // The page it was on goes first, and then it joins the next page.
+        root->remove(*first);
+        flush(window);
+        first->remove(*edit);
+        second->add(edit);
+        root->add(second);
+        flush(window);
+        const auto hwnd = window.hwnd();
+        std::exception_ptr error;
+        std::jthread client([&] {
+            try {
+                winrt::init_apartment(winrt::apartment_type::multi_threaded);
+                const auto uninit = wil::scope_exit([] { winrt::uninit_apartment(); });
+                wil::com_ptr<IUIAutomation> uia;
+                THROW_IF_FAILED(CoCreateInstance(__uuidof(CUIAutomation), nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(uia.put())));
+                wil::com_ptr<IUIAutomationElement> pane, node;
+                THROW_IF_FAILED(uia->ElementFromHandle(hwnd, pane.put()));
+                VARIANT editType{};
+                editType.vt = VT_I4;
+                editType.lVal = UIA_EditControlTypeId;
+                wil::com_ptr<IUIAutomationCondition> isEdit;
+                THROW_IF_FAILED(uia->CreatePropertyCondition(UIA_ControlTypePropertyId, editType, isEdit.put()));
+                THROW_IF_FAILED(pane->FindFirst(TreeScope_Descendants, isEdit.get(), node.put()));
+                require(!!node, "UIA lost the editor once it moved");
+                wil::com_ptr<IUIAutomationValuePattern> pattern;
+                THROW_IF_FAILED(node->GetCurrentPatternAs(UIA_ValuePatternId, IID_PPV_ARGS(pattern.put())));
+                require(!!pattern, "The moved editor has no ValuePattern");
+                wil::unique_bstr value;
+                THROW_IF_FAILED(pattern->get_CurrentValue(value.put()));
+                require(value && std::wstring_view(value.get()) == L"kept", "The moved editor's value");
+            } catch (...) { error = std::current_exception(); }
+            PostMessageW(hwnd, WM_CLOSE, 0, 0);
+        });
+        app.run();
+        client.join();
+        if (error) { std::rethrow_exception(error); }
+    }
+    app.close();
+    return 0;
+}
+
 int accessibility(const testing::Options& options) {
     Application app{options.warp};
     {
@@ -442,6 +502,7 @@ int main(int argc, char** argv) {
     return testing::run(argc, argv,
                         {{"editing", editing},
                          {"password", password},
+                         {"accessibility-moved", accessibility_moved},
                          {"cursor", cursor},
                          {"rendering", rendering},
                          {"clipboard", clipboard},
