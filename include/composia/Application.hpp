@@ -61,6 +61,7 @@ private:
     friend class Window;
     friend class TextBox;
     friend class Timer;
+    friend class PopupWindow;
     friend class CompositionWindowTarget;
     void attach(Window&);
     void detach(Window&) noexcept;

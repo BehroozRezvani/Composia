@@ -162,6 +162,25 @@ to the client area, forwards mouse and keyboard input, and schedules partial pai
 Pass a parent HWND to place a pane in the tab order beside native controls.
 A subclass whose `takes_focus` returns false keeps out of the keyboard focus, as a popup that
 leaves it with its owner: presses reach its elements but focus neither the window nor them.
+
+`PopupWindow` is an `ElementWindow` for a popup that can reach past its owner's edges, such as
+a menu or a field's suggestions. It is owned by the owner's top-level window, made hidden, and
+shown again and again: `show_at` places it below and to the right of a screen point, flipped to
+stay on the monitor's work area, and `show_below` places it under a screen rectangle, or above it
+when there is more room there, shortened to fit, starting at the rectangle's left edge, as wide
+as it (`Below::match_width`), or ending at its right edge inside the owner's window
+(`Below::trailing_inside_owner`). Sizes are DIPs at the target monitor's DPI. The popup paints
+`Options::background` under its content, rounds its corners and casts a shadow on Windows 11,
+and `set_dark` gives it the dark frame.
+
+With `Activation::take_focus` (the default) the popup takes the keyboard, as a menu does, while
+its owner's title bar stays active; when it closes it gives the activation back. With
+`keep_owner_focus` it never activates and stays above its owner, as a dropdown's list does while
+the field keeps the keyboard and forwards keys to it. It closes on Escape, `WM_CANCELMODE`,
+losing the activation (to anything but a popup it owns), its owner being minimized or destroyed,
+and with the popup that owns it; `on_closed` reports why, once per showing. A popup with
+`Options::menu` raises UI Automation's MenuOpened and MenuClosed. `on_closed` can run while the
+popup handles one of its own messages, so post its destruction rather than destroying it there.
 For a window with a native Win32 menu bar, pass `Window::Content::native` before
 the root element. Windows can then paint the menu into the window's backing bitmap
 while Composia renders the document into a standalone Composition target.

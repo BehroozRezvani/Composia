@@ -23,6 +23,8 @@ struct ElementAutomation
     static void detach(Element&) noexcept;
     static void structure(Element&, bool hostRoot = false) noexcept;
     static void focus_changed(Element&, bool focused) noexcept;
+    // MenuOpened or MenuClosed, on the window's first element that is a Menu, else on its root.
+    static void menu_event(ElementWindow&, EVENTID) noexcept;
     static void properties(Element&, const ElementAccessibility* old);
     static void value_changed(Element&, PROPERTYID);
     static HRESULT metadata(Element&, PROPERTYID, VARIANT*);

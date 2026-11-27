@@ -92,6 +92,12 @@ change the API; each change is listed here.
 - `ElementWindow::takes_focus`, overridden to return false, keeps a window out of the keyboard
   focus, as a popup that leaves it with its owner: presses focus neither the window nor its
   elements, and `focus_element` refuses.
+- `PopupWindow`, an `ElementWindow` owned by another window's top-level window, shows its content
+  at a screen point or below a rectangle, flipped and shortened to stay on the work area and sized
+  at that monitor's DPI. It takes the keyboard, keeping its owner's title bar active, or leaves it
+  with the owner; it closes on Escape, `WM_CANCELMODE`, deactivation, the owner minimizing or
+  closing, and with the popup that owns it, reporting why through `on_closed`; and a menu popup
+  raises UI Automation's MenuOpened and MenuClosed.
 - `ElementLayout::crossAlign` and `mainAlign` align a stack's or flex container's children
   across and along its axis (`layout::Align`), and `Element::set_align` aligns one child.
   `ElementLayout` compares with `==`.

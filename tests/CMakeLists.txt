@@ -129,6 +129,13 @@ composia_test_target(composia-element-window-tests ElementWindowTests.cpp)
 composia_add_scenarios(composia-element-window-tests element-window WARP SCENARIOS pixels navigation snapshot)
 composia_add_scenarios(composia-element-window-tests element-window SCENARIOS hosted hosted-teardown focus-cues focus-keeping tooltips visuals)
 
+# Popups in windows of their own: placement, showing, closing, and their menu events.
+composia_test_target(composia-popup-window-tests PopupWindowTests.cpp)
+target_include_directories(composia-popup-window-tests PRIVATE ${PROJECT_SOURCE_DIR}/src)
+composia_add_scenarios(composia-popup-window-tests popup-window CORE SCENARIOS placement)
+composia_add_scenarios(composia-popup-window-tests popup-window WARP SCENARIOS showing closing)
+composia_add_scenarios(composia-popup-window-tests popup-window SCENARIOS automation)
+
 composia_test_target(composia-timer-tests TimerTests.cpp)
 composia_add_scenarios(composia-timer-tests timer SCENARIOS basics errors)
 

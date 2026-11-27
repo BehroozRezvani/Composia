@@ -27,6 +27,22 @@ void ElementAutomation::disconnect(ElementWindow& w) noexcept {
         }
     }
 }
+void ElementAutomation::menu_event(ElementWindow& w, EVENTID id) noexcept {
+    try {
+        if (!w.automation_ || w.automation_provider() != w.automation_.get() || !UiaClientsAreListening()) { return; }
+        const auto find = [](const auto& self, Element& e) -> Element* {
+            if (e.accessibility() && e.accessibility()->controlType == UIA_MenuControlTypeId) { return &e; }
+            for (const auto& child : e.children()) {
+                if (auto* found = self(self, *child)) { return found; }
+            }
+            return nullptr;
+        };
+        wil::com_ptr<IRawElementProviderSimple> target;
+        if (auto* menu = find(find, w.elements().root())) { target = simple(*menu); }
+        if (!target) { target = w.automation_.get(); }
+        UiaRaiseAutomationEvent(target.get(), id);
+    } catch (...) { LOG_CAUGHT_EXCEPTION(); }
+}
 bool ElementAutomation::exposed(Element& e) noexcept {
     return e.accessibility() || dynamic_cast<TextBox*>(&e);
 }
