@@ -87,6 +87,8 @@ change the API; each change is listed here.
 - The tooltip's pause and a `TextBox`'s timers use `Timer`, so none of Composia's `WM_TIMER`
   messages reach a window procedure, and a text box's timers work without the focus.
 - A whole-surface draw clips to its surface too, since the surface may share an atlas.
+- A menu raises `on_selection` for every choice, the same row again included; a dropdown still
+  raises it only when its value changes.
 
 - A control without tokens of its own passes its renderer those of the nearest ancestor
   control or `StyleScope` with tokens, and `StyleTokens{}` only when there are none.

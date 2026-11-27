@@ -467,6 +467,16 @@ int choices(const testing::Options&) {
     tree.key({VK_DOWN, true});
     tree.key({VK_RETURN, true});
     require(!menu->expanded() && chosen == std::vector<ui::List::Index>{1}, "Enter on a row did not choose it");
+    // A menu's choice is an action: the same row again is raised again.
+    require(menu->open(), "The menu did not open again");
+    tree.key({VK_DOWN, true});
+    tree.key({VK_RETURN, true});
+    require(!menu->expanded() && chosen == std::vector<ui::List::Index>{1, 1}, "Choosing the same menu row again raised nothing");
+    menu->open();
+    tree.update_layout();
+    tree.pointer({Kind::down, {8, 60}, Mouse::left});
+    tree.pointer({Kind::up, {8, 60}, Mouse::left});
+    require(!menu->expanded() && chosen == std::vector<ui::List::Index>{1, 1, 1}, "Clicking the same menu row again raised nothing");
 
     dropdown->set_selected(1);
     require(dropdown->open(), "The dropdown did not open");
@@ -476,6 +486,12 @@ int choices(const testing::Options&) {
         "A dropdown committed its heading");
     tree.key({VK_ESCAPE, true});
     require(!dropdown->expanded() && dropdown->selected() == 1, "Escape after a heading changed the value");
+    // A dropdown's choice is a value: choosing the row it has raises nothing.
+    std::vector<ui::List::Index> sorted;
+    auto watchSort = dropdown->on_selection([&](ui::List::Index index) { sorted.push_back(index); });
+    require(dropdown->open(), "The dropdown did not open again");
+    tree.key({VK_RETURN, true});
+    require(!dropdown->expanded() && dropdown->selected() == 1 && sorted.empty(), "A dropdown raised a choice that kept its value");
     return 0;
 }
 

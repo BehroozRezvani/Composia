@@ -336,6 +336,7 @@ public:
     void set_row_renderer(List::RowRenderer renderer) { list_->set_row_renderer(std::move(renderer)); }
     void set_popup_renderer(Renderer renderer) { list_->set_renderer(std::move(renderer)); }
     void set_popup_tokens(std::optional<StyleTokens> tokens) { list_->set_tokens(tokens); }
+    // A dropdown's value changed, or a menu's row was chosen, the same row again included.
     Connection on_selection(std::function<void(List::Index)> f) { return changed_.connect(std::move(f)); }
 protected:
     Picker(std::wstring name, Items, bool menu, float rowHeight, float maxPopupHeight);
@@ -343,7 +344,8 @@ private:
     friend class PopupHost;
     PopupHost* host() const noexcept;
     void set_expanded(bool);
-    void commit(List::Index);
+    // Takes a row as the value and raises on_selection, when the row changes or `always`.
+    void commit(List::Index, bool always = false);
     void activate() override;
     bool on_key(const KeyEvent&) override;
     bool on_text_input(std::wstring_view) override;

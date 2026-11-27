@@ -99,7 +99,8 @@ Picker::Picker(std::wstring name, Items items, bool menu, float rowHeight, float
         // The keyboard can rest on a heading, but choosing it does nothing: the popup stays open.
         if (!list_->selectable(index)) { return; }
         close();
-        commit(index);
+        // A menu's choice is an action, so the same row again counts; a dropdown's is a value.
+        commit(index, menu_);
     });
 }
 PopupHost* Picker::host() const noexcept {
@@ -144,9 +145,9 @@ void Picker::on_detaching() noexcept {
     // The host may be walking its children during teardown. Its next layout removes the layer.
     try { set_expanded(false); } catch (...) { LOG_CAUGHT_EXCEPTION(); }
 }
-void Picker::commit(List::Index index) {
+void Picker::commit(List::Index index, bool always) {
     if (index && !list_->selectable(*index)) { return; }
-    if (index == selected_) { return; }
+    if (index == selected_ && !always) { return; }
     auto text = index ? list_->items().label(*index) : std::wstring{};
     selected_ = index;
     selectedText_ = std::move(text);
