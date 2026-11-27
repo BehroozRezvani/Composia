@@ -32,7 +32,8 @@ public:
         std::tie(a.positionInSet, a.sizeOfSet) = list.place_in_set(i);
         if (list.tree()) {
             a.level = static_cast<int>(std::min<std::size_t>(list.level(i), INT_MAX - 1)) + 1;
-            if (const auto open = list.expansion(i)) {
+            // A menu item that expands is a submenu, so a menu's rows keep their levels only.
+            if (const auto open = list.expansion(i); open && !list.menu_) {
                 a.expansion = ElementAccessibility::Switch{*open, [this](bool on) {
                     if (owner) { owner->expand_.emit(index, on); }
                 }};
@@ -107,15 +108,13 @@ public:
     bool doubleClick{};
 };
 
-List::List(std::wstring name, Items items, float rowHeight, float height)
-    : List(std::move(name), std::move(items), rowHeight, height, false) {}
-List::List(std::wstring name, Items items, float rowHeight, float height, bool menu)
+List::List(std::wstring name, Items items, float rowHeight, float height, ListRole role)
     : ScrollView(std::move(name), layout::Axis::vertical, height),
       content_(std::make_shared<Element>(ElementLayout{ElementLayout::Kind::overlay})),
-      rows_(std::make_shared<Element>(ElementLayout{ElementLayout::Kind::canvas})), rowHeight_(rowHeight), menu_(menu) {
+      rows_(std::make_shared<Element>(ElementLayout{ElementLayout::Kind::canvas})), rowHeight_(rowHeight), menu_(role == ListRole::menu) {
     if (!std::isfinite(rowHeight) || rowHeight <= 0) { throw std::invalid_argument("Expected a positive row height"); }
     auto a = *accessibility();
-    a.controlType = menu ? UIA_MenuControlTypeId : UIA_ListControlTypeId;
+    a.controlType = menu_ ? UIA_MenuControlTypeId : UIA_ListControlTypeId;
     a.selection = ElementAccessibility::Selection{false, false, [this] { synchronize_selection(); }};
     set_accessibility(std::move(a));
     content_->add(rows_);

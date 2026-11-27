@@ -81,7 +81,7 @@ void PopupHost::on_layout_updated() {
 
 Picker::Picker(std::wstring name, Items items, bool menu, float rowHeight, float maxHeight)
     : Pressable(name, menu ? UIA_MenuItemControlTypeId : UIA_ComboBoxControlTypeId),
-      list_(new List(name, std::move(items), rowHeight, maxHeight, menu)),
+      list_(std::make_shared<List>(name, std::move(items), rowHeight, maxHeight, menu ? ListRole::menu : ListRole::list)),
       maxHeight_(maxHeight), menu_(menu) {
     if (!std::isfinite(maxHeight) || maxHeight <= 0) { throw std::invalid_argument("Expected positive popup height"); }
     list_->set_focusable(false);

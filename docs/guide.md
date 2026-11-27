@@ -375,6 +375,11 @@ also reports its level; the owner changes its rows and sets them again. The list
 rows for the pointer: a renderer draws the expander, and the owner toggles from `on_activate`
 or from a control in the row.
 
+A list is a List of ListItems to UI Automation, or a Tree of TreeItems when its items have
+levels or expansion states. `ListRole::menu` makes it a Menu of MenuItems instead, for a popup
+menu the application shows itself; its rows keep their levels but do not expand, since a menu
+item that expands is a submenu.
+
 `Items::checked` gives rows a check state, such as a menu's option: UI Automation's Toggle
 chooses the row, and a renderer gets `State::checked`, while `State::selected` stays the
 highlight. The owner keeps the state and flips it when the row is chosen; the list reads it

@@ -232,6 +232,10 @@ struct Items {
     static Items strings(std::vector<std::wstring>);
 };
 
+// What a list is to UI Automation: a List of ListItems (a Tree of TreeItems when its items have
+// levels or expansion states), or a Menu of MenuItems, as in a popup menu the application shows.
+enum class ListRole { list, menu };
+
 class List final : public ScrollView {
 public:
     using Index = std::optional<std::size_t>;
@@ -239,8 +243,9 @@ public:
                                             layout::Size, State, const StyleTokens&)>;
     using SeparatorRenderer = std::function<void(ScopedSurfaceDraw&, std::size_t, layout::Size, const StyleTokens&)>;
     static constexpr float separatorHeight = 9;
-    List(std::wstring name, Items, float rowHeight = 32, float viewportHeight = 160);
+    List(std::wstring name, Items, float rowHeight = 32, float viewportHeight = 160, ListRole = ListRole::list);
     ~List() override;
+    [[nodiscard]] ListRole role() const noexcept { return menu_ ? ListRole::menu : ListRole::list; }
     // New rows: the selection, the current row and the scroll position start over.
     void set_items(Items);
     // New rows for the same view, as when a tree row opens: the scroll position stays where it
@@ -290,7 +295,6 @@ private:
     friend class Picker;
     friend class PopupHost;
     class Row;
-    List(std::wstring, Items, float, float, bool menu);
     void assign(Items, Index selected, Index current, bool keepView);
     Row& realize(std::size_t);
     // Where row i starts in the content, and how tall it is, in DIPs; top(count) is the extent.

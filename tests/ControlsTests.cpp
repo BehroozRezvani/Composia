@@ -675,9 +675,35 @@ int stays_open(const testing::Options&) {
     return 0;
 }
 
+// A list can be a menu to UI Automation on its own, as in an application's popup menu; a
+// dropdown's popup is a list.
+int roles(const testing::Options&) {
+    auto items = ui::Items::strings({L"Inbox", L"Projects", L"Website"});
+    items.level = [](std::size_t i) { return i == 2 ? std::size_t{1} : std::size_t{0}; };
+    items.expanded = [](std::size_t i) { return i == 1 ? std::optional<bool>{true} : std::nullopt; };
+    auto menu = std::make_shared<ui::List>(L"Move to", items, 32, 120, ui::ListRole::menu);
+    ElementTree tree(menu);
+    tree.set_viewport({160, 120});
+    tree.update_layout();
+    require(menu->role() == ui::ListRole::menu && menu->accessibility()->controlType == UIA_MenuControlTypeId,
+        "A menu list was not a Menu");
+    const auto& rows = menu->children().front()->children().front()->children();
+    require(rows.size() == 3 && std::ranges::all_of(rows, [](const auto& row) {
+        return row->accessibility()->controlType == UIA_MenuItemControlTypeId && !row->accessibility()->expansion;
+    }), "A menu list's rows were not plain MenuItems");
+    require(rows[2]->accessibility()->level == 2, "A menu list's rows lost their levels");
+    auto plain = std::make_shared<ui::List>(L"Folders", items);
+    require(plain->role() == ui::ListRole::list && plain->accessibility()->controlType == UIA_TreeControlTypeId,
+        "A list with levels was not a Tree");
+    auto dropdown = std::make_shared<ui::Dropdown>(L"Sort", ui::Items::strings({L"Date"}));
+    require(dropdown->popup().role() == ui::ListRole::list && dropdown->popup().accessibility()->controlType == UIA_ListControlTypeId,
+        "A dropdown's popup was not a List");
+    return 0;
+}
+
 int main(int argc, char** argv) {
     return testing::run(argc, argv, {{"behaviour", behaviour}, {"virtualization", virtualization}, {"popup", popup}, {"choices", choices},
-        {"separators", separators}, {"positions", positions}, {"checks", checks}, {"stays-open", stays_open},
+        {"separators", separators}, {"positions", positions}, {"checks", checks}, {"stays-open", stays_open}, {"roles", roles},
         {"style", style}, {"scrollbar", scrollbar}, {"context", context}, {"heights", heights},
         {"current", current}, {"tree", tree}, {"replace", replace},
         {"content", content}});
