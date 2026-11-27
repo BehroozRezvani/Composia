@@ -27,7 +27,8 @@ namespace composia {
 // showing, last, possibly while the popup handles one of its own messages (Escape, say), so do not
 // destroy the popup from it; and a callback posted from it can still run while one of the popup's
 // handlers is on the stack, inside a modal loop (a message box, a dialog) that handler started.
-// Destroy a popup only when none of its handlers can be running, and post modal loops out of them.
+// Destroy a popup only when none of its handlers can be running, or through Application::retire,
+// which waits for them; and post modal loops out of them.
 // Presses in windows of other threads, such as a browser's, are not seen: a popup that takes the
 // focus closes when they activate the owner, and one that keeps the owner's focus when the focus
 // goes to them.

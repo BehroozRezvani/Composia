@@ -195,7 +195,8 @@ message, never inside the hook. A popup with
 `Options::menu` raises UI Automation's MenuOpened and MenuClosed. Keep a popup and show it again rather than
 make one per showing: `on_closed` can run while the popup handles one of its own messages, and a
 callback posted from it can run inside a modal loop one of the popup's handlers started, so
-destroy a popup only when none of its handlers can be running, and post modal loops out of them.
+destroy a popup only when none of its handlers can be running, or through `Application::retire`,
+which waits for them, and post modal loops out of them.
 For a window with a native Win32 menu bar, pass `Window::Content::native` before
 the root element. Windows can then paint the menu into the window's backing bitmap
 while Composia renders the document into a standalone Composition target.
