@@ -46,5 +46,10 @@ struct ElementAccessibility {
     std::optional<Switch> toggle{}, expansion{};
     // An item's depth in a tree or an outline, from 1 for the top level; 0 for none.
     int level{};
+    // The keys that run the command without the UI showing, such as L"Ctrl+R" on a menu item.
+    std::wstring acceleratorKey{};
+    // An item's place among its peers, from 1, and how many peers there are, itself included:
+    // what a virtualized list's realized items alone cannot tell a screen reader. 0 for none.
+    int positionInSet{}, sizeOfSet{};
 };
 }

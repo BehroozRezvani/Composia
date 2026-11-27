@@ -74,17 +74,23 @@ struct Controls {
             auto item = *last->accessibility();
             item.selected = (i == 0);
             item.level = 1 + i % 2;
+            item.positionInSet = i + 1;
+            item.sizeOfSet = 7;
             item.value = ElementAccessibility::Value{L"Stereo", {}};
             last->set_accessibility(std::move(item));
             last->set_focusable(true);
             rows->add(last);
         }
+        auto divider = std::make_shared<Row>(app, L"", UIA_SeparatorControlTypeId, L"divider");
+        divider->set_preferred_size({160, 9});
+        rows->add(divider);
         editor = std::make_shared<TextBox>(TextBox::Options{.name = L"Notes"}, L"Surround sound");
         root->add(editor);
         button = std::make_shared<Row>(app, L"Apply", UIA_ButtonControlTypeId, L"apply");
         auto a = *button->accessibility();
         a.invoke = [this] { ++calls; };
         a.controllerFor = {slider};
+        a.acceleratorKey = L"Ctrl+Enter";
         button->set_accessibility(std::move(a));
         button->set_focusable(true);
         button->set_tooltip(L"Apply the device settings");
@@ -217,6 +223,19 @@ int inspect(const testing::Options& options) {
             VARIANT level{};
             THROW_IF_FAILED(item->GetCurrentPropertyValue(UIA_LevelPropertyId, &level));
             require(level.vt == VT_I4 && level.lVal == 1, "An item's level was not exposed");
+            VARIANT position{}, size{};
+            THROW_IF_FAILED(item->GetCurrentPropertyValue(UIA_PositionInSetPropertyId, &position));
+            THROW_IF_FAILED(item->GetCurrentPropertyValue(UIA_SizeOfSetPropertyId, &size));
+            require(position.vt == VT_I4 && position.lVal == 7 && size.vt == VT_I4 && size.lVal == 7,
+                    "An item's place in its set was not exposed");
+            wil::unique_bstr accelerator;
+            THROW_IF_FAILED(button->get_CurrentAcceleratorKey(accelerator.put()));
+            require(accelerator && std::wstring_view(accelerator.get()) == L"Ctrl+Enter", "An accelerator key was not exposed");
+            auto divider = byId(L"divider");
+            BOOL content{TRUE}, control{FALSE};
+            THROW_IF_FAILED(divider->get_CurrentIsContentElement(&content));
+            THROW_IF_FAILED(divider->get_CurrentIsControlElement(&control));
+            require(!content && control, "A separator was reported as content, or not as a control");
             THROW_IF_FAILED(selection->Select());
             require(FAILED(selection->RemoveFromSelection()), "Required selection was cleared");
             auto container = pattern<IUIAutomationSelectionPattern>(list.get(), UIA_SelectionPatternId);

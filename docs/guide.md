@@ -429,6 +429,9 @@ host window determine whether it can take focus or perform an action.
 | Value | Set `value` to an `ElementAccessibility::Value` containing its current text and an optional setter. |
 | RangeValue | Supply the current value, limits and small/large increments. Arrow keys, Page Up/Down and Home/End use the same setter as automation. |
 | Level | Set `level` to an item's depth in a tree or outline, from 1. |
+| Position in set | Set `positionInSet` and `sizeOfSet` to an item's place among its peers, from 1, and their number, for items that are not all realized. |
+| Accelerator key | Set `acceleratorKey` to the keys that run the command, such as `Ctrl+R` on a menu item. |
+| Separator | Give an element the Separator control type; it is reported as a control but not as content. |
 | Selection and SelectionItem | Give a container a `Selection`, and give each item an initial `selected` state. Use `select_item` from pointer handlers. Space selects an item and Ctrl+Space adds or removes it. Selection operations enforce the container's single/multiple and required rules and call its `changed` callback. Nested selection containers manage their own items. |
 | Scroll | Describe an element with scroll layout. UIA reads and changes the same horizontal or vertical offset used by the wheel and layout. |
 | Text | Use a `TextBox`, including read-only mode, for native ranges, selections and screen geometry. A custom document renderer can supply an `ITextProvider` through `textProvider`. |

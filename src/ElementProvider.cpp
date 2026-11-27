@@ -177,11 +177,16 @@ HRESULT ElementAutomation::metadata(Element& e, PROPERTYID id, VARIANT* out) {
     case UIA_ItemStatusPropertyId:
         return string_value(a.itemStatus, out);
     case UIA_LevelPropertyId:
-        if (a.level > 0) {
+    case UIA_PositionInSetPropertyId:
+    case UIA_SizeOfSetPropertyId:
+        if (const int number = id == UIA_LevelPropertyId ? a.level : id == UIA_PositionInSetPropertyId ? a.positionInSet : a.sizeOfSet;
+            number > 0) {
             out->vt = VT_I4;
-            out->lVal = a.level;
+            out->lVal = number;
         }
         return S_OK;
+    case UIA_AcceleratorKeyPropertyId:
+        return string_value(a.acceleratorKey, out);
     case UIA_LocalizedControlTypePropertyId:
         return a.localizedControlType.empty() ? S_OK : string_value(a.localizedControlType, out);
     case UIA_LabeledByPropertyId: {
@@ -243,6 +248,9 @@ HRESULT ElementProvider::GetPropertyValue(PROPERTYID id, VARIANT* out) noexcept 
             out->lVal = a.controlType;
             return S_OK;
         case UIA_IsContentElementPropertyId:
+            // A separator is a control, but not content a screen reader reads.
+            *out = boolean(a.controlType != UIA_SeparatorControlTypeId);
+            return S_OK;
         case UIA_IsControlElementPropertyId:
             *out = boolean(true);
             return S_OK;

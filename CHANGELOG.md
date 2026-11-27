@@ -71,6 +71,9 @@ change the API; each change is listed here.
   changes (`on_focus`), and reaches Rich Edit (`send`, `text_services`). `Options::passwordChar`
   masks a password field, keeps it off the clipboard and out of UI Automation's value, and
   `Options::maxLength` and `set_max_length` limit what the user can type.
+- `ElementAccessibility::acceleratorKey`, `positionInSet` and `sizeOfSet` serve UI Automation's
+  AcceleratorKey, PositionInSet and SizeOfSet, with change events. An element whose control
+  type is Separator is a control element but not content.
 - `ElementLayout::crossAlign` and `mainAlign` align a stack's or flex container's children
   across and along its axis (`layout::Align`), and `Element::set_align` aligns one child.
   `ElementLayout` compares with `==`.

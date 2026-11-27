@@ -320,6 +320,15 @@ void ElementAutomation::properties(Element& e, const ElementAccessibility* old) 
     if (old->level != a.level) {
         changed.push_back(UIA_LevelPropertyId);
     }
+    if (old->positionInSet != a.positionInSet) {
+        changed.push_back(UIA_PositionInSetPropertyId);
+    }
+    if (old->sizeOfSet != a.sizeOfSet) {
+        changed.push_back(UIA_SizeOfSetPropertyId);
+    }
+    if (old->acceleratorKey != a.acceleratorKey) {
+        changed.push_back(UIA_AcceleratorKeyPropertyId);
+    }
     if (old->helpText != a.helpText) {
         changed.push_back(UIA_HelpTextPropertyId);
     }
