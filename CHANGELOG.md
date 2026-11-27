@@ -51,18 +51,55 @@ change the API; each change is listed here.
   `List::row_bounds` gives each row's place in it.
 - `ElementWindow::snapshot` pictures an area of the tree in a sprite of its own, to animate in
   the compositor during a transition; `ElementTree::paint` can paint an area of the viewport.
+- `Timer` runs a callback once or repeatedly on the dispatcher queue. It never fires after
+  `stop` or its destruction, and its errors end `Application::run` like other callbacks.
+- `Element::set_focus_on_press(false)` keeps a focusable element, such as a splitter, out of
+  the focus a left press gives; the keyboard still reaches it.
+- `Element::set_cursor` and `Cursor` give an element a pointer shape, or a protected
+  `cursor_at` one per point. The window shows the shape of the element under the pointer, or
+  of the one that captured it; a `TextBox` shows the I-beam.
+- `ElementWindow::set_dark_tooltips` draws element tooltips in the dark style, and
+  `tooltip_hwnd` reaches the tooltip window.
+- Keyboard focus shows from a key press until a mouse press, as the web's focus-visible, for
+  every window in a top-level window: `Window::focus_visible` and `on_focus_visible`,
+  `Element::focus_visible`, and `focusVisible` in `controls::State` and `Button::State`.
+  Default painters draw focus rings only then.
+- `Window::Options` gives a window its style, extended style, owner and content at creation.
+  `Window::center_on` centres it on another window, kept on that monitor's work area, and
+  `ModalScope` disables an owner while a dialog it owns is open, unless it was disabled already.
+- `TextBox` says whether it can undo or redo, takes a new style (`set_style`), raises its focus
+  changes (`on_focus`), and reaches Rich Edit (`send`, `text_services`). `Options::passwordChar`
+  masks a password field, keeps it off the clipboard and out of UI Automation's value, and
+  `Options::maxLength` and `set_max_length` limit what the user can type.
+- `ElementLayout::crossAlign` and `mainAlign` align a stack's or flex container's children
+  across and along its axis (`layout::Align`), and `Element::set_align` aligns one child.
+  `ElementLayout` compares with `==`.
 
 ### Changed
 
 - After each layout the tree hovers the element under the pointer's resting place, so content
   that appears, goes or moves under a still pointer (replaced rows, scrolling) is hovered
   without the pointer moving.
+- The wheel scrolls as many 16-DIP lines per detent as Windows is set to (`PointerEvent::wheelLines`),
+  or a viewport's length (`wheelPages`), instead of a fixed 48 DIPs.
+- A focus move requested from a layout hook waits until layout settles, and layout hooks can
+  cause at most 16 passes in one update.
+- The tooltip's pause and a `TextBox`'s timers use `Timer`, so none of Composia's `WM_TIMER`
+  messages reach a window procedure, and a text box's timers work without the focus.
+- A whole-surface draw clips to its surface too, since the surface may share an atlas.
 
 - A control without tokens of its own passes its renderer those of the nearest ancestor
   control or `StyleScope` with tokens, and `StyleTokens{}` only when there are none.
   `Control::set_tokens` and `Picker::set_popup_tokens` take `std::optional<StyleTokens>`,
   where `nullopt` inherits again, and `Control::tokens()` returns the resolved tokens by
   value; `own_tokens()` returns what was set.
+
+### Fixed
+
+- A window letting go of its tree leaves the focus alone, so a hosted window that hides as it
+  detaches cannot send the focus through detached elements.
+- A `TextBox` that leaves the tree and comes back keeps its UI Automation provider, which Rich
+  Edit would not make a second time.
 
 ## 0.3.0 (2026-11-20)
 
