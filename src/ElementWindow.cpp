@@ -7,6 +7,7 @@
 #include <cmath>
 #include <stdexcept>
 #include <commctrl.h>
+#include <uxtheme.h>
 #include "ElementAutomation.hpp"
 
 namespace composia {
@@ -59,6 +60,11 @@ void ElementWindow::follow_tooltip(Element* source, bool keyboard) {
     if (source && hwnd()) { tipDelay_.start(std::chrono::milliseconds{GetDoubleClickTime()}); }
 }
 
+void ElementWindow::set_dark_tooltips(bool dark) {
+    darkTooltips_ = dark;
+    if (tooltip_) { SetWindowTheme(tooltip_.get(), dark ? L"DarkMode_Explorer" : nullptr, nullptr); }
+}
+
 void ElementWindow::show_tooltip() {
     tipDelay_.stop();
     const auto source = tipSource_.lock();
@@ -75,6 +81,7 @@ void ElementWindow::show_tooltip() {
             WS_POPUP | TTS_NOPREFIX | TTS_ALWAYSTIP, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
             hwnd(), nullptr, GetModuleHandleW(nullptr), nullptr));
         THROW_LAST_ERROR_IF_NULL(tooltip_.get());
+        if (darkTooltips_) { SetWindowTheme(tooltip_.get(), L"DarkMode_Explorer", nullptr); }
         THROW_LAST_ERROR_IF(!SendMessageW(tooltip_.get(), TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&tool)));
     }
     SendMessageW(tooltip_.get(), TTM_SETMAXTIPWIDTH, 0, MulDiv(400, static_cast<int>(dpi()), 96));

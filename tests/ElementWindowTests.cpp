@@ -462,12 +462,16 @@ int tooltips(const testing::Options& options) {
             return MAKELPARAM(static_cast<int>(x * window.scale()), static_cast<int>(y * window.scale()));
         };
 
+        require(!window.tooltip_hwnd(), "A tooltip window existed before any tooltip showed");
+        window.set_dark_tooltips(true);   // Kept for the tooltip window made later.
         SendMessageW(window.hwnd(), WM_MOUSEMOVE, 0, at(10, 10));
         require(!pump_until(shown_tip, delay * 2), "An element without a tooltip showed one");
         SendMessageW(window.hwnd(), WM_MOUSEMOVE, 0, at(10, 40));
         require(!shown_tip(), "The tooltip showed before the hover time");
         require(pump_until(shown_tip, delay * 4) && tip_text(shown_tip()) == L"Archive (Backspace)",
             "Resting on the element did not show its tooltip");
+        require(window.tooltip_hwnd() == shown_tip(), "tooltip_hwnd() is not the tooltip shown");
+        window.set_dark_tooltips(false);
         RECT r{};
         GetWindowRect(shown_tip(), &r);
         POINT below{0, static_cast<LONG>(40 * window.scale())};

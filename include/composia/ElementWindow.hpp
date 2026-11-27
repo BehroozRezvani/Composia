@@ -33,6 +33,11 @@ public:
     // drop it. A graphics device loss can empty it.
     [[nodiscard]] composition::SpriteVisual snapshot(layout::Rect area);
     [[nodiscard]] CompositionWindowTarget& composition_target() noexcept { return target_; }
+    // Draws element tooltips in Windows' dark style, as set_dark_title_bar does the title bar. It
+    // applies now and to a tooltip window made later (one is made when first needed).
+    void set_dark_tooltips(bool dark);
+    // The native tooltip window, once a tooltip has shown; null before.
+    [[nodiscard]] HWND tooltip_hwnd() const noexcept { return tooltip_.get(); }
 
 protected:
     void on_resize() override;
@@ -65,7 +70,7 @@ private:
     std::weak_ptr<Element> tipSource_;
     std::wstring tipText_;
     layout::Point lastPointer_{};
-    bool tipShown_{}, tipKeyboard_{};
+    bool tipShown_{}, tipKeyboard_{}, darkTooltips_{};
     Connection destroying_;
 };
 
