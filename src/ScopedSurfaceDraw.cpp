@@ -26,15 +26,15 @@ ScopedSurfaceDraw::ScopedSurfaceDraw(const composition::CompositionDrawingSurfac
         static_cast<float>(offset_.y - (update ? update->top : 0)) * dips));
     context_->SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
     if (update) {
-        // The update may share an atlas with other surfaces; nothing may be drawn outside it.
         bounds_ = {static_cast<float>(update->left) * dips, static_cast<float>(update->top) * dips,
             static_cast<float>(update->right) * dips, static_cast<float>(update->bottom) * dips};
-        context_->PushAxisAlignedClip(bounds_, D2D1_ANTIALIAS_MODE_ALIASED);
-        clipped_ = true;
     } else {
         const auto size = surface.Size();
         bounds_ = {0, 0, size.Width * dips, size.Height * dips};
     }
+    // The surface may share an atlas with others: nothing, not even Clear, may reach past the update.
+    context_->PushAxisAlignedClip(bounds_, D2D1_ANTIALIAS_MODE_ALIASED);
+    clipped_ = true;
     drawing_ = true;
 }
 

@@ -13,7 +13,7 @@ namespace composia {
 // graphics device, and do not call the context's own BeginDraw or EndDraw.
 class ScopedSurfaceDraw {
 public:
-    // Updates the whole surface.
+    // Updates the whole surface. Drawing is clipped to it, since it may share an atlas with others.
     ScopedSurfaceDraw(const composition::CompositionDrawingSurface&, const GraphicsDevice&, UINT dpi);
     // Updates only the given rectangle of surface pixels. Drawing is clipped to it, and the
     // surface keeps its content outside it.
