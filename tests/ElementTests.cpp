@@ -150,6 +150,53 @@ int arrangement(const testing::Options&) {
     return 0;
 }
 
+// The pointer's shape: an element's own, its parent's when it has none, a part's own through
+// cursor_at, none from a disabled element, and the captured element's wherever the pointer is.
+class Link final : public Element {
+public:
+    Link() { set_preferred_size({40, 20}); }
+private:
+    std::optional<Cursor> cursor_at(layout::Point local) const override {
+        return local.x < 20 ? std::optional{Cursor::hand} : std::nullopt;
+    }
+};
+
+class Grabber final : public Element {
+public:
+    Grabber() { set_preferred_size({40, 20}); }
+    using Element::capture_pointer;
+    using Element::release_pointer;
+};
+
+int cursors(const testing::Options&) {
+    auto root = std::make_shared<Element>(ElementLayout{ElementLayout::Kind::stack, layout::Axis::horizontal});
+    auto text = leaf(40, 20), inner = leaf(10, 10);
+    auto plain = std::make_shared<Grabber>();
+    auto link = std::make_shared<Link>();
+    root->add(text);
+    root->add(plain);
+    root->add(link);
+    plain->add(inner);
+    ElementTree tree(root);
+    tree.set_viewport({120, 20});
+    require(tree.cursor_at({5, 5}) == Cursor::arrow, "No shape set is not the arrow");
+    text->set_cursor(Cursor::text);
+    root->set_cursor(Cursor::help);
+    require(tree.cursor_at({5, 5}) == Cursor::text && tree.cursor_at({45, 5}) == Cursor::help && tree.cursor_at({42, 2}) == Cursor::help,
+        "An element's own shape or its parent's");
+    require(tree.cursor_at({85, 5}) == Cursor::hand && tree.cursor_at({105, 5}) == Cursor::help, "A part's shape through cursor_at");
+    text->set_enabled(false);
+    require(tree.cursor_at({5, 5}) == Cursor::help, "A disabled element kept its shape");
+    text->set_enabled(true);
+    text->set_cursor(std::nullopt);
+    plain->set_cursor(Cursor::resize_horizontal);
+    require(plain->capture_pointer(), "Capture");
+    require(tree.cursor_at({5, 5}) == Cursor::resize_horizontal, "The captured element's shape did not follow the pointer");
+    plain->release_pointer();
+    require(tree.cursor_at({5, 5}) == Cursor::help, "Releasing the capture kept its shape");
+    return 0;
+}
+
 int routing(const testing::Options&) {
     auto root = std::make_shared<Probe>();
     auto back = leaf(10, 10), panel = leaf(40, 40), front = leaf(20, 20);
@@ -338,6 +385,6 @@ int hover(const testing::Options&) {
 }
 
 int main(int argc, char** argv) {
-    return testing::run(argc, argv, {{"layout", arrangement}, {"routing", routing}, {"damage", damage},
+    return testing::run(argc, argv, {{"layout", arrangement}, {"routing", routing}, {"cursors", cursors}, {"damage", damage},
         {"context-menu", context_menu}, {"hover", hover}});
 }

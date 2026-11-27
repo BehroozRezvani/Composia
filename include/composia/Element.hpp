@@ -69,6 +69,10 @@ public:
     // the element's UI Automation help text when the accessibility description has none.
     // Empty for no tooltip.
     void set_tooltip(std::wstring);
+    // The pointer's shape over the element, or nullopt (the default) to take its parent's. The
+    // window shows the shape of the element under the pointer, or of the one that captured it.
+    void set_cursor(std::optional<Cursor> cursor) noexcept { cursor_ = cursor; }
+    [[nodiscard]] std::optional<Cursor> cursor() const noexcept { return cursor_; }
     [[nodiscard]] const std::wstring& tooltip() const noexcept { return tooltip_; }
     [[nodiscard]] const ElementAccessibility* accessibility() const noexcept { return accessibility_.get(); }
     bool select_item(SelectionAction);
@@ -113,6 +117,9 @@ protected:
     // True to receive pointer input at this local point itself rather than through a child
     // there, such as a scrollbar over content. Hit-testing asks before it looks at children.
     [[nodiscard]] virtual bool claims_pointer(layout::Point) const { return false; }
+    // The pointer's shape at a local point: by default the one set_cursor gave. Override it for
+    // parts with a shape of their own, such as a link inside a label; nullopt takes the parent's.
+    [[nodiscard]] virtual std::optional<Cursor> cursor_at(layout::Point) const { return cursor_; }
     // The deepest hit or focused element is called first. Return true to stop bubbling.
     virtual bool on_pointer(const PointerEvent&) { return false; }
     virtual bool on_key(const KeyEvent&) { return false; }
@@ -157,6 +164,7 @@ private:
     int z_{};
     bool measureDirty_{true}, arrangeDirty_{true}, orderDirty_{true}, orderedBands_{}, focusable_{}, enabled_{true}, detaching_{};
     bool focusOnPress_{true};
+    std::optional<Cursor> cursor_;
     bool hostsWindow_{}, hostsVisual_{};
 };
 
@@ -182,6 +190,10 @@ public:
     // Whether a left press at a point (viewport DIPs) leaves the focus where it is: the element the
     // press would focus keeps out of it (Element::set_focus_on_press).
     [[nodiscard]] bool press_keeps_focus(layout::Point);
+    // The pointer's shape at a point (viewport DIPs): that of the element that captured the
+    // pointer, or else of the one under it, or of its nearest ancestor with one. For hosts that
+    // set the cursor themselves; ElementWindow does it on WM_SETCURSOR.
+    [[nodiscard]] Cursor cursor_at(layout::Point);
     bool pointer(PointerEvent);                // Input position in viewport DIPs.
     void pointer_leave();
     bool key(const KeyEvent&);

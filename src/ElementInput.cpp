@@ -27,6 +27,15 @@ bool ElementTree::bubble(Element& target, Handler&& handle) {
     return false;
 }
 
+Cursor ElementTree::cursor_at(layout::Point position) {
+    for (auto* p = captured_ ? captured_ : hit_test(position); p; p = p->parent_) {
+        if (!p->enabled()) { continue; }
+        const auto box = p->viewport_bounds();
+        if (const auto cursor = p->cursor_at({position.x - box.x, position.y - box.y})) { return *cursor; }
+    }
+    return Cursor::arrow;
+}
+
 bool ElementTree::press_keeps_focus(layout::Point position) {
     for (auto* p = captured_ ? captured_ : hit_test(position); p; p = p->parent_) {
         if (p->focusable_) { return !p->focusOnPress_; }

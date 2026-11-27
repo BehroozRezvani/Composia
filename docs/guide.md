@@ -244,6 +244,11 @@ focus. Call `window.focus_element(element)` to give a drawn control both Windows
 keyboard focus. Disabling a retained ancestor clears focus inside it and takes the subtree
 out of pointer interaction and Tab traversal.
 
+`set_cursor(Cursor::hand)` gives an element a pointer shape; an element without one takes its
+parent's, and a `TextBox` has the text cursor. Override `cursor_at` for parts with shapes of
+their own, such as a link inside a label. The window shows the shape of the element under the
+pointer, or of the one that captured it for as long as it holds the pointer.
+
 For a custom host, pass a callback to the tree that queues an update. Set the viewport
 in DIPs at resize, then call `take_dirty_bounds()` in the queued update and invalidate
 the returned window rectangle. Hit-testing, painting, and taking damage resolve pending

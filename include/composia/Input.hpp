@@ -18,6 +18,9 @@ struct PointerEvent {
     bool doubleClick{};
 };
 
+// The pointer's shape over an element (Element::set_cursor): Windows' standard cursors.
+enum class Cursor { arrow, hand, text, resize_horizontal, resize_vertical, resize_all, wait, progress, not_allowed, crosshair, help };
+
 // A request for a context menu: a right click, Shift+F10, or the menu key.
 struct ContextMenuEvent {
     // Local to the current recipient. The pointer for a click; for the keyboard, the lower-left

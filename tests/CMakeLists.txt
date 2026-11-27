@@ -124,7 +124,7 @@ composia_add_scenarios(composia-animation-tests animation WARP SCENARIOS helpers
 
 # Retained layout, routing, focus, and damage on the UI thread.
 composia_test_target(composia-element-tests ElementTests.cpp)
-composia_add_scenarios(composia-element-tests element CORE SCENARIOS layout routing damage context-menu hover)
+composia_add_scenarios(composia-element-tests element CORE SCENARIOS layout routing cursors damage context-menu hover)
 composia_test_target(composia-element-window-tests ElementWindowTests.cpp)
 composia_add_scenarios(composia-element-window-tests element-window WARP SCENARIOS pixels navigation snapshot)
 composia_add_scenarios(composia-element-window-tests element-window SCENARIOS hosted hosted-teardown tooltips visuals)

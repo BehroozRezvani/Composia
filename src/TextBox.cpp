@@ -29,6 +29,7 @@ TextBox::TextBox(Options options, std::wstring_view initial, Painter painter)
     host_->initialize();
     set_text(initial);
     set_focusable(true);
+    set_cursor(Cursor::text);
     set_preferred_size(
         {180, (options_.multiline ? 4.f : 1.f) * std::ceil(options_.fontSize * 1.5f) + 2 * options_.padding});
     rollback.release();

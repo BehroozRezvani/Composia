@@ -20,6 +20,23 @@ UINT update_message() {
 
 bool key_down(int key) { return (GetKeyState(key) & 0x8000) != 0; }
 
+const wchar_t* system_cursor(Cursor cursor) noexcept {
+    switch (cursor) {
+    case Cursor::hand: return IDC_HAND;
+    case Cursor::text: return IDC_IBEAM;
+    case Cursor::resize_horizontal: return IDC_SIZEWE;
+    case Cursor::resize_vertical: return IDC_SIZENS;
+    case Cursor::resize_all: return IDC_SIZEALL;
+    case Cursor::wait: return IDC_WAIT;
+    case Cursor::progress: return IDC_APPSTARTING;
+    case Cursor::not_allowed: return IDC_NO;
+    case Cursor::crosshair: return IDC_CROSS;
+    case Cursor::help: return IDC_HELP;
+    case Cursor::arrow: break;
+    }
+    return IDC_ARROW;
+}
+
 // The element whose tooltip applies: the nearest one, from the element up, that has one.
 Element* tooltip_owner(Element* element) {
     while (element && element->tooltip().empty()) { element = element->parent(); }
@@ -253,9 +270,7 @@ std::optional<LRESULT> ElementWindow::on_message(UINT message, WPARAM wparam, LP
         // The live cursor position is unavailable on an inactive desktop.
         const auto position = GetCursorPos(&point) && ScreenToClient(hwnd(), &point)
             ? to_dips(point) : pointer_position_from_screen(GetMessagePos());
-        const auto* editor = dynamic_cast<TextBox*>(tree_.hit_test(position));
-        if (!editor || !editor->enabled()) { return std::nullopt; }
-        SetCursor(LoadCursorW(nullptr, IDC_IBEAM));
+        SetCursor(LoadCursorW(nullptr, system_cursor(tree_.cursor_at(position))));
         return TRUE;
     }
     case WM_CHAR: {
@@ -318,6 +333,9 @@ std::optional<LRESULT> ElementWindow::on_message(UINT message, WPARAM wparam, LP
         focus();
     }
     const bool handled = tree_.pointer(event);
+    // While an element holds the pointer Windows asks for no cursor: its shape is kept here, so a
+    // drag that leaves the element keeps it.
+    if (event.kind == Kind::move && tree_.captured_) { SetCursor(LoadCursorW(nullptr, system_cursor(tree_.cursor_at(event.position)))); }
     if (event.kind == Kind::move) {
         lastPointer_ = event.position;
         follow_tooltip(tooltip_owner(tree_.hovered_), false);
