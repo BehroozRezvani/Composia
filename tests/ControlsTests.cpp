@@ -738,8 +738,57 @@ int roles(const testing::Options&) {
     return 0;
 }
 
+// A scroll view says where it is scrolled to after each layout that changed it, however it moved.
+int scrolled(const testing::Options&) {
+    using Position = ui::ScrollView::ScrollPosition;
+    auto view = std::make_shared<ui::ScrollView>(L"Messages", layout::Axis::vertical, 100);
+    auto content = std::make_shared<Element>();
+    content->set_preferred_size({96, 400});
+    view->set_content(content);
+    std::vector<Position> seen;
+    auto watch = view->on_scroll([&](const Position& p) { seen.push_back(p); });
+    ElementTree tree(view);
+    tree.set_viewport({96, 100});
+    tree.update_layout();
+    require(seen == std::vector<Position>{{0, 300, 100}}, "The first layout did not report the position");
+    view->set_scroll_offset(50);
+    tree.update_layout();
+    require(seen.back() == Position{50, 300, 100}, "Scrolling did not report the new offset");
+    tree.pointer({PointerEvent::Kind::wheel, {40, 50}, {}, -1});
+    tree.update_layout();
+    require(seen.back() == Position{98, 300, 100}, "The wheel did not report the new offset");
+    const auto count = seen.size();
+    tree.update_layout();
+    tree.update_layout();
+    require(seen.size() == count, "A layout that changed nothing reported a position");
+    content->set_preferred_size({96, 150});
+    tree.update_layout();
+    require(seen.back() == Position{50, 50, 100}, "Content that shrank did not report the clamped offset");
+    // A handler that scrolls once more is told again.
+    bool snapped{};
+    auto snap = view->on_scroll([&](const Position& p) {
+        if (!snapped && p.offset != 0) { snapped = true; view->set_scroll_offset(0); }
+    });
+    view->set_scroll_offset(20);
+    const auto before = seen.size();
+    tree.update_layout();
+    require(snapped && seen.size() == before + 2 && seen.back().offset == 0, "A handler's own scroll was not reported");
+    // A list reports after realizing the rows it scrolled to.
+    auto list = std::make_shared<ui::List>(L"Rows", ui::Items::strings(std::vector<std::wstring>(40, L"Row")), 20, 100);
+    ElementTree listTree(list);
+    listTree.set_viewport({96, 100});
+    listTree.update_layout();
+    std::optional<std::size_t> top;
+    auto onList = list->on_scroll([&](const Position&) { top = list->index_at({8, 1}); });
+    list->set_scroll_offset(200);
+    listTree.update_layout();
+    require(top == std::optional<std::size_t>{10} && list->realized_count() >= 5, "A list reported before its rows moved");
+    return 0;
+}
+
 int main(int argc, char** argv) {
     return testing::run(argc, argv, {{"behaviour", behaviour}, {"virtualization", virtualization}, {"popup", popup}, {"choices", choices},
+        {"scrolled", scrolled},
         {"separators", separators}, {"positions", positions}, {"checks", checks}, {"stays-open", stays_open}, {"roles", roles},
         {"style", style}, {"scrollbar", scrollbar}, {"context", context}, {"heights", heights},
         {"current", current}, {"tree", tree}, {"replace", replace},

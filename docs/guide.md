@@ -428,6 +428,11 @@ and UI Automation sees a Separator that is not content. It is `List::separatorHe
 unless `Items::height` says otherwise, and draws a line in the border color, or what
 `set_separator_renderer` draws.
 
+`on_scroll` on a `ScrollView`, and so a `List`, reports where the view is scrolled to, how far
+it can scroll and how long its viewport is, after each layout that changed one of them: from the
+wheel, the keys, the scrollbar, UI Automation, `set_scroll_offset`, or a change in size. A list
+reports after realizing the rows of its new position.
+
 `Items::content` puts elements over a row each time it is realized, such as a button inside
 it. They draw above the row renderer and take the pointer first; a press they leave selects
 the row. `index_at` finds the row at a point in the list, for a drop target, and `refresh`

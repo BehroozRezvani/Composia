@@ -87,6 +87,8 @@ change the API; each change is listed here.
 - `ListRole::menu` makes a `List` a Menu of MenuItems to UI Automation, for menus an application
   shows itself; `List::role` reports it. One click chooses a menu's row, and its rows neither
   expose ExpandCollapse nor open or fold with Left and Right.
+- `ScrollView::on_scroll` reports a scroll view's offset, limit and viewport length after each
+  layout that changed them, however the view moved.
 - List rows report their place among the list's rows, or among their siblings in a tree, with
   separators left out, as UI Automation's PositionInSet and SizeOfSet.
 - `ElementWindow::takes_focus`, overridden to return false, keeps a window out of the keyboard

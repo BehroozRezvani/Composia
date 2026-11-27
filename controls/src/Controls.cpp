@@ -206,6 +206,14 @@ bool Slider::on_pointer(const PointerEvent& e) {
 ScrollView::ScrollView(std::wstring name, layout::Axis axis, float viewportLength)
     : Control(std::move(name), UIA_PaneControlTypeId, {ElementLayout::Kind::scroll, axis, 0, 1, viewportLength}), axis_(axis) {
     set_preferred_size(axis == layout::Axis::vertical ? layout::Size{96, viewportLength} : layout::Size{viewportLength, 32});
+    observe_layout();
+}
+void ScrollView::on_layout_updated() {
+    const auto box = bounds();
+    const ScrollPosition now{scroll_offset(), scroll_limit(), axis_ == layout::Axis::vertical ? box.height : box.width};
+    if (now == last_) { return; }
+    last_ = now;
+    scrolled_.emit(now);
 }
 void ScrollView::set_content(std::shared_ptr<Element> content) {
     if (!children().empty()) {

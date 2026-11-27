@@ -307,6 +307,8 @@ void List::on_layout_updated() {
         } else { row.set_preferred_size({bounds().width, row_height(row.index)}); }
     }
     for (auto i = start; i < end; ++i) { realize(i); }
+    // Last, so a handler finds the rows of the new position realized.
+    ScrollView::on_layout_updated();
 }
 bool List::on_context_menu(const ContextMenuEvent& e) {
     auto event = e;

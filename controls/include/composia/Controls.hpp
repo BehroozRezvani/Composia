@@ -168,8 +168,18 @@ public:
     };
     using ScrollbarRenderer = std::function<void(ScopedSurfaceDraw&, const ScrollView&, const Scrollbar&, const StyleTokens&)>;
 
+    // Where the view is scrolled to, how far it can scroll, and how long its viewport is, in DIPs.
+    struct ScrollPosition {
+        float offset{}, limit{}, viewport{};
+        bool operator==(const ScrollPosition&) const = default;
+    };
+
     explicit ScrollView(std::wstring name, layout::Axis = layout::Axis::vertical, float viewportLength = 160);
     void set_content(std::shared_ptr<Element>);
+    // After layout settles a new offset, limit or viewport length: from the wheel, the keys, the
+    // scrollbar, UI Automation, set_scroll_offset, or content or a view that changed size. A
+    // handler may scroll again, which raises it once more.
+    Connection on_scroll(std::function<void(const ScrollPosition&)> f) { return scrolled_.connect(std::move(f)); }
     // An empty renderer restores the thin bar.
     void set_scrollbar_renderer(ScrollbarRenderer);
     // Hides or shows the scrollbar; scrolling by wheel, keyboard and automation is unaffected.
@@ -179,6 +189,7 @@ protected:
     bool on_key(const KeyEvent&) override;
     bool on_pointer(const PointerEvent&) override;
     void on_hover_changed(bool) override;
+    void on_layout_updated() override;
     void on_capture_lost() noexcept override;
     void paint_over(ScopedSurfaceDraw&) override;
     [[nodiscard]] bool claims_pointer(layout::Point) const override;
@@ -190,6 +201,8 @@ private:
     layout::Axis axis_;
     bool scrollbar_{true}, barHovered_{}, dragging_{};
     float grab_{};
+    ScrollPosition last_{};
+    Signal<const ScrollPosition&> scrolled_;
 };
 
 struct Items {
