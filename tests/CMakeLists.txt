@@ -145,6 +145,7 @@ composia_add_scenarios(composia-text-box-tests text-box SCENARIOS accessibility 
 composia_test_target(composia-element-accessibility-tests ElementAccessibilityTests.cpp)
 composia_add_scenarios(composia-element-accessibility-tests element-accessibility WARP SCENARIOS inspect)
 composia_add_scenarios(composia-element-accessibility-tests element-accessibility CORE SCENARIOS selection)
+composia_add_scenarios(composia-element-accessibility-tests element-accessibility SCENARIOS relations)
 
 set(COMPOSIA_TEST_NVDA "" CACHE FILEPATH "Portable NVDA executable for screen-reader testing")
 set(COMPOSIA_TEST_ACCCHECK "" CACHE FILEPATH "Windows SDK AccCheckConsole executable for accessibility inspection")

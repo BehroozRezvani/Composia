@@ -346,6 +346,64 @@ int selection_model(const testing::Options&) {
     return 0;
 }
 }
+// A relationship can name an element in another window, as a field names its popup's list.
+int relations(const testing::Options& options) {
+    Application app{options.warp};
+    auto trigger = std::make_shared<Row>(app, L"Trigger", UIA_ComboBoxControlTypeId, L"trigger");
+    auto choices = std::make_shared<Row>(app, L"Choices", UIA_ListControlTypeId, L"choices");
+    trigger->set_focusable(true);
+    auto described = *trigger->accessibility();
+    described.controllerFor = {choices};
+    described.labeledBy = choices;
+    trigger->set_accessibility(std::move(described));
+    ElementWindow first{app, L"First", 200, 100, trigger};
+    auto second = std::make_unique<ElementWindow>(app, L"Second", 200, 100, choices);
+    first.show(SW_SHOWNOACTIVATE);
+    second->show(SW_SHOWNOACTIVATE);
+    const auto hwnd = first.hwnd();
+    std::exception_ptr error;
+    wil::unique_event destroyed{wil::EventOptions::ManualReset};
+    std::jthread inspector([&] {
+        try {
+            winrt::init_apartment(winrt::apartment_type::multi_threaded);
+            const auto uninit = wil::scope_exit([] { winrt::uninit_apartment(); });
+            wil::com_ptr<IUIAutomation> client;
+            THROW_IF_FAILED(CoCreateInstance(__uuidof(CUIAutomation), nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(client.put())));
+            Node pane;
+            THROW_IF_FAILED(client->ElementFromHandle(hwnd, pane.put()));
+            auto node = find(client.get(), pane.get(), UIA_AutomationIdPropertyId, L"trigger");
+            wil::com_ptr<IUIAutomationElementArray> controlled;
+            THROW_IF_FAILED(node->get_CurrentControllerFor(controlled.put()));
+            int count{};
+            if (controlled) { THROW_IF_FAILED(controlled->get_Length(&count)); }
+            require(count == 1, "A relationship to another window's element was dropped");
+            Node target;
+            THROW_IF_FAILED(controlled->GetElement(0, target.put()));
+            wil::unique_bstr name;
+            THROW_IF_FAILED(target->get_CurrentName(name.put()));
+            require(name && std::wstring_view(name.get()) == L"Choices", "The relationship named the wrong element");
+            Node label;
+            THROW_IF_FAILED(node->get_CurrentLabeledBy(label.put()));
+            require(!!label, "A label in another window was dropped");
+            app.post([&] {
+                second.reset();
+                destroyed.SetEvent();
+            });
+            require(WaitForSingleObject(destroyed.get(), 5000) == WAIT_OBJECT_0, "The second window was not destroyed");
+            controlled.reset();
+            THROW_IF_FAILED(node->get_CurrentControllerFor(controlled.put()));
+            count = 0;
+            if (controlled) { THROW_IF_FAILED(controlled->get_Length(&count)); }
+            require(count == 0, "A relationship outlived the window of its element");
+        } catch (...) { error = std::current_exception(); }
+        PostMessageW(hwnd, WM_CLOSE, 0, 0);
+    });
+    app.run();
+    inspector.join();
+    if (error) { std::rethrow_exception(error); }
+    return 0;
+}
+
 int main(int argc, char** argv) {
-    return testing::run(argc, argv, {{"inspect", inspect}, {"selection", selection_model}, {"fixture", fixture}});
+    return testing::run(argc, argv, {{"inspect", inspect}, {"selection", selection_model}, {"fixture", fixture}, {"relations", relations}});
 }

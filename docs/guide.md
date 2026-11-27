@@ -501,7 +501,7 @@ and `set_accessibility` to replace the description. A required group selects its
 remaining item if its selection disappears. Omitting a value setter makes
 the value read-only. A control's own `on_key` can handle a key before the default action.
 `labeledBy`, `describedBy` and `controllerFor` are weak relationships to accessible elements
-in the same window. Provide a translated `localizedControlType` for a custom role.
+in any window of the application, such as a field's popup list in a `PopupWindow`. Provide a translated `localizedControlType` for a custom role.
 
 ### Window-based controls
 

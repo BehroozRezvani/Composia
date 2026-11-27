@@ -89,6 +89,8 @@ change the API; each change is listed here.
   expose ExpandCollapse nor open or fold with Left and Right.
 - `ScrollView::on_scroll` reports a scroll view's offset, limit and viewport length after each
   layout that changed them, however the view moved.
+- `labeledBy`, `describedBy` and `controllerFor` can name an element in another window of the
+  application, such as a popup's list; they were dropped before.
 - List rows report their place among the list's rows, or among their siblings in a tree, with
   separators left out, as UI Automation's PositionInSet and SizeOfSet.
 - `ElementWindow::takes_focus`, overridden to return false, keeps a window out of the keyboard

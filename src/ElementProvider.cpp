@@ -191,7 +191,9 @@ HRESULT ElementAutomation::metadata(Element& e, PROPERTYID id, VARIANT* out) {
         return a.localizedControlType.empty() ? S_OK : string_value(a.localizedControlType, out);
     case UIA_LabeledByPropertyId: {
         auto label = a.labeledBy.lock();
-        if (label && label->host_window() == e.host_window()) {
+        // In this window or another, such as a popup's.
+        if (label && label->host_window()) {
+            ElementAutomation::attach(*label->host_window());
             if (auto p = ElementAutomation::simple(*label)) {
                 out->vt = VT_UNKNOWN;
                 out->punkVal = p.detach();
@@ -204,7 +206,8 @@ HRESULT ElementAutomation::metadata(Element& e, PROPERTYID id, VARIANT* out) {
         const auto& links = id == UIA_DescribedByPropertyId ? a.describedBy : a.controllerFor;
         std::vector<wil::com_ptr<IRawElementProviderSimple>> targets;
         for (const auto& link : links) {
-            if (auto target = link.lock(); target && target->host_window() == e.host_window()) {
+            if (auto target = link.lock(); target && target->host_window()) {
+                ElementAutomation::attach(*target->host_window());
                 if (auto p = ElementAutomation::simple(*target)) {
                     targets.push_back(std::move(p));
                 }
