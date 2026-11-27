@@ -96,6 +96,8 @@ change the API; each change is listed here.
 
 ### Fixed
 
+- A dropdown or menu no longer chooses a row that cannot be selected, such as a heading, when
+  the keyboard or the pointer rests on it; the popup stays open.
 - A window letting go of its tree leaves the focus alone, so a hosted window that hides as it
   detaches cannot send the focus through detached elements.
 - A `TextBox` that leaves the tree and comes back keeps its UI Automation provider, which Rich

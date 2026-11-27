@@ -96,6 +96,8 @@ Picker::Picker(std::wstring name, Items items, bool menu, float rowHeight, float
         if (expanded() && !preview_ && !menu_) { commit(index); }
     });
     activation_ = list_->on_activate([this](std::size_t index) {
+        // The keyboard can rest on a heading, but choosing it does nothing: the popup stays open.
+        if (!list_->selectable(index)) { return; }
         close();
         commit(index);
     });
@@ -143,6 +145,7 @@ void Picker::on_detaching() noexcept {
     try { set_expanded(false); } catch (...) { LOG_CAUGHT_EXCEPTION(); }
 }
 void Picker::commit(List::Index index) {
+    if (index && !list_->selectable(*index)) { return; }
     if (index == selected_) { return; }
     auto text = index ? list_->items().label(*index) : std::wstring{};
     selected_ = index;

@@ -336,7 +336,7 @@ auto follow = app.on_appearance_changed([&](const composia::Appearance& appearan
 | TextBox | The retained editor handles text selection, clipboard, undo, IME and UIA Text. |
 | ScrollView | Set its content, axis and preferred viewport length. Wheel, arrows, paging and UIA Scroll share its offset. While the content overflows, a scrollbar over the far edge widens under the pointer; drag its thumb, or press its track to page. `set_scrollbar_renderer` draws it from its track, thumb and state, instead of the thin bar in the foreground color. `set_scrollbar(false)` hides it. |
 | List | One tab stop supports arrows, paging, Home/End, prefix search and single selection. Double-click or Enter activates the current row. A right click moves to the row under it before `on_context_requested` runs; for the keyboard the request is placed below the current row. The current row is the selected one, except on rows that `Items::selectable` refuses, such as headings: the keyboard and the pointer rest there without selecting them. |
-| Dropdown | Open with a press, Enter, Space, F4 or an arrow. Preview with arrows or typing. Click or Enter commits. Escape discards the preview. |
+| Dropdown | Open with a press, Enter, Space, F4 or an arrow. Preview with arrows or typing. Click or Enter commits. Escape discards the preview. A row that cannot be selected, such as a heading, is never committed: choosing it leaves the popup open. |
 | Menu | The popup uses menu-item roles, skips disabled commands during navigation and dismisses before executing a choice. |
 
 Wrap the window content in one `PopupHost` to host dropdowns and menus above sibling

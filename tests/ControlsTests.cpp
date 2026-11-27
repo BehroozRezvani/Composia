@@ -437,8 +437,50 @@ int virtualization(const testing::Options&) {
     return 0;
 }
 }
+// A menu or dropdown never chooses a row that cannot be selected, such as a heading, though the
+// keyboard and the pointer can rest on it.
+int choices(const testing::Options&) {
+    auto items = ui::Items::strings({L"Sort by", L"Date", L"Sender"});
+    items.selectable = [](std::size_t i) { return i != 0; };
+    auto content = std::make_shared<Element>(ElementLayout{ElementLayout::Kind::stack});
+    auto menu = std::make_shared<ui::Menu>(L"View", items, 20, 80);
+    auto dropdown = std::make_shared<ui::Dropdown>(L"Sort", items, 20, 80);
+    content->add(menu);
+    content->add(dropdown);
+    auto host = std::make_shared<ui::PopupHost>(content);
+    ElementTree tree(host);
+    tree.set_viewport({180, 200});
+    std::vector<ui::List::Index> chosen;
+    auto watch = menu->on_selection([&](ui::List::Index index) { chosen.push_back(index); });
+    using Kind = PointerEvent::Kind;
+    using Mouse = PointerEvent::Button;
+
+    require(menu->open(), "The menu did not open");
+    tree.update_layout();
+    require(menu->popup().current() == 0, "The menu did not open on its heading");
+    tree.key({VK_RETURN, true});
+    require(menu->expanded() && chosen.empty(), "Enter on a heading chose it or closed the menu");
+    // The heading spans 32 to 52, under the trigger.
+    tree.pointer({Kind::down, {8, 40}, Mouse::left});
+    tree.pointer({Kind::up, {8, 40}, Mouse::left});
+    require(menu->expanded() && chosen.empty(), "Clicking a heading chose it or closed the menu");
+    tree.key({VK_DOWN, true});
+    tree.key({VK_RETURN, true});
+    require(!menu->expanded() && chosen == std::vector<ui::List::Index>{1}, "Enter on a row did not choose it");
+
+    dropdown->set_selected(1);
+    require(dropdown->open(), "The dropdown did not open");
+    tree.key({VK_UP, true});
+    tree.key({VK_RETURN, true});
+    require(dropdown->expanded() && dropdown->selected() == 1 && dropdown->selected_text() == L"Date",
+        "A dropdown committed its heading");
+    tree.key({VK_ESCAPE, true});
+    require(!dropdown->expanded() && dropdown->selected() == 1, "Escape after a heading changed the value");
+    return 0;
+}
+
 int main(int argc, char** argv) {
-    return testing::run(argc, argv, {{"behaviour", behaviour}, {"virtualization", virtualization}, {"popup", popup},
+    return testing::run(argc, argv, {{"behaviour", behaviour}, {"virtualization", virtualization}, {"popup", popup}, {"choices", choices},
         {"style", style}, {"scrollbar", scrollbar}, {"context", context}, {"heights", heights},
         {"current", current}, {"tree", tree}, {"replace", replace},
         {"content", content}});
