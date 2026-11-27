@@ -44,6 +44,10 @@ public:
     // Queues a callback on the UI thread from any thread. Returns false once the application is
     // closing. An exception from the callback is rethrown by run() or close().
     bool post(std::function<void()> callback);
+    // Destroys a window now, or, while it is handling a message (one of its handlers destroying it,
+    // say, or a modal loop a handler started), as soon as that handling is over. Hide it first if it
+    // must not show meanwhile. close() destroys a window still waiting. UI thread only.
+    void retire(std::unique_ptr<Window> window);
     // Shuts down: drops callbacks not yet run, drains the dispatcher queue, then releases the
     // compositor and graphics device, and rethrows a callback error not yet reported. Destroy
     // every Window first. Calling it again does nothing.
@@ -72,6 +76,8 @@ private:
     // A key press shows it, a mouse button press hides it.
     void note_focus_cue(const MSG&) noexcept;
     void report_error(std::exception_ptr) noexcept;
+    // A retired window whose dispatch ended: it goes now.
+    void release_retired(Window&) noexcept;
     void rethrow_callback_error();
     bool has_windows() const noexcept;
     void remember_focus() const noexcept;
@@ -95,6 +101,7 @@ private:
     composition::Compositor compositor_{nullptr};
     std::unique_ptr<GraphicsDevice> graphics_;
     std::vector<Window*> windows_;
+    std::vector<std::unique_ptr<Window>> retired_;
     std::exception_ptr callbackError_;
     struct CallbackState;
     std::shared_ptr<CallbackState> callbacks_;

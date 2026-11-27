@@ -52,6 +52,10 @@ surfaces use physical pixels, and each window's visual tree applies the DPI scal
 
 ## Windows
 
+`Application::retire` destroys a window now, or, while the window is handling a message, as
+soon as that handling is over, so a handler, or a callback a modal loop runs inside one, can
+let go of the window it belongs to. `Window::dispatching` says whether that handling is going on.
+
 `Window` owns an HWND: a top-level window, or a child when given a parent HWND. Child
 windows are tab stops. Derive from it and override the hooks you need: `on_paint`,
 `on_resize` (which also runs after a DPI change), `on_hover`, `on_focus`,

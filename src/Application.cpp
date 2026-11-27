@@ -80,6 +80,21 @@ GraphicsDevice& Application::graphics() const {
 
 bool Application::post(std::function<void()> callback) { return enqueue(callbacks_, std::move(callback)); }
 
+void Application::retire(std::unique_ptr<Window> window) {
+    verify_thread();
+    if (!window || !window->dispatching()) { return; }   // Destroyed as it leaves.
+    window->retiring_ = true;
+    retired_.push_back(std::move(window));
+}
+
+void Application::release_retired(Window& window) noexcept {
+    const auto found = std::ranges::find_if(retired_, [&](const auto& held) { return held.get() == &window; });
+    if (found == retired_.end()) { return; }
+    auto doomed = std::move(*found);
+    retired_.erase(found);
+    try { doomed.reset(); } catch (...) { LOG_CAUGHT_EXCEPTION(); }
+}
+
 bool Application::enqueue(const std::shared_ptr<CallbackState>& state, std::function<void()> callback) {
     if (!state || !state->accepting.load()) { return false; }
     return state->queue.TryEnqueue([state, callback = std::move(callback)] {
@@ -92,6 +107,11 @@ bool Application::enqueue(const std::shared_ptr<CallbackState>& state, std::func
 void Application::close() {
     verify_thread();
     if (closed_) { return; }
+    // Retired windows are no longer anyone's to destroy.
+    while (!retired_.empty()) {
+        auto doomed = std::move(retired_.back());
+        retired_.pop_back();
+    }
     if (!windows_.empty()) { throw std::logic_error("Destroy window objects before closing Application"); }
     if (closing_) { throw std::logic_error("Application shutdown is already in progress"); }
     closing_ = true;

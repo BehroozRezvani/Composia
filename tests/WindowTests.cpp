@@ -256,8 +256,59 @@ int dialog_options(const testing::Options&) {
     return 0;
 }
 
+// A window retired from inside its own handler lives until that handler returns, a modal loop it
+// ran included; a window retired at any other time goes at once; close() takes those left.
+int retire(const testing::Options&) {
+    Application app{true};
+    struct Watched final : Window {
+        explicit Watched(Application& application, bool& destroyed) : Window(application, L"Retired", 100, 100), destroyed_(destroyed) {}
+        ~Watched() override { destroyed_ = true; }
+        std::function<void()> action;
+        bool& destroyed_;
+        std::optional<LRESULT> on_message(UINT message, WPARAM, LPARAM) override {
+            if (message == actionMessage && action) { action(); return 0; }
+            return std::nullopt;
+        }
+    };
+    bool destroyed{};
+    auto window = std::make_unique<Watched>(app, destroyed);
+    auto* raw = window.get();
+    bool aliveAfterRetire{}, dispatching{};
+    raw->action = [&] {
+        dispatching = raw->dispatching();
+        app.retire(std::move(window));
+        // A nested loop, as a message box would run: the window must outlive it.
+        SendMessageW(raw->hwnd(), WM_NULL, 0, 0);
+        MSG message{};
+        while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) { DispatchMessageW(&message); }
+        aliveAfterRetire = !destroyed && raw->hwnd() != nullptr;
+    };
+    SendMessageW(raw->hwnd(), actionMessage, 0, 0);
+    require(dispatching && aliveAfterRetire, "A window retired by its own handler did not outlive the handler");
+    require(destroyed, "A retired window was not destroyed once its handler returned");
+
+    bool idleDestroyed{};
+    auto idle = std::make_unique<Watched>(app, idleDestroyed);
+    require(!idle->dispatching(), "An idle window said it was dispatching");
+    app.retire(std::move(idle));
+    require(idleDestroyed, "A window retired while idle was not destroyed at once");
+
+    // A window still waiting when the application closes goes with it.
+    bool lateDestroyed{};
+    auto late = std::make_unique<Watched>(app, lateDestroyed);
+    auto* lateRaw = late.get();
+    lateRaw->action = [&] {
+        app.retire(std::move(late));
+        app.close();
+    };
+    SendMessageW(lateRaw->hwnd(), actionMessage, 0, 0);
+    require(lateDestroyed, "close() did not destroy a window that was waiting to be retired");
+    return 0;
+}
+
 int main(int argc, char** argv) {
     return testing::run(argc, argv, {
+        {"retire", retire},
         {"dialog-options", dialog_options},
         {"closed", closed_window},
         {"closed-parent", closed_parent},

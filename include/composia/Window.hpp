@@ -77,6 +77,9 @@ public:
     [[nodiscard]] UINT dpi() const noexcept;
     [[nodiscard]] SIZE client_pixels() const;
     [[nodiscard]] bool top_level() const noexcept { return topLevel_; }
+    // True while the window handles a message: inside its window procedure, a modal loop one of its
+    // handlers started included. Application::retire waits for this to end.
+    [[nodiscard]] bool dispatching() const noexcept { return dispatchDepth_ != 0; }
     // Whether keyboard focus is shown (a focus ring): from a key press anywhere in this window's
     // top-level window until a mouse button is pressed there, as the web's :focus-visible. A child
     // window shares its top-level window's. Native controls show their own focus.
@@ -186,6 +189,9 @@ private:
     HWND lastFocus_{};
     bool hovered_{}, tracking_{}, captured_{}, reportedEnabled_{true}, destroyNotified_{};
     bool paintPending_{}, painting_{};
+    bool retiring_{};             // Application::retire holds it until its dispatch ends.
+    unsigned dispatchDepth_{};
+    std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);   // False once destroyed.
     Signal<bool> hoverChanged_, focusChanged_, enabledChanged_;
     Signal<> captureLost_, destroying_;
     struct KeyPreview { std::shared_ptr<bool> active; std::function<bool(const KeyEvent&)> handler; };

@@ -134,6 +134,7 @@ Window::Window(Application& application, std::wstring_view title, int widthDip, 
 }
 
 Window::~Window() {
+    *alive_ = false;
     const bool served = automationProvider_ != nullptr;
     // Subscribers such as an Accessible may outlive this object; they must let go of it first.
     try { notify_destroy(); } catch (...) { LOG_CAUGHT_EXCEPTION(); }
@@ -307,15 +308,23 @@ LRESULT CALLBACK Window::window_proc(HWND handle, UINT message, WPARAM wparam, L
         }
         return DefWindowProcW(handle, message, wparam, lparam);
     }
+    // A handler may destroy the window; nothing here touches it after that.
+    const auto alive = self->alive_;
+    ++self->dispatchDepth_;
+    LRESULT result{};
     try {
-        return self->dispatch(handle, message, wparam, lparam);
+        result = self->dispatch(handle, message, wparam, lparam);
     } catch (...) {
-        if (!self->callbackError_) {
-            self->callbackError_ = std::current_exception();
+        if (*alive) {
+            if (!self->callbackError_) {
+                self->callbackError_ = std::current_exception();
+            }
+            self->application_.report_error(self->callbackError_);
         }
-        self->application_.report_error(self->callbackError_);
-        return message == WM_NCCREATE ? FALSE : 0;
+        result = message == WM_NCCREATE ? FALSE : 0;
     }
+    if (*alive && --self->dispatchDepth_ == 0 && self->retiring_) { self->application_.release_retired(*self); }
+    return result;
 }
 
 void Window::update_hover(bool inside) {

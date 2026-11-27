@@ -91,7 +91,7 @@ composia_add_scenarios(composia-appearance-tests appearance WARP SCENARIOS syste
 # Window and message loop lifetime.
 composia_test_target(composia-window-tests WindowTests.cpp)
 composia_add_scenarios(composia-window-tests window TIMEOUT 15
-    SCENARIOS closed closed-parent secondary-close secondary-error quit-code callback-rethrow key-preview dialog-options)
+    SCENARIOS closed closed-parent secondary-close secondary-error quit-code callback-rethrow key-preview dialog-options retire)
 
 # An application window through its whole life in the message loop.
 composia_test_target(composia-smoke-tests SmokeTests.cpp)

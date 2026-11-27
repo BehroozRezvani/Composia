@@ -105,6 +105,9 @@ change the API; each change is listed here.
   a press on the rectangle it was shown below closes it without reaching anything (or reaches the
   button there, which `closed_by_anchor_press` tells why), and so does its owner moving,
   deactivating, being disabled or entering a modal state.
+- `Application::retire` destroys a window at once, or as soon as it has finished handling the
+  message it is in (a modal loop one of its handlers ran included); `Window::dispatching` says
+  whether it is in one. `close()` destroys a window still waiting.
 - `ElementLayout::crossAlign` and `mainAlign` align a stack's or flex container's children
   across and along its axis (`layout::Align`), and `Element::set_align` aligns one child.
   `ElementLayout` compares with `==`.
