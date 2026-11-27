@@ -14,6 +14,8 @@ struct PointerEvent {
     Button button{};
     float wheelDelta{};                       // Detents, positive towards the start.
     layout::Axis wheelAxis{layout::Axis::vertical};
+    float wheelLines{3};                      // Lines a detent scrolls, as the system is set.
+    bool wheelPages{};                        // A detent scrolls a page instead (WHEEL_PAGESCROLL).
     unsigned modifiers{};                     // Win32 mouse key state (MK_SHIFT, MK_LBUTTON, ...).
     bool doubleClick{};
 };

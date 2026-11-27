@@ -234,6 +234,10 @@ parent's `crossAlign` for that child, as a button that keeps its own width in a 
 weight takes it: at the `start` (the default), in the `center`, or at the `end`. Alignment
 moves children within their measurements, so changing it arranges again without measuring.
 
+The wheel scrolls the nearest scroll container on its axis under the pointer that can still
+move, by the lines Windows is set to scroll per detent (16 DIPs a line), or by the viewport's
+length when it is set to scroll a page.
+
 Every container insets its children by its `padding` (`layout::Insets`, or `Insets::all(n)`
 for the same space on each edge). The padding adds to the container's intrinsic size, so a
 padded element without children is as large as its padding, and a scroll viewport scrolls its

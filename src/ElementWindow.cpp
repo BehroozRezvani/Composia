@@ -316,6 +316,11 @@ std::optional<LRESULT> ElementWindow::on_message(UINT message, WPARAM wparam, LP
             event.wheelAxis = layout::Axis::horizontal;
             event.wheelDelta = -event.wheelDelta;
         }
+        // Read each time, so a change in Settings applies at once.
+        if (UINT lines = 3; SystemParametersInfoW(message == WM_MOUSEHWHEEL ? SPI_GETWHEELSCROLLCHARS : SPI_GETWHEELSCROLLLINES, 0, &lines, 0)) {
+            event.wheelPages = lines == WHEEL_PAGESCROLL;
+            event.wheelLines = event.wheelPages ? 0.0f : static_cast<float>(lines);
+        }
         return tree_.pointer(event) ? std::optional<LRESULT>{0} : std::nullopt;
     case WM_MOUSEMOVE: event.kind = Kind::move; break;
     case WM_LBUTTONDOWN: case WM_LBUTTONDBLCLK: event.kind = Kind::down; event.button = Button::left; break;

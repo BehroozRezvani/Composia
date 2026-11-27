@@ -64,7 +64,13 @@ bool ElementTree::pointer(PointerEvent event) {
         if (element.on_pointer(event)) { return true; }
         if (element.tree_ == this && event.kind == PointerEvent::Kind::wheel &&
             element.layout_.kind == ElementLayout::Kind::scroll && element.layout_.axis == event.wheelAxis) {
-            const float offset = std::clamp(element.scrollOffset_ - event.wheelDelta * 48.0f, 0.0f, element.scrollLimit_);
+            // As far per detent as the system asks: lines of 16 DIPs, or the viewport's length.
+            constexpr float line = 16;
+            const auto& p = element.layout_.padding;
+            const float page = event.wheelAxis == layout::Axis::vertical ? element.bounds_.height - p.top - p.bottom
+                                                                         : element.bounds_.width - p.left - p.right;
+            const float step = event.wheelPages ? std::max(line, page) : event.wheelLines * line;
+            const float offset = std::clamp(element.scrollOffset_ - event.wheelDelta * step, 0.0f, element.scrollLimit_);
             if (offset != element.scrollOffset_) {
                 element.set_scroll_offset(offset);
                 return true;

@@ -363,6 +363,18 @@ int damage(const testing::Options&) {
     require(!tree.pointer({PointerEvent::Kind::wheel, {1, 20}, {}, -1}), "Scroll at boundary swallowed wheel");
     require(tree.pointer({PointerEvent::Kind::wheel, {1, 20}, {}, 1}) && root->scroll_offset() == 20392,
         "Wheel did not scroll the viewport");
+    // A detent scrolls the lines the system asks for, of 16 DIPs, or a page.
+    PointerEvent oneLine{PointerEvent::Kind::wheel, {1, 20}, {}, 1};
+    oneLine.wheelLines = 1;
+    require(tree.pointer(oneLine) && root->scroll_offset() == 20376, "A one-line detent did not scroll one line");
+    PointerEvent page{PointerEvent::Kind::wheel, {1, 20}, {}, -1};
+    page.wheelPages = true;
+    require(tree.pointer(page) && root->scroll_offset() == 20416, "A page detent did not scroll the viewport's height");
+    PointerEvent none{PointerEvent::Kind::wheel, {1, 20}, {}, 1};
+    none.wheelLines = 0;
+    require(!tree.pointer(none) && root->scroll_offset() == 20416, "A wheel set to scroll no lines scrolled");
+    // Half a three-line detent goes back to where the checks below expect.
+    require(tree.pointer({PointerEvent::Kind::wheel, {1, 20}, {}, 0.5f}) && root->scroll_offset() == 20392, "A half detent did not scroll half as far");
     require(tree.hit_test({1, 0}) == list->children()[2039].get(), "Scroll hit did not track fractional rows");
     require(last->measures == measured, "Painting state, hits or scrolling remeasured the document");
     const auto moved = list->children()[2040];
