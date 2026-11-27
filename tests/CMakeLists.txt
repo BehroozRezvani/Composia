@@ -127,7 +127,7 @@ composia_test_target(composia-element-tests ElementTests.cpp)
 composia_add_scenarios(composia-element-tests element CORE SCENARIOS layout routing cursors damage context-menu hover)
 composia_test_target(composia-element-window-tests ElementWindowTests.cpp)
 composia_add_scenarios(composia-element-window-tests element-window WARP SCENARIOS pixels navigation snapshot)
-composia_add_scenarios(composia-element-window-tests element-window SCENARIOS hosted hosted-teardown tooltips visuals)
+composia_add_scenarios(composia-element-window-tests element-window SCENARIOS hosted hosted-teardown focus-cues tooltips visuals)
 
 composia_test_target(composia-timer-tests TimerTests.cpp)
 composia_add_scenarios(composia-timer-tests timer SCENARIOS basics errors)

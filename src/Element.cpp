@@ -207,6 +207,10 @@ void Element::set_tooltip(std::wstring value) {
 }
 
 ElementWindow* Element::host_window() const noexcept { return tree_ ? tree_->window_ : nullptr; }
+bool Element::focus_visible() const noexcept {
+    const auto* window = host_window();
+    return focused() && window && window->focus_visible();
+}
 void Element::update_host_layout() { if (tree_) { tree_->update_layout(); } }
 
 Rect Element::viewport_bounds(bool clipped) const noexcept {

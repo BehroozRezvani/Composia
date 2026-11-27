@@ -38,7 +38,9 @@ private:
     std::function<void()> execute_;
 };
 
-struct State { bool hovered{}, pressed{}, focused{}, disabled{}, selected{}; };
+// focusVisible: focused while the window shows keyboard focus (Window::focus_visible), when a
+// renderer draws its focus ring.
+struct State { bool hovered{}, pressed{}, focused{}, disabled{}, selected{}, focusVisible{}; };
 // The colors and metrics a renderer draws with. Colors are 0xRRGGBB.
 struct StyleTokens {
     std::uint32_t foreground{0x202020}, background{0xffffff}, accent{0x0067c0};

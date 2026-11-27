@@ -27,6 +27,7 @@ public:
         bool pressed{};                // Held by the pointer while over the button, or by Space.
         bool focused{};
         bool enabled{};                // False also while an ancestor is disabled.
+        bool focusVisible{};           // Focused while the window shows keyboard focus: draw a ring.
     };
     // Draws the whole client area, whose size is in DIPs: a child window cannot show its parent
     // through it. Runs on every repaint, after a state change, a resize, an appearance change, or
@@ -63,6 +64,7 @@ private:
     void on_focus(bool) override;
     void on_capture_lost() override;
     void on_enabled(bool) override;
+    void on_focus_visible(bool) override;
     std::optional<LRESULT> on_message(UINT, WPARAM, LPARAM) override;
     bool hit_test(LPARAM) const;
     void cancel_press();

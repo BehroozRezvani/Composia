@@ -344,6 +344,10 @@ std::optional<LRESULT> ElementWindow::on_message(UINT message, WPARAM wparam, LP
     return std::nullopt;
 }
 
+void ElementWindow::on_focus_visible(bool) {
+    if (auto* focused = tree_.focused()) { focused->invalidate(); }
+}
+
 void ElementWindow::on_enabled(bool enabled) {
     if (!enabled) { tree_.release_capture(); tree_.focus(nullptr); }
     if (hwnd()) { invalidate(); }

@@ -244,6 +244,13 @@ focus. Call `window.focus_element(element)` to give a drawn control both Windows
 keyboard focus. Disabling a retained ancestor clears focus inside it and takes the subtree
 out of pointer interaction and Tab traversal.
 
+A window shows keyboard focus from a key press until a press of a mouse button, as the web's
+`:focus-visible` does: `focus_visible()` on the window, on an element (focused and shown), and
+in a control's `State` and the windowed `Button`'s say when to draw a focus ring, and
+`on_focus_visible` repaints. A top-level window keeps the cue for every window inside it; keys
+and presses in native controls count too when they come through `Application::run`. Native
+controls show their own focus.
+
 `set_cursor(Cursor::hand)` gives an element a pointer shape; an element without one takes its
 parent's, and a `TextBox` has the text cursor. Override `cursor_at` for parts with shapes of
 their own, such as a link inside a label. The window shows the shape of the element under the

@@ -58,6 +58,10 @@ public:
     [[nodiscard]] UINT dpi() const noexcept;
     [[nodiscard]] SIZE client_pixels() const;
     [[nodiscard]] bool top_level() const noexcept { return topLevel_; }
+    // Whether keyboard focus is shown (a focus ring): from a key press anywhere in this window's
+    // top-level window until a mouse button is pressed there, as the web's :focus-visible. A child
+    // window shares its top-level window's. Native controls show their own focus.
+    [[nodiscard]] bool focus_visible() const noexcept;
     [[nodiscard]] Application& application() const noexcept { return application_; }
     // The client pixels being repainted while on_paint runs; nullopt at any other time.
     [[nodiscard]] std::optional<RECT> paint_rect() const noexcept { return paintRect_; }
@@ -135,6 +139,8 @@ protected:
     virtual void on_focus(bool) {}
     virtual void on_capture_lost() {}
     virtual void on_enabled(bool) {}
+    // The top-level window's focus_visible() changed: repaint whatever shows the focus.
+    virtual void on_focus_visible(bool) {}
     virtual std::optional<LRESULT> on_message(UINT, WPARAM, LPARAM) { return std::nullopt; }
 
 private:
@@ -153,6 +159,7 @@ private:
 
     Application& application_;
     bool topLevel_{}, unredirected_{};
+    bool focusVisible_{};   // A top-level window's focus cue.
     wil::unique_hwnd hwnd_;
     std::exception_ptr callbackError_;
     IRawElementProviderSimple* automationProvider_{};

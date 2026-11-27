@@ -87,7 +87,7 @@ void Button::paint_default(ScopedSurfaceDraw& draw, numerics::float2 size, const
     const auto dc = draw.context().get();
     dc->Clear(D2D1::ColorF(colors.face));
     dc->DrawRectangle({0.5f, 0.5f, std::max(0.5f, size.x - 0.5f), std::max(0.5f, size.y - 0.5f)}, draw.solid_brush(colors.border));
-    if (state.focused) {
+    if (state.focusVisible) {
         dc->DrawRectangle({3, 3, std::max(3.0f, size.x - 3), std::max(3.0f, size.y - 3)}, draw.solid_brush(colors.focus), 2);
     }
     dc->DrawTextLayout({0, 0}, state.label.layout().get(), draw.solid_brush(colors.text));
@@ -95,6 +95,10 @@ void Button::paint_default(ScopedSurfaceDraw& draw, numerics::float2 size, const
 
 void Button::on_resize() { invalidate(); }
 void Button::on_hover(bool) { invalidate(); }
+
+void Button::on_focus_visible(bool) {
+    if (focused()) { invalidate(); }
+}
 
 void Button::on_focus(bool focused) {
     if (focused) { invalidate(); } else { cancel_press(); }
@@ -113,7 +117,7 @@ void Button::on_enabled(bool value) {
 void Button::on_paint() {
     target_.render(*this, [&](ScopedSurfaceDraw& draw, numerics::float2 size) {
         text_.resize(std::max(1.0f, size.x), std::max(1.0f, size.y));
-        const State state{text_, application().appearance(), hovered(), pressed(), focused(), enabled()};
+        const State state{text_, application().appearance(), hovered(), pressed(), focused(), enabled(), focused() && focus_visible()};
         if (painter_) { painter_(draw, size, state); }
         else { paint_default(draw, size, state); }
     });

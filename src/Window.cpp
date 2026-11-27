@@ -345,7 +345,19 @@ void Window::notify_destroy() {
 
 // Keeps the hover, capture, focus, and enabled state current before on_message sees the message,
 // so overrides can rely on it whether or not they handle the message themselves.
+bool Window::focus_visible() const noexcept {
+    const auto* top = topLevel_ ? this : application_.top_window(hwnd_.get());
+    return top && top->focusVisible_;
+}
+
 void Window::track(UINT message, WPARAM wparam, LPARAM lparam) {
+    // Also for messages that do not come through Application::run's loop, as when sent.
+    MSG input{};
+    input.hwnd = hwnd_.get();
+    input.message = message;
+    input.wParam = wparam;
+    input.lParam = lparam;
+    application_.note_focus_cue(input);
     switch (message) {
     case WM_MOUSEMOVE:
     case WM_LBUTTONDOWN: case WM_LBUTTONUP: case WM_LBUTTONDBLCLK:

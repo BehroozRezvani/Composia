@@ -44,6 +44,7 @@ protected:
     void on_paint() override;
     void on_focus(bool) override;
     void on_enabled(bool) override;
+    void on_focus_visible(bool) override;
     void on_hover(bool) override;
     void on_capture_lost() override;
     std::optional<LRESULT> on_message(UINT, WPARAM, LPARAM) override;

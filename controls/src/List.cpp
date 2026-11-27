@@ -1,4 +1,5 @@
 #include <composia/Controls.hpp>
+#include <composia/ElementWindow.hpp>
 #include <composia/HostedVisual.hpp>
 #include <algorithm>
 #include <cmath>
@@ -58,6 +59,8 @@ public:
         if (!owner || !owner->renderer_) { return; }
         auto s = state();
         s.focused = owner->current_ == index && (owner->focused() || owner->popupFocus_);
+        const auto* window = owner->host_window();
+        s.focusVisible = s.focused && window && window->focus_visible();
         auto b = bounds();
         owner->renderer_(draw, index, name(), {b.width, b.height}, s, owner->tokens());
     }

@@ -64,6 +64,12 @@ private:
     friend class CompositionWindowTarget;
     void attach(Window&);
     void detach(Window&) noexcept;
+    // The Composia top-level window an HWND belongs to, or null.
+    [[nodiscard]] Window* top_window(HWND) const noexcept;
+    // Shows or hides the focus cue of the top-level window target is in (Window::focus_visible).
+    void focus_cue(HWND target, bool visible) noexcept;
+    // A key press shows it, a mouse button press hides it.
+    void note_focus_cue(const MSG&) noexcept;
     void report_error(std::exception_ptr) noexcept;
     void rethrow_callback_error();
     bool has_windows() const noexcept;

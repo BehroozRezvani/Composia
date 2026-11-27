@@ -229,6 +229,41 @@ void Application::attach(Window& window) {
 }
 void Application::detach(Window& window) noexcept { std::erase(windows_, &window); }
 
+Window* Application::top_window(HWND hwnd) const noexcept {
+    const auto root = hwnd ? GetAncestor(hwnd, GA_ROOT) : nullptr;
+    if (!root) { return nullptr; }
+    const auto found = std::ranges::find_if(windows_, [root](const Window* window) { return window->top_level() && window->hwnd() == root; });
+    return found == windows_.end() ? nullptr : *found;
+}
+
+void Application::focus_cue(HWND target, bool visible) noexcept {
+    auto* top = top_window(target);
+    if (!top || top->focusVisible_ == visible) { return; }
+    top->focusVisible_ = visible;
+    const auto root = top->hwnd();
+    // The windows the change reaches may come and go as they repaint.
+    const auto windows = windows_;
+    for (auto* window : windows) {
+        if (std::ranges::find(windows_, window) == windows_.end() || !window->hwnd()) { continue; }
+        if (GetAncestor(window->hwnd(), GA_ROOT) != root) { continue; }
+        try { window->on_focus_visible(visible); }
+        catch (...) { report_error(std::current_exception()); }
+    }
+}
+
+void Application::note_focus_cue(const MSG& message) noexcept {
+    switch (message.message) {
+    case WM_KEYDOWN: case WM_SYSKEYDOWN:
+        focus_cue(message.hwnd, true);
+        break;
+    case WM_LBUTTONDOWN: case WM_RBUTTONDOWN: case WM_MBUTTONDOWN: case WM_XBUTTONDOWN:
+    case WM_LBUTTONDBLCLK: case WM_RBUTTONDBLCLK: case WM_MBUTTONDBLCLK: case WM_XBUTTONDBLCLK:
+        focus_cue(message.hwnd, false);
+        break;
+    default: break;
+    }
+}
+
 void Application::report_error(std::exception_ptr error) noexcept {
     if (!callbackError_) { callbackError_ = std::move(error); }
 }
@@ -348,6 +383,8 @@ int Application::run() {
                 rethrow_callback_error();
                 return static_cast<int>(message.wParam);
             }
+            // Keys and presses in native controls count for the focus cue too.
+            note_focus_cue(message);
             // Key previews come first, so an accelerator works wherever the focus is.
             bool handled = (message.message == WM_KEYDOWN || message.message == WM_SYSKEYDOWN) && preview_key(message);
             for (const auto window : windows_) {

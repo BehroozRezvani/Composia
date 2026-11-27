@@ -81,6 +81,8 @@ public:
     [[nodiscard]] float scroll_offset() const noexcept { return scrollOffset_; }
     [[nodiscard]] float scroll_limit() const noexcept { return scrollLimit_; }
     [[nodiscard]] bool focused() const noexcept;
+    // Focused, and the window shows keyboard focus (Window::focus_visible): draw a focus ring.
+    [[nodiscard]] bool focus_visible() const noexcept;
     bool request_focus();
     [[nodiscard]] bool hovered() const noexcept;
     [[nodiscard]] layout::Rect bounds() const noexcept { return bounds_; } // In parent DIPs.

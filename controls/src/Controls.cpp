@@ -65,7 +65,7 @@ bool Command::execute() const {
 }
 State state_of(const TextBox& box) {
     auto s = box.selection();
-    return {box.hovered(), box.pointer_pressed(), box.focused(), !box.interactive(), s.start != s.end};
+    return {box.hovered(), box.pointer_pressed(), box.focused(), !box.interactive(), s.start != s.end, box.focus_visible()};
 }
 Control::Control(std::wstring name, long role, ElementLayout layout) : Element(layout) {
     set_accessibility({.name = std::move(name), .controlType = role});
@@ -75,7 +75,7 @@ Control::Control(std::wstring name, long role, ElementLayout layout) : Element(l
 State Control::state() const {
     const auto* a = accessibility();
     const bool selected = a && (a->toggle ? a->toggle->on : a->selected.value_or(false));
-    return {hovered(), pressed_, focused(), !interactive(), selected};
+    return {hovered(), pressed_, focused(), !interactive(), selected, focus_visible()};
 }
 std::wstring_view Control::name() const noexcept {
     return accessibility() ? std::wstring_view(accessibility()->name) : std::wstring_view{};

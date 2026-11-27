@@ -1,3 +1,4 @@
+#include <composia/Button.hpp>
 #include <composia/ElementWindow.hpp>
 #include <composia/HostedVisual.hpp>
 #include <composia/HostedWindow.hpp>
@@ -401,6 +402,36 @@ int hosted_teardown(const testing::Options& options) {
     return 0;
 }
 
+// The focus cue: hidden at first, shown by a key press in the window or a window inside it, hidden
+// by a press of a mouse button, and shared with the windows inside.
+int focus_cues(const testing::Options& options) {
+    Application app{options.warp};
+    {
+        auto root = std::make_shared<Element>(ElementLayout{Kind::stack});
+        auto first = std::make_shared<Tile>(0x203040);
+        first->set_preferred_size({100, 20});
+        first->set_focusable(true);
+        root->add(first);
+        ElementWindow window{app, L"Focus cues", 200, 120, root};
+        NativeControl edit{window, L"EDIT", WS_TABSTOP | WS_VISIBLE | ES_AUTOHSCROLL};
+        Button child{window, L"Child", [](ScopedSurfaceDraw&, numerics::float2, const Button::State&) {}};
+        window.show(SW_SHOWNORMAL);
+        flush(window);
+        require(window.focus_element(*first), "Focus an element");
+        require(!window.focus_visible() && !first->focus_visible(), "The focus showed before any key");
+        SendMessageW(window.hwnd(), WM_KEYDOWN, VK_DOWN, 0);
+        require(window.focus_visible() && first->focus_visible() && child.focus_visible(), "A key did not show the focus, here and inside");
+        SendMessageW(window.hwnd(), WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(150, 100));
+        SendMessageW(window.hwnd(), WM_LBUTTONUP, 0, MAKELPARAM(150, 100));
+        require(!window.focus_visible() && !child.focus_visible(), "A click did not hide the focus");
+        // A key in a window inside shows it for the whole window.
+        SendMessageW(child.hwnd(), WM_KEYDOWN, VK_TAB, 0);
+        require(window.focus_visible() && first->focus_visible(), "A key in a window inside did not show the focus");
+    }
+    app.close();
+    return 0;
+}
+
 int tooltips(const testing::Options& options) {
     Application app{options.warp};
     {
@@ -513,5 +544,6 @@ int tooltips(const testing::Options& options) {
 
 int main(int argc, char** argv) {
     return testing::run(argc, argv, {{"pixels", pixels}, {"navigation", navigation}, {"hosted", hosted},
-        {"tooltips", tooltips}, {"visuals", visuals}, {"snapshot", snapshot}, {"hosted-teardown", hosted_teardown}});
+        {"tooltips", tooltips}, {"visuals", visuals}, {"snapshot", snapshot}, {"hosted-teardown", hosted_teardown},
+        {"focus-cues", focus_cues}});
 }
