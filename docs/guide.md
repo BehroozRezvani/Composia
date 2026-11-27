@@ -375,6 +375,12 @@ also reports its level; the owner changes its rows and sets them again. The list
 rows for the pointer: a renderer draws the expander, and the owner toggles from `on_activate`
 or from a control in the row.
 
+`Items::separator` makes rows lines between groups, as in a menu. A separator is never
+selected, current or chosen; the arrows, Home and End, type-ahead and the pointer pass it by,
+and UI Automation sees a Separator that is not content. It is `List::separatorHeight` tall
+unless `Items::height` says otherwise, and draws a line in the border color, or what
+`set_separator_renderer` draws.
+
 `Items::content` puts elements over a row each time it is realized, such as a button inside
 it. They draw above the row renderer and take the pointer first; a press they leave selects
 the row. `index_at` finds the row at a point in the list, for a drop target, and `refresh`

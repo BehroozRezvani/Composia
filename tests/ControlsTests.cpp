@@ -492,11 +492,70 @@ int choices(const testing::Options&) {
     require(dropdown->open(), "The dropdown did not open again");
     tree.key({VK_RETURN, true});
     require(!dropdown->expanded() && dropdown->selected() == 1 && sorted.empty(), "A dropdown raised a choice that kept its value");
+    // A menu that starts with a separator opens on the row after it.
+    auto led = ui::Items::strings({L"", L"Undo"});
+    led.separator = [](std::size_t i) { return i == 0; };
+    menu->set_items(led);
+    require(menu->open() && menu->popup().current() == 1, "A menu opened on its leading separator");
+    tree.key({VK_RETURN, true});
+    require(!menu->expanded() && chosen.back() == 1, "Enter after a leading separator did not choose the row");
+    return 0;
+}
+
+// Separator rows are lines between groups: never selected, current or chosen, passed by the
+// keyboard, type-ahead and the pointer, and Separators to UI Automation.
+int separators(const testing::Options&) {
+    auto items = ui::Items::strings({L"Reply", L"Forward", L"Recent", L"Delete"});
+    items.separator = [](std::size_t i) { return i == 2; };
+    auto list = std::make_shared<ui::List>(L"Actions", items, 32, 200);
+    std::size_t activations{};
+    auto onActivate = list->on_activate([&](std::size_t) { ++activations; });
+    ElementTree tree(list);
+    tree.set_viewport({160, 200});
+    tree.update_layout();
+    require(list->row_bounds(2).height == ui::List::separatorHeight && list->row_bounds(3).y == 73,
+        "A separator did not take its own height");
+    const Element* separator{};
+    for (const auto& row : list->children().front()->children().front()->children()) {
+        if (row->bounds().y == 64) { separator = row.get(); }
+    }
+    require(separator && separator->accessibility()->controlType == UIA_SeparatorControlTypeId &&
+        separator->accessibility()->name.empty() && !separator->accessibility()->invoke &&
+        !separator->accessibility()->selected, "A separator row was not a plain Separator to UI Automation");
+    require(list->request_focus() && list->go_to(1) && list->selected() == 1, "Could not select the row before the separator");
+    tree.key({VK_DOWN, true});
+    require(list->selected() == 3, "Down did not pass the separator");
+    tree.key({VK_UP, true});
+    require(list->selected() == 1, "Up did not pass the separator");
+    require(!list->select(2) && !list->go_to(2) && list->selected() == 1, "A separator could be selected or gone to");
+    list->select(0);
+    tree.text_input(L"r");
+    require(list->current() != 2, "Type-ahead landed on a separator");
+    list->select(1);
+    using Kind = PointerEvent::Kind;
+    using Mouse = PointerEvent::Button;
+    tree.pointer({Kind::down, {8, 68}, Mouse::left});
+    tree.pointer({Kind::up, {8, 68}, Mouse::left});
+    require(list->selected() == 1 && !activations, "A press on a separator selected or activated it");
+    require(testing::throws<std::invalid_argument>([&] { list->replace_items(items, 2); }) &&
+        testing::throws<std::invalid_argument>([&] { list->replace_items(items, std::nullopt, 2); }),
+        "A separator was accepted as the selected or current row");
+
+    // Separators at the ends: Home and End land on the rows inside them.
+    auto ends = ui::Items::strings({L"", L"Mark read", L"", L"Archive", L""});
+    ends.separator = [](std::size_t i) { return i % 2 == 0; };
+    list->set_items(ends);
+    tree.update_layout();
+    tree.key({VK_HOME, true});
+    require(list->current() == 1, "Home landed on a separator");
+    tree.key({VK_END, true});
+    require(list->current() == 3, "End landed on a separator");
     return 0;
 }
 
 int main(int argc, char** argv) {
     return testing::run(argc, argv, {{"behaviour", behaviour}, {"virtualization", virtualization}, {"popup", popup}, {"choices", choices},
+        {"separators", separators},
         {"style", style}, {"scrollbar", scrollbar}, {"context", context}, {"heights", heights},
         {"current", current}, {"tree", tree}, {"replace", replace},
         {"content", content}});

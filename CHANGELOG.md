@@ -74,6 +74,10 @@ change the API; each change is listed here.
 - `ElementAccessibility::acceleratorKey`, `positionInSet` and `sizeOfSet` serve UI Automation's
   AcceleratorKey, PositionInSet and SizeOfSet, with change events. An element whose control
   type is Separator is a control element but not content.
+- `Items::separator` makes rows separators: lines between groups that are never selected,
+  current or chosen, which the keyboard, type-ahead and the pointer pass by and UI Automation
+  sees as Separators. They are `List::separatorHeight` tall without `Items::height`, and
+  `List::set_separator_renderer` draws them instead of the default line.
 - `ElementLayout::crossAlign` and `mainAlign` align a stack's or flex container's children
   across and along its axis (`layout::Align`), and `Element::set_align` aligns one child.
   `ElementLayout` compares with `==`.

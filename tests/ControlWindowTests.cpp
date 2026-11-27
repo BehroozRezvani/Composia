@@ -138,6 +138,33 @@ int tokens(const testing::Options& options) {
     require(testing::matches(pixel(10, 10), ui::StyleTokens{}.background), "Without a scope the renderer did not get StyleTokens{}");
     return 0;
 }
+// A separator row draws a line in the border color across its middle, or through its renderer.
+int separator_drawing(const testing::Options& options) {
+    Application app(options.warp);
+    namespace ui = composia::controls;
+    ui::StyleTokens theme;
+    theme.border = 0xc03020;
+    auto scope = std::make_shared<ui::StyleScope>(theme, ElementLayout{ElementLayout::Kind::stack});
+    auto items = ui::Items::strings({L"Reply", L"", L"Delete"});
+    items.separator = [](std::size_t i) { return i == 1; };
+    auto list = std::make_shared<ui::List>(L"Actions", items, 32, 100);
+    scope->add(list);
+    ElementWindow window(app, L"Separators", 200, 120, scope);
+    window.show(SW_SHOWNOACTIVATE);
+    flush(window);
+    auto pixel = [&](float x, float y) {
+        return testing::surface_pixel(app, window.composition_target().surface(), LONG(x * window.scale()),
+                                      LONG(y * window.scale()));
+    };
+    // The separator spans 32 to 41; its line is the DIP at 36.
+    require(testing::matches(pixel(100, 36.5f), 0xc03020), "The separator's line was not drawn in the border color");
+    list->set_separator_renderer([](ScopedSurfaceDraw& d, std::size_t, layout::Size size, const ui::StyleTokens&) {
+        d.context()->FillRectangle({0, 0, size.width, size.height}, d.solid_brush(0x204060));
+    });
+    flush(window);
+    require(testing::matches(pixel(100, 33), 0x204060), "The separator renderer did not draw the separator");
+    return 0;
+}
 // The scrollbar draws over the content at the right edge, wider under the pointer, or through
 // a renderer that receives its track, thumb and state.
 int scrollbar(const testing::Options& options) {
@@ -219,5 +246,6 @@ int fixture(const testing::Options& options) {
 }
 int main(int argc, char** argv) {
     return testing::run(argc, argv, {{"interaction", interaction}, {"fixture", fixture}, {"tokens", tokens}, {"scrollbar-drawing", scrollbar},
+        {"separator-drawing", separator_drawing},
         {"overlay", overlay}});
 }

@@ -2,6 +2,7 @@
 #include <composia/Appearance.hpp>
 #include <composia/ElementAccessibility.hpp>
 #include <composia/TextBox.hpp>
+#include <algorithm>
 #include <cstdint>
 #include <optional>
 
@@ -208,6 +209,11 @@ struct Items {
     // inside a row, such as a button. They draw above the row renderer and take pointer input
     // before the row; what they leave goes on to the row.
     std::function<std::shared_ptr<Element>(std::size_t)> content{};
+    // Optional: whether a row is a separator, a line between groups of rows. It is never selected,
+    // current or chosen: the keyboard, type-ahead and the pointer pass it by. UI Automation sees a
+    // Separator, which is not content. Without `height` it is List::separatorHeight tall. The list
+    // reads every row's flag when the items are set.
+    std::function<bool(std::size_t)> separator{};
     static Items strings(std::vector<std::wstring>);
 };
 
@@ -216,6 +222,8 @@ public:
     using Index = std::optional<std::size_t>;
     using RowRenderer = std::function<void(ScopedSurfaceDraw&, std::size_t, std::wstring_view,
                                             layout::Size, State, const StyleTokens&)>;
+    using SeparatorRenderer = std::function<void(ScopedSurfaceDraw&, std::size_t, layout::Size, const StyleTokens&)>;
+    static constexpr float separatorHeight = 9;
     List(std::wstring name, Items, float rowHeight = 32, float viewportHeight = 160);
     ~List() override;
     // New rows: the selection, the current row and the scroll position start over.
@@ -225,6 +233,9 @@ public:
     // else on the selected row. Raises no selection change; the rows are realized again.
     void replace_items(Items, Index selected, Index current = std::nullopt);
     void set_row_renderer(RowRenderer);
+    // Draws separator rows; an empty renderer restores the default, a line in the border color
+    // across the middle, inset by the padding.
+    void set_separator_renderer(SeparatorRenderer);
     [[nodiscard]] const Items& items() const noexcept { return items_; }
     [[nodiscard]] Index selected() const noexcept { return selected_; }
     // The row the keyboard acts on: the selected row, or a row that cannot be selected once the
@@ -275,6 +286,7 @@ private:
     // The row at the content offset y, or nullopt past either end.
     [[nodiscard]] Index row_at(double y) const noexcept;
     [[nodiscard]] bool selectable(std::size_t) const;
+    [[nodiscard]] bool separator(std::size_t i) const noexcept { return std::ranges::binary_search(separators_, i); }
     [[nodiscard]] bool tree() const noexcept { return items_.level || items_.expanded; }
     [[nodiscard]] std::size_t level(std::size_t i) const { return items_.level ? items_.level(i) : 0; }
     [[nodiscard]] std::optional<bool> expansion(std::size_t i) const {
@@ -295,7 +307,8 @@ private:
     std::shared_ptr<Element> content_, rows_;   // The rows, under the overlay.
     std::shared_ptr<HostedVisual> overlay_;
     Items items_;
-    std::vector<double> tops_;   // With Items::height: each row's top, then the extent.
+    std::vector<double> tops_;   // With Items::height or separators: each row's top, then the extent.
+    std::vector<std::size_t> separators_;   // The separator rows, in order.
     Index selected_, current_;
     float rowHeight_;
     bool menu_;
@@ -303,6 +316,7 @@ private:
     std::wstring prefix_;
     std::uint64_t lastText_{};
     RowRenderer renderer_;
+    SeparatorRenderer separatorRenderer_;
     Signal<Index> changed_;
     Signal<std::size_t> activated_;
     Signal<std::size_t, bool> expand_;

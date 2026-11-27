@@ -1,6 +1,7 @@
 #include <composia/Controls.hpp>
 #include <composia/ElementWindow.hpp>
 #include <composia/HostedVisual.hpp>
+#include <composia/ScopedSurfaceDraw.hpp>
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -15,10 +16,15 @@ Items Items::strings(std::vector<std::wstring> labels) {
 class List::Row final : public Pressable {
 public:
     Row(List& list, std::size_t i)
-        : Pressable(list.items_.label(i), list.menu_ ? UIA_MenuItemControlTypeId
-                                          : list.tree() ? UIA_TreeItemControlTypeId : UIA_ListItemControlTypeId),
-          owner(&list), index(i) {
+        : Pressable(list.separator(i) ? std::wstring{} : list.items_.label(i),
+                    list.separator(i) ? UIA_SeparatorControlTypeId
+                    : list.menu_      ? UIA_MenuItemControlTypeId
+                    : list.tree()     ? UIA_TreeItemControlTypeId : UIA_ListItemControlTypeId),
+          owner(&list), index(i), separator(list.separator(i)) {
         set_focusable(false);
+        set_offset({0, static_cast<float>(list.top(i))});
+        // A separator is only a line: nothing to choose, select, open or run.
+        if (separator) { return; }
         auto a = *accessibility();
         if (list.selectable(i)) { a.selected = false; }
         a.invoke = [this] { choose(true); };
@@ -38,15 +44,17 @@ public:
                 availability = command->enabled.on_change([this](bool) { set_available(command->enabled.get()); });
             }
         }
-        set_offset({0, static_cast<float>(list.top(i))});
         if (list.items_.content) {
             if (auto content = list.items_.content(i)) { add(std::move(content)); }
         }
     }
     void activate() override {
+        if (separator) { return; }
         choose(doubleClick || (owner && owner->popupFocus_));
     }
     bool on_pointer(const PointerEvent& e) override {
+        // Presses on a separator do nothing; the wheel goes on to the list.
+        if (separator) { return false; }
         if (e.kind == PointerEvent::Kind::down) { doubleClick = e.doubleClick; }
         return Pressable::on_pointer(e);
     }
@@ -56,7 +64,20 @@ public:
         }
     }
     void paint(ScopedSurfaceDraw& draw) override {
-        if (!owner || !owner->renderer_) { return; }
+        if (!owner) { return; }
+        if (separator) {
+            const auto b = bounds();
+            const auto tokens = owner->tokens();
+            if (owner->separatorRenderer_) {
+                owner->separatorRenderer_(draw, index, {b.width, b.height}, tokens);
+            } else {
+                const float y = std::floor(b.height / 2);
+                draw.context()->FillRectangle({tokens.padding, y, std::max(tokens.padding, b.width - tokens.padding), y + 1},
+                    draw.solid_brush(tokens.border));
+            }
+            return;
+        }
+        if (!owner->renderer_) { return; }
         auto s = state();
         s.focused = owner->current_ == index && (owner->focused() || owner->popupFocus_);
         const auto* window = owner->host_window();
@@ -66,6 +87,7 @@ public:
     }
     List* owner;
     const std::size_t index;
+    const bool separator;
     std::shared_ptr<Command> command;
     Connection availability;
     bool doubleClick{};
@@ -106,14 +128,24 @@ void List::assign(Items items, Index selected, Index current, bool keepView) {
     if (selected && items.selectable && !items.selectable(*selected)) {
         throw std::invalid_argument("The row cannot be selected");
     }
+    std::vector<std::size_t> separators;
+    if (items.separator) {
+        for (std::size_t i = 0; i < items.count; ++i) {
+            if (items.separator(i)) { separators.push_back(i); }
+        }
+    }
+    const auto isSeparator = [&](std::size_t i) { return std::ranges::binary_search(separators, i); };
+    if ((selected && isSeparator(*selected)) || (current && isSeparator(*current))) {
+        throw std::invalid_argument("A separator cannot be selected or current");
+    }
     std::vector<double> tops;
     float shortest = rowHeight_;
     double extent = double(items.count) * rowHeight_;
-    if (items.height) {
+    if (items.height || !separators.empty()) {
         tops.reserve(items.count + 1);
         extent = 0;
         for (std::size_t i = 0; i < items.count; ++i) {
-            const float height = items.height(i);
+            const float height = items.height ? items.height(i) : isSeparator(i) ? separatorHeight : rowHeight_;
             if (!std::isfinite(height) || height <= 0) { throw std::invalid_argument("Expected a positive row height"); }
             tops.push_back(extent);
             extent += height;
@@ -136,6 +168,7 @@ void List::assign(Items items, Index selected, Index current, bool keepView) {
     prefix_.clear();
     items_ = std::move(items);
     tops_ = std::move(tops);
+    separators_ = std::move(separators);
     if (!menu_) {
         const long role = tree() ? UIA_TreeControlTypeId : UIA_ListControlTypeId;
         if (accessibility()->controlType != role) {
@@ -158,6 +191,7 @@ void List::assign(Items items, Index selected, Index current, bool keepView) {
     if (current_) { realize(*current_); }
 }
 void List::set_row_renderer(RowRenderer renderer) { renderer_ = std::move(renderer); invalidate(); }
+void List::set_separator_renderer(SeparatorRenderer renderer) { separatorRenderer_ = std::move(renderer); invalidate(); }
 std::size_t List::realized_count() const noexcept { return rows_->children().size(); }
 
 double List::top(std::size_t index) const noexcept {
@@ -177,7 +211,9 @@ List::Index List::row_at(double y) const noexcept {
     return static_cast<std::size_t>(std::upper_bound(tops_.begin(), tops_.end() - 1, y) - tops_.begin()) - 1;
 }
 
-bool List::selectable(std::size_t index) const { return !items_.selectable || items_.selectable(index); }
+bool List::selectable(std::size_t index) const {
+    return !separator(index) && (!items_.selectable || items_.selectable(index));
+}
 void List::invalidate_row(std::size_t index) {
     for (const auto& child : rows_->children()) {
         if (static_cast<Row&>(*child).index == index) { child->invalidate(); return; }
@@ -190,6 +226,7 @@ void List::set_current(Index index) {
     if (current_) { invalidate_row(*current_); }
 }
 bool List::move_to(std::size_t index) {
+    if (separator(index)) { return false; }
     if (selectable(index)) { return select(index); }
     realize(index);
     set_current(index);
