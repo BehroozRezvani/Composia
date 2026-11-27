@@ -51,9 +51,10 @@ public:
         }
     }
     // What the items say of the row that can change while it is realized: its label (when
-    // `relabel`; a new row has it already) and check state.
+    // `relabel`; a new row has it already), check state and accelerator.
     void describe(const List& list, ElementAccessibility& a, bool relabel) {
         if (relabel) { a.name = list.items_.label(index); }
+        a.acceleratorKey = list.items_.accelerator ? list.items_.accelerator(index) : std::wstring{};
         const auto on = list.items_.checked ? list.items_.checked(index) : std::nullopt;
         if (!on) { a.toggle.reset(); }
         else if (a.toggle) { a.toggle->on = *on; }
@@ -352,7 +353,8 @@ void List::refresh(std::size_t index) {
             const auto& old = *row.accessibility();
             auto a = old;
             row.describe(*this, a, true);
-            if (a.name != old.name || a.toggle.has_value() != old.toggle.has_value() || (a.toggle && a.toggle->on != old.toggle->on)) {
+            if (a.name != old.name || a.acceleratorKey != old.acceleratorKey || a.toggle.has_value() != old.toggle.has_value() ||
+                (a.toggle && a.toggle->on != old.toggle->on)) {
                 row.set_accessibility(std::move(a));
             }
         }

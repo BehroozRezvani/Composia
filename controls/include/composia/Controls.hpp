@@ -223,6 +223,9 @@ struct Items {
     // The owner keeps the state: it flips it when the row is chosen, and the list reads it again
     // after each choice (or at refresh).
     std::function<std::optional<bool>(std::size_t)> checked{};
+    // Optional shortcut of each row, such as L"Ctrl+R": UI Automation's AcceleratorKey. A row
+    // renderer draws it, conventionally at the right, from items().accelerator.
+    std::function<std::wstring(std::size_t)> accelerator{};
     static Items strings(std::vector<std::wstring>);
 };
 
@@ -259,7 +262,7 @@ public:
     // The row at a point in the list's own DIPs, as its pointer and context menu events give
     // them, or nullopt.
     [[nodiscard]] Index index_at(layout::Point) const noexcept;
-    // Reads a realized row's label and check state again and repaints it, for a change that keeps
+    // Reads a realized row's label, check state and accelerator again and repaints it, for a change that keeps
     // its height, such as a count, or a look the renderer gives it, such as a drop target.
     void refresh(std::size_t);
     // Lays Composition content over all the rows, in their coordinates: it scrolls with them and

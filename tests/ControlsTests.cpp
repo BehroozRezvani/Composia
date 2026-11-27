@@ -601,8 +601,10 @@ int positions(const testing::Options&) {
 // owner gives it after each choice.
 int checks(const testing::Options&) {
     bool wrap{};
+    std::wstring replyKey = L"Ctrl+R";
     auto items = ui::Items::strings({L"Reply", L"Wrap lines"});
     items.checked = [&](std::size_t i) { return i == 1 ? std::optional<bool>{wrap} : std::nullopt; };
+    items.accelerator = [&](std::size_t i) { return i == 0 ? replyKey : std::wstring{}; };
     auto list = std::make_shared<ui::List>(L"View", items, 32, 200);
     auto onActivate = list->on_activate([&](std::size_t i) { if (i == 1) { wrap = !wrap; } });
     ElementTree tree(list);
@@ -616,6 +618,11 @@ int checks(const testing::Options&) {
     };
     require(!row(0).accessibility()->toggle && row(1).accessibility()->toggle && !row(1).accessibility()->toggle->on,
         "Rows did not report whether they can be checked");
+    require(row(0).accessibility()->acceleratorKey == L"Ctrl+R" && row(1).accessibility()->acceleratorKey.empty(),
+        "Rows did not report their accelerators");
+    replyKey = L"Ctrl+Shift+R";
+    list->refresh(0);
+    require(row(0).accessibility()->acceleratorKey == L"Ctrl+Shift+R", "Refresh did not read the accelerator again");
     require(list->request_focus() && list->go_to(1), "Could not go to the checked row");
     tree.key({VK_RETURN, true});
     require(wrap && row(1).accessibility()->toggle->on, "Choosing the row did not show its new state");

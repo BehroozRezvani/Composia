@@ -80,6 +80,8 @@ change the API; each change is listed here.
   `List::set_separator_renderer` draws them instead of the default line.
 - `Items::checked` gives list rows a check state: UI Automation's Toggle, which chooses the row,
   and `State::checked` for renderers. The list reads it again after each choice and at `refresh`.
+- `Items::accelerator` gives list rows a shortcut, UI Automation's AcceleratorKey, for the row
+  renderer to draw.
 - List rows report their place among the list's rows, or among their siblings in a tree, with
   separators left out, as UI Automation's PositionInSet and SizeOfSet.
 - `ElementLayout::crossAlign` and `mainAlign` align a stack's or flex container's children

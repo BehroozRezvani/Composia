@@ -380,6 +380,10 @@ chooses the row, and a renderer gets `State::checked`, while `State::selected` s
 highlight. The owner keeps the state and flips it when the row is chosen; the list reads it
 again after every choice, and `refresh` reads it after a change from elsewhere.
 
+`Items::accelerator` gives rows the shortcut that runs their command without the list, such
+as `Ctrl+R`: UI Automation's AcceleratorKey. Rows draw only through the row renderer, which
+reads it from `items().accelerator` and conventionally draws it at the right.
+
 `Items::separator` makes rows lines between groups, as in a menu. A separator is never
 selected, current or chosen; the arrows, Home and End, type-ahead and the pointer pass it by,
 and UI Automation sees a Separator that is not content. It is `List::separatorHeight` tall
