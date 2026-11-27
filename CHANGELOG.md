@@ -85,8 +85,8 @@ change the API; each change is listed here.
 - `Items::staysOpen` keeps a menu or dropdown open when the row is chosen, for options that
   toggle in place.
 - `ListRole::menu` makes a `List` a Menu of MenuItems to UI Automation, for menus an application
-  shows itself; `List::role` reports it. One click chooses a menu's row, and its rows do not
-  expose ExpandCollapse.
+  shows itself; `List::role` reports it. One click chooses a menu's row, and its rows neither
+  expose ExpandCollapse nor open or fold with Left and Right.
 - List rows report their place among the list's rows, or among their siblings in a tree, with
   separators left out, as UI Automation's PositionInSet and SizeOfSet.
 - `ElementLayout::crossAlign` and `mainAlign` align a stack's or flex container's children
@@ -106,6 +106,7 @@ change the API; each change is listed here.
   messages reach a window procedure, and a text box's timers work without the focus.
 - A whole-surface draw clips to its surface too, since the surface may share an atlas.
 - A list ignores Enter and Space while they repeat, so a key held down chooses once.
+- Type-ahead passes rows whose command is disabled, as the arrows do.
 - A menu raises `on_selection` for every choice, the same row again included; a dropdown still
   raises it only when its value changes.
 

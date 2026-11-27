@@ -255,6 +255,11 @@ std::pair<int, int> List::place_in_set(std::size_t index) const {
     return {number(static_cast<std::size_t>(std::ranges::lower_bound(group, index) - group.begin()) + 1), number(group.size())};
 }
 
+bool List::available(std::size_t index) const {
+    const auto command = items_.command ? items_.command(index) : nullptr;
+    return !command || command->enabled.get();
+}
+
 bool List::selectable(std::size_t index) const {
     return !separator(index) && (!items_.selectable || items_.selectable(index));
 }
@@ -406,14 +411,14 @@ bool List::type_ahead(std::wstring_view text) {
     const auto start = current_ ? (*current_ + (fresh ? 1 : 0)) % items_.count : 0;
     if (items_.findPrefix) {
         auto match = items_.findPrefix(prefix_, start);
-        if (match && move_to(*match) && current_ == match) { reveal(*match); }
+        if (match && available(*match) && move_to(*match) && current_ == match) { reveal(*match); }
     } else {
         auto i = start;
         do {
             auto label = items_.label(i);
             if (label.size() >= prefix_.size() && prefix_.size() <= INT_MAX &&
                 CompareStringOrdinal(label.data(), static_cast<int>(prefix_.size()), prefix_.data(),
-                                     static_cast<int>(prefix_.size()), TRUE) == CSTR_EQUAL && move_to(i)) {
+                                     static_cast<int>(prefix_.size()), TRUE) == CSTR_EQUAL && available(i) && move_to(i)) {
                 if (current_ == i) { reveal(i); }
                 break;
             }
@@ -423,7 +428,8 @@ bool List::type_ahead(std::wstring_view text) {
     return true;
 }
 bool List::tree_key(bool right) {
-    if (!tree() || !current_) { return false; }
+    // A menu's levels are only depth: its rows do not open or fold.
+    if (!tree() || !current_ || menu_) { return false; }
     const auto index = *current_;
     const auto open = expansion(index);
     if (right) {
@@ -475,8 +481,7 @@ bool List::navigate(const KeyEvent& e) {
     default: return false;
     }
     for (;;) {
-        auto command = items_.command ? items_.command(candidate) : nullptr;
-        if ((!command || command->enabled.get()) && move_to(candidate)) {
+        if (available(candidate) && move_to(candidate)) {
             if (current_ == candidate) { reveal(candidate); }
             return true;
         }

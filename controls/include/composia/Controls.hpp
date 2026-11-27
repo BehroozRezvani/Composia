@@ -305,6 +305,8 @@ private:
     // The row at the content offset y, or nullopt past either end.
     [[nodiscard]] Index row_at(double y) const noexcept;
     [[nodiscard]] bool selectable(std::size_t) const;
+    // False for a row whose command is disabled, which the keyboard passes by.
+    [[nodiscard]] bool available(std::size_t) const;
     [[nodiscard]] bool separator(std::size_t i) const noexcept { return std::ranges::binary_search(separators_, i); }
     // A row's place among its peers, from 1, and their number, for UI Automation: among the rows
     // of a flat list, or the rows with the same parent in a tree, separators left out. 0 and 0

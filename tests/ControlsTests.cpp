@@ -692,6 +692,13 @@ int roles(const testing::Options&) {
         return row->accessibility()->controlType == UIA_MenuItemControlTypeId && !row->accessibility()->expansion;
     }), "A menu list's rows were not plain MenuItems");
     require(rows[2]->accessibility()->level == 2, "A menu list's rows lost their levels");
+    std::size_t expansions{};
+    auto onExpand = menu->on_expand([&](std::size_t, bool) { ++expansions; });
+    require(menu->request_focus() && menu->go_to(1), "Could not go to a menu row with children");
+    tree.key({VK_LEFT, true});
+    tree.key({VK_RIGHT, true});
+    require(!expansions && menu->current() == 1, "Left or Right opened, folded or moved in a menu");
+    menu->select(std::nullopt);
     // One click chooses in a menu; a list takes two.
     std::vector<std::size_t> chosen;
     auto onChosen = menu->on_activate([&](std::size_t i) { chosen.push_back(i); });
@@ -707,6 +714,17 @@ int roles(const testing::Options&) {
     listTree.pointer({PointerEvent::Kind::down, {8, 40}, PointerEvent::Button::left});
     listTree.pointer({PointerEvent::Kind::up, {8, 40}, PointerEvent::Button::left});
     require(!opened && list->selected() == 1, "One click activated a list row");
+    // Type-ahead passes rows whose command is disabled, as the arrows do.
+    auto unavailable = std::make_shared<ui::Command>([] {});
+    unavailable->enabled.set(false);
+    auto commands = ui::Items::strings({L"Archive", L"Answer", L"Assign"});
+    commands.command = [&](std::size_t i) { return i == 1 ? unavailable : nullptr; };
+    list->set_items(commands);
+    listTree.update_layout();
+    list->select(0);
+    require(list->request_focus(), "The list did not take the focus");
+    listTree.text_input(L"a");
+    require(list->selected() == 2, "Type-ahead landed on a disabled row");
     // Enter held down chooses once.
     require(list->request_focus(), "The list did not take the focus");
     listTree.key({VK_RETURN, true});
