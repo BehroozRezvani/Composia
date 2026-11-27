@@ -296,7 +296,8 @@ structure alone. An element that calls `observe_layout()` hears of each layout i
 `on_layout_updated`, once its bounds are final: it may change the layout there (another pass
 follows, up to a limit that keeps a hook from looping for ever), and a focus move it asks for
 happens once layout has settled. Removing a focused element there clears the focus as anywhere
-else. A painter can use the supplied surface's brushes and must balance any drawing
+else. An `ElementWindow` lays its tree out before it opens its surface to paint or take a
+snapshot, so the hook may draw surfaces of its own (Composition draws one surface at a time). A painter can use the supplied surface's brushes and must balance any drawing
 state it changes.
 
 `set_focusable(true)` adds an element to keyboard navigation. A left press focuses the

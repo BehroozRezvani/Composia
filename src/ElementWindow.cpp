@@ -185,6 +185,8 @@ composition::SpriteVisual ElementWindow::snapshot(layout::Rect area) {
     const winrt::Windows::Foundation::Size pixels{static_cast<float>(std::ceil(area.width * scale)),
                                                   static_cast<float>(std::ceil(area.height * scale))};
     composition::CompositionDrawingSurface surface{nullptr};
+    // Layout first: its hooks may draw surfaces of their own, which cannot start inside this draw.
+    tree_.update_layout();
     app.render([&] {
         surface = app.graphics().composition_device().CreateDrawingSurface(pixels,
             winrt::Windows::Graphics::DirectX::DirectXPixelFormat::B8G8R8A8UIntNormalized,
@@ -207,6 +209,17 @@ void ElementWindow::on_resize() {
 }
 
 void ElementWindow::on_paint() {
+    // Layout runs before the window's surface is opened for drawing: a layout hook may draw a
+    // surface of its own (only one surface can be drawn at a time), and a hook that throws must not
+    // leave a partial update of the window's surface uncleared. The viewport is the size render
+    // gives the painter, so the paint's own layout pass finds nothing left to do.
+    const auto pixels = client_pixels();
+    if (pixels.cx > 0 && pixels.cy > 0 && !IsIconic(hwnd())) {
+        target_.resize(pixels, dpi());
+        const auto size = target_.logical_size();
+        tree_.set_viewport({size.x, size.y});
+        tree_.update_layout();
+    }
     target_.render(*this, [&](ScopedSurfaceDraw& draw, numerics::float2 size) {
         tree_.set_viewport({size.x, size.y});
         tree_.paint(draw);

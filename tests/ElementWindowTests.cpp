@@ -43,6 +43,31 @@ private:
     bool on_context_menu(const ContextMenuEvent& e) override { return menu && menu(e); }
 };
 
+// Draws a surface of its own from its layout hook, as an element showing a picture in the
+// compositor does when its size changes.
+class SelfDrawn final : public Element {
+public:
+    explicit SelfDrawn(Application& app) : app_(app) { observe_layout(); }
+    composition::CompositionDrawingSurface surface{nullptr};
+    unsigned draws{};
+
+private:
+    void on_layout_updated() override {
+        if (!surface) {
+            surface = app_.graphics().composition_device().CreateDrawingSurface({8, 8},
+                winrt::Windows::Graphics::DirectX::DirectXPixelFormat::B8G8R8A8UIntNormalized,
+                winrt::Windows::Graphics::DirectX::DirectXAlphaMode::Premultiplied);
+        }
+        app_.render([&] {
+            ScopedSurfaceDraw draw{surface, app_.graphics(), 96};
+            draw.context()->Clear(D2D1::ColorF(0x30A050));
+            draw.finish();
+        });
+        ++draws;
+    }
+    Application& app_;
+};
+
 void flush(ElementWindow& window) {
     MSG msg{};
     while (PeekMessageW(&msg, window.hwnd(), 0xC000, 0xFFFF, PM_REMOVE)) {
@@ -362,6 +387,42 @@ int snapshot(const testing::Options& options) {
     return 0;
 }
 
+// Layout runs before a window's surface is opened for drawing, so a layout hook can draw a surface
+// of its own (only one can be drawn at a time) even when the layout is still pending at the paint.
+int layout_draws(const testing::Options& options) {
+    Application app{options.warp};
+    {
+        auto root = std::make_shared<Element>(ElementLayout{Kind::stack});
+        auto drawn = std::make_shared<SelfDrawn>(app);
+        drawn->set_preferred_size({50, 10});
+        auto tile = std::make_shared<Tile>(0x203040);
+        tile->set_preferred_size({100, 20});
+        root->add(drawn);
+        root->add(tile);
+        ElementWindow window{app, L"Layout that draws", 200, 100, root};
+        window.show(SW_SHOWNOACTIVATE);
+        flush(window);
+        const auto before = drawn->draws;
+        // The change is still waiting for the tree's update message when the window paints.
+        drawn->set_preferred_size({60, 12});
+        window.invalidate({0, 0, 100, 40});
+        UpdateWindow(window.hwnd());
+        window.rethrow_callback_error();
+        require(drawn->draws > before, "The layout hook did not run for the paint");
+        require(testing::matches(testing::surface_pixel(app, drawn->surface, 1, 1), 0x30A050), "The hook's surface was not drawn");
+        const auto px = [&](float dips) { return static_cast<LONG>(std::lround(dips * window.scale())); };
+        require(testing::matches(testing::surface_pixel(app, window.composition_target().surface(), px(2), px(16)), 0x203040),
+            "The window was not painted after the hook drew");
+        const auto painted = drawn->draws;
+        drawn->set_preferred_size({70, 14});
+        const auto sprite = window.snapshot({0, 0, 100, 40});
+        require(drawn->draws > painted && sprite.Size().x == 100, "The layout hook did not run for the snapshot");
+        flush(window);
+    }
+    app.close();
+    return 0;
+}
+
 // A window destroyed while a hosted window inside it has the focus: as the tree is released the
 // hosted window hides and hands the focus back to the window, which must not then walk elements
 // that already left the tree (here the focusable one before it).
@@ -588,5 +649,5 @@ int focus_keeping(const testing::Options& options) {
 int main(int argc, char** argv) {
     return testing::run(argc, argv, {{"pixels", pixels}, {"navigation", navigation}, {"hosted", hosted}, {"focus-keeping", focus_keeping},
         {"tooltips", tooltips}, {"visuals", visuals}, {"snapshot", snapshot}, {"hosted-teardown", hosted_teardown},
-        {"focus-cues", focus_cues}});
+        {"focus-cues", focus_cues}, {"layout-draws", layout_draws}});
 }

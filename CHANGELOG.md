@@ -141,6 +141,11 @@ change the API; each change is listed here.
 
 ### Fixed
 
+- An `ElementWindow` lays its tree out before opening its surface to paint or take a snapshot.
+  A layout hook that drew a surface of its own, while layout was still pending at a paint,
+  failed (only one surface can be drawn at a time) and left the window's update uncleared,
+  so it showed other surfaces' pixels. `ElementTree::paint` also clears the update before
+  laying out, so a hook that throws leaves it transparent.
 - A window could show a virtual surface's tiles (a list's rows) in place of its own content
   after a partial repaint that followed a `VirtualSurface` update in the same uncommitted
   batch, a Composition fault. `CompositionWindowTarget` now repaints whole surfaces until

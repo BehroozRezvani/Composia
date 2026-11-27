@@ -126,7 +126,7 @@ composia_add_scenarios(composia-animation-tests animation WARP SCENARIOS helpers
 composia_test_target(composia-element-tests ElementTests.cpp)
 composia_add_scenarios(composia-element-tests element CORE SCENARIOS layout alignment routing cursors layout-hooks damage context-menu hover)
 composia_test_target(composia-element-window-tests ElementWindowTests.cpp)
-composia_add_scenarios(composia-element-window-tests element-window WARP SCENARIOS pixels navigation snapshot)
+composia_add_scenarios(composia-element-window-tests element-window WARP SCENARIOS pixels navigation snapshot layout-draws)
 composia_add_scenarios(composia-element-window-tests element-window SCENARIOS hosted hosted-teardown focus-cues focus-keeping tooltips visuals)
 
 # Popups in windows of their own: placement, showing, closing, and their menu events.

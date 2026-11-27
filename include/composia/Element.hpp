@@ -110,7 +110,9 @@ protected:
     void release_pointer() noexcept;
     virtual void on_capture_lost() noexcept {}
     virtual void on_hover_changed(bool) {}
-    // Opt in to a callback after arrangement, when child membership may safely change.
+    // Opt in to a callback after arrangement, when child membership may safely change. An
+    // ElementWindow runs layout before it opens its surface for a paint or a snapshot, so the
+    // callback may draw surfaces of its own.
     void observe_layout(bool value = true) noexcept { observeLayout_ = value; }
     virtual void on_layout_updated() {}
     // Host lifecycle hooks may invalidate paint. Leave tree structure and focus unchanged.
