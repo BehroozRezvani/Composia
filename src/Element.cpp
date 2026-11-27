@@ -135,7 +135,7 @@ void Element::set_align(std::optional<layout::Align> value) {
     check_mutation();
     if (align_ == value) { return; }
     align_ = value;
-    // Alignment moves the element inside the slot its parent gives it, at the same measurements.
+    // Alignment changes where the parent arranges the element, not how the element measures.
     if (parent_) { parent_->mark_layout(false); }
 }
 

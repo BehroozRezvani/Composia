@@ -231,8 +231,9 @@ Stack and flex containers align their children. `crossAlign` places them across 
 measured breadth there, at most the container's. `set_align` on a child overrides its
 parent's `crossAlign` for that child, as a button that keeps its own width in a column does.
 `mainAlign` places the children as a group along the axis when they leave room and no flex
-weight takes it: at the `start` (the default), in the `center`, or at the `end`. Alignment
-moves children within their measurements, so changing it arranges again without measuring.
+weight takes it: at the `start` (the default), in the `center`, or at the `end`. Changing
+alignment arranges the children again without measuring them again, though a child kept
+narrower than the container lays out its own children at that breadth.
 
 The wheel scrolls the nearest scroll container on its axis under the pointer that can still
 move, by the lines Windows is set to scroll per detent (16 DIPs a line), or by the viewport's

@@ -40,7 +40,7 @@ void Element::set_layout(ElementLayout value) {
     aligned.crossAlign = value.crossAlign;
     aligned.mainAlign = value.mainAlign;
     if (aligned == value) {
-        // Alignment moves children within the same measurements.
+        // Alignment changes where children are arranged, not how they measure.
         layout_ = value;
         mark_layout(false);
         return;
