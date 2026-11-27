@@ -206,7 +206,14 @@ int closing(const testing::Options& options) {
         order.clear();
         menu.close();
         require(order == std::vector<std::wstring>{L"submenu", L"menu"} && !submenu.is_open() && !IsWindowVisible(submenu.hwnd()),
-            "A popup the menu owns did not close before it"); 
+            "A popup the menu owns did not close before it");
+        // Alt+F4 closes the popup but keeps its window for the next showing.
+        menu.show_at(at, {100, 60});
+        SendMessageW(menu.hwnd(), WM_CLOSE, 0, 0);
+        require(!menu.is_open() && menu.hwnd() && menuReasons.back() == Reason::escape, "Alt+F4 did not close the popup, or destroyed its window");
+        menu.show_at(at, {100, 60});
+        require(menu.is_open(), "The popup could not be shown again after Alt+F4");
+        menu.close();
 
         // Minimizing the owner closes the popup, which does not come back with it.
         popup.show_at(at, {100, 60});
@@ -459,6 +466,10 @@ int owner(const testing::Options& options) {
         show();
         SendMessageW(owner, WM_SHOWWINDOW, FALSE, 0);
         require(pump_until([&] { return !popup.is_open(); }) && reasons.back() == Reason::owner_changed, "Hiding the owner did not close the popup");
+        show();
+        // The focus going to a window of another thread, such as a browser's, where no press is seen.
+        SendMessageW(owner, WM_KILLFOCUS, 0, 0);
+        require(pump_until([&] { return !popup.is_open(); }) && reasons.back() == Reason::deactivated, "Losing the focus to another thread did not close the popup");
         show();
         SendMessageW(owner, WM_CANCELMODE, 0, 0);
         require(pump_until([&] { return !popup.is_open(); }) && reasons.back() == Reason::owner_changed, "WM_CANCELMODE to the owner did not close the popup");

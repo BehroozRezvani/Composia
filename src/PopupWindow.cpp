@@ -83,8 +83,11 @@ public:
         static thread_local PopupTracker tracker;
         return tracker;
     }
-    [[nodiscard]] bool is_popup(HWND hwnd) const noexcept {
-        return hwnd && std::ranges::any_of(all, [hwnd](const PopupWindow* popup) { return popup->hwnd() == hwnd; });
+    [[nodiscard]] bool is_popup(HWND hwnd) const noexcept { return find(hwnd) != nullptr; }
+    [[nodiscard]] PopupWindow* find(HWND hwnd) const noexcept {
+        if (!hwnd) { return nullptr; }
+        const auto found = std::ranges::find_if(all, [hwnd](const PopupWindow* popup) { return popup->hwnd() == hwnd; });
+        return found == all.end() ? nullptr : *found;
     }
     // A popup shown again keeps its place, so the popups it owns stay after it.
     void opened(PopupWindow& popup) {
@@ -150,6 +153,16 @@ public:
     // A message sent to a window: an open popup's owner moving, deactivating, being disabled or
     // entering a modal loop closes the popup.
     void owner_message(HWND target, UINT message, WPARAM wparam, LPARAM lparam) noexcept {
+        if (message == WM_KILLFOCUS) {
+            const auto next = reinterpret_cast<HWND>(wparam);
+            if (next && GetWindowThreadProcessId(next, nullptr) == GetCurrentThreadId()) { return; }
+            for (auto* popup : open) {
+                if (!popup->takes_focus() && GetAncestor(target, GA_ROOT) == popup->owner_) {
+                    popup->close_later(PopupWindow::CloseReason::deactivated);
+                }
+            }
+            return;
+        }
         if (message != WM_ACTIVATE && message != WM_ACTIVATEAPP && message != WM_CANCELMODE && message != WM_ENABLE &&
             message != WM_ENTERSIZEMOVE && message != WM_WINDOWPOSCHANGED && message != WM_SHOWWINDOW) { return; }
         using enum PopupWindow::CloseReason;
@@ -376,6 +389,13 @@ void PopupWindow::place(RECT bounds) {
     PopupTracker::get().opened(*this);
     // Activating the popup runs the owner's code, which may close it or show it again.
     const auto superseded = [&] { return !*alive || presentation_ != showing || !open_; };
+    // Hidden from view until its first frame is composed, so no stale or empty frame shows.
+    const bool appearing = !IsWindowVisible(handle);
+    const auto cloak = [handle](BOOL on) noexcept { (void)DwmSetWindowAttribute(handle, DWMWA_CLOAK, &on, sizeof(on)); };
+    if (appearing) { cloak(TRUE); }
+    const auto uncloak = wil::scope_exit([&] {
+        if (appearing && *alive && hwnd()) { cloak(FALSE); }
+    });
     {
         // Moving onto a monitor with another scale must keep the size worked out for it.
         placing_ = true;
@@ -431,21 +451,26 @@ void PopupWindow::finish_close(CloseReason reason) noexcept {
             const bool take = takes_focus();
             // Give the keyboard back to the window the popup came from, unless the user went
             // elsewhere: then the popup is no longer this thread's active window.
-            const bool giveBack = take && GetActiveWindow() == hwnd() && IsWindowEnabled(owner_);
+            const auto receiver = focus_owner();
+            const bool giveBack = take && GetActiveWindow() == hwnd() && receiver && IsWindowEnabled(receiver);
             ShowWindow(hwnd(), SW_HIDE);
             if (!*alive) { return; }
             // Hiding the popup ran the owner's code, which may have shown it again.
             if (presentation_ == showing) {
-                if (giveBack && GetActiveWindow() != owner_) {
-                    SetForegroundWindow(owner_);
+                if (giveBack && GetActiveWindow() != receiver) {
+                    SetForegroundWindow(receiver);
                     // Without the foreground, as on a desktop that is not shown, activate it in
                     // this thread at least, so it takes its focus back.
-                    if (*alive && GetActiveWindow() != owner_) { SetActiveWindow(owner_); }
+                    if (*alive && GetActiveWindow() != receiver) { SetActiveWindow(receiver); }
                 }
                 if (!*alive) { return; }
                 if (take && presentation_ == showing) {
+                    // Still active while the window that has the keyboard is its own or one of its popups.
                     const auto active = GetActiveWindow();
-                    if (const auto frame = frame_owner()) { SendMessageW(frame, WM_NCACTIVATE, active == frame || active == owner_, 0); }
+                    const auto frame = frame_owner();
+                    const auto* activePopup = tracker.find(active);
+                    const bool frameActive = active && (active == frame || active == owner_ || (activePopup && activePopup->frame_owner() == frame));
+                    if (frame) { SendMessageW(frame, WM_NCACTIVATE, frameActive, 0); }
                 }
                 if (!*alive) { return; }
             }
@@ -481,6 +506,16 @@ bool PopupWindow::contains(HWND target) const noexcept {
     return false;
 }
 
+HWND PopupWindow::focus_owner() const noexcept {
+    // Past the popups that keep out of the focus, which cannot take the keyboard back.
+    const auto& tracker = PopupTracker::get();
+    auto owner = owner_;
+    for (const auto* popup = tracker.find(owner); popup && !popup->takes_focus(); popup = tracker.find(owner)) {
+        owner = GetWindow(owner, GW_OWNER);
+    }
+    return owner;
+}
+
 HWND PopupWindow::frame_owner() const noexcept {
     const auto& tracker = PopupTracker::get();
     auto frame = owner_;
@@ -514,6 +549,10 @@ std::optional<LRESULT> PopupWindow::on_message(UINT message, WPARAM wparam, LPAR
         if (*alive) { finish_close(CloseReason::escape); }
         return result ? result : std::optional<LRESULT>{0};
     }
+    case WM_CLOSE:
+        // Alt+F4 in a popup that has the keyboard: it closes, but its window stays for the next showing.
+        if (open_) { finish_close(CloseReason::escape); }
+        return 0;
     case WM_COMMAND:
         // The dialog manager turns Escape into IDCANCEL when nothing in the tree has the focus.
         if (LOWORD(wparam) == IDCANCEL && HIWORD(wparam) == 0 && !lparam) {

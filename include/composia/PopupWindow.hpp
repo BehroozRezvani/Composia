@@ -23,12 +23,14 @@ namespace composia {
 // that takes the focus keeps its owner's title bar active and gives the activation back when it
 // closes. The popup is owned by the owner's top-level window.
 //
-// on_closed runs once per showing, last, possibly while the popup handles one of its own messages
-// (Escape, say): do not destroy the popup from it then, post the destruction instead. Nor run a
-// modal loop (a message box, a dialog) from inside the popup's handlers: post it, since the loop
-// would run that posted destruction while the handler is still on the stack. Presses in windows
-// of other threads, such as a browser's, are not seen; a popup that takes the focus still closes
-// when they activate the owner.
+// Keep a popup and show it again rather than make one per showing. on_closed runs once per
+// showing, last, possibly while the popup handles one of its own messages (Escape, say), so do not
+// destroy the popup from it; and a callback posted from it can still run while one of the popup's
+// handlers is on the stack, inside a modal loop (a message box, a dialog) that handler started.
+// Destroy a popup only when none of its handlers can be running, and post modal loops out of them.
+// Presses in windows of other threads, such as a browser's, are not seen: a popup that takes the
+// focus closes when they activate the owner, and one that keeps the owner's focus when the focus
+// goes to them.
 class PopupWindow : public ElementWindow {
 public:
     enum class Activation { take_focus, keep_owner_focus };
@@ -100,6 +102,9 @@ private:
     // The window whose title bar shows the activation for this popup: its owner, or the owner's
     // owner past popups.
     [[nodiscard]] HWND frame_owner() const noexcept;
+    // The window that takes the keyboard back when the popup closes: its owner, or the owner's
+    // owner past popups that keep out of the focus.
+    [[nodiscard]] HWND focus_owner() const noexcept;
     void raise_menu_event(bool opened) noexcept;
 
     HWND owner_{};
