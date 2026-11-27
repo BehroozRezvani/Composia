@@ -133,6 +133,81 @@ void Picker::release_window() noexcept {
     scope_.reset();
     list_->cueWindow_ = nullptr;
 }
+ContextMenu::ContextMenu(std::wstring name, Items items, float rowHeight, float maxHeight, float width)
+    : list_(std::make_shared<List>(std::move(name), std::move(items), rowHeight, maxHeight, ListRole::menu)),
+      maxHeight_(maxHeight), width_(width) {
+    if (!std::isfinite(maxHeight) || maxHeight <= 0 || !std::isfinite(width) || width <= 0) {
+        throw std::invalid_argument("Expected a positive menu size");
+    }
+    activation_ = list_->on_activate([this](std::size_t index) {
+        if (!list_->selectable(index)) { return; }
+        // The menu is gone before anything the choice does, as Windows' menus are.
+        close();
+        activated_.emit(index);
+    });
+}
+ContextMenu::~ContextMenu() {
+    *alive_ = false;
+    release();
+}
+void ContextMenu::release() noexcept {
+    if (!window_) { return; }
+    try {
+        windowClosed_.disconnect();
+        if (window_->is_open()) { window_->close(); }
+        if (scope_ && list_->parent() == scope_.get()) { scope_->remove(*list_); }
+        auto& application = window_->application();
+        application.retire(std::move(window_));
+    } catch (...) { LOG_CAUGHT_EXCEPTION(); }
+    window_.reset();
+    scope_.reset();
+}
+void ContextMenu::set_tokens(std::optional<StyleTokens> tokens) {
+    tokens_ = std::move(tokens);
+    if (scope_) { scope_->set_tokens(tokens_.value_or(StyleTokens{})); }
+}
+bool ContextMenu::show(ElementWindow& owner, layout::Point viewport) { return show_at(owner, viewport, false); }
+bool ContextMenu::show(ElementWindow& owner, const Element& source, const ContextMenuEvent& request) {
+    const auto box = source.viewport_bounds();
+    return show_at(owner, {box.x + request.position.x, box.y + request.position.y}, request.keyboard);
+}
+bool ContextMenu::show_at(ElementWindow& owner, layout::Point viewport, bool keyboard) {
+    if (!list_->items().count || !owner.hwnd()) { return false; }
+    if (window_ && (!window_->hwnd() || window_->owner_hwnd() != GetAncestor(owner.hwnd(), GA_ROOT))) { release(); }
+    const auto palette = tokens_.value_or(StyleTokens{});
+    if (!window_) {
+        scope_ = std::make_shared<StyleScope>(palette);
+        if (auto* parent = list_->parent()) { parent->remove(*list_); }
+        scope_->add(list_);
+        PopupWindow::Options options;
+        options.background = palette.background;
+        options.menu = true;
+        window_ = std::make_unique<PopupWindow>(owner, scope_, list_->name(), options);
+        windowClosed_ = window_->on_closed([this, alive = alive_](PopupWindow::CloseReason reason) {
+            if (*alive) { closed_.emit(reason); }
+        });
+    }
+    scope_->set_tokens(palette);
+    window_->set_background(palette.background);
+    window_->set_dark(!light(palette.background));
+    const float height = static_cast<float>(std::min(double(maxHeight_), list_->top(list_->items().count)));
+    list_->set_layout({ElementLayout::Kind::scroll, layout::Axis::vertical, 0, 1, height});
+    list_->set_preferred_size({width_, height});
+    // A fresh start: no row current, at the top.
+    list_->replace_items(list_->items(), std::nullopt);
+    list_->set_scroll_offset(0);
+    const float scale = owner.scale();
+    POINT at{std::lround(viewport.x * scale), std::lround(viewport.y * scale)};
+    ClientToScreen(owner.hwnd(), &at);
+    window_->show_at(at, {width_, height});
+    if (!window_ || !window_->is_open()) { return false; }
+    window_->focus_element(*list_);
+    if (keyboard) { list_->navigate({VK_HOME, true}); }
+    return true;
+}
+void ContextMenu::close() {
+    if (window_) { window_->close(); }
+}
 PopupHost* Picker::host() const noexcept {
     for (auto* p = parent(); p; p = p->parent()) {
         if (auto* host = dynamic_cast<PopupHost*>(p)) { return host; }

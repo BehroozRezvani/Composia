@@ -308,6 +308,7 @@ public:
 private:
     friend class Picker;
     friend class PopupHost;
+    friend class ContextMenu;
     class Row;
     void assign(Items, Index selected, Index current, bool keepView);
     Row& realize(std::size_t);
@@ -439,6 +440,47 @@ private:
     Signal<List::Index> changed_;
     Connection selection_, activation_;
 };
+// A menu of commands at a point, in a popup window that takes the keyboard: for a context menu
+// request. A request from the keyboard makes the first enabled command current; one from the
+// pointer leaves no row current, as Windows' menus do. Choosing a row closes the menu, raises
+// on_activate, then runs the row's command. Keep it and show it again; it must not be destroyed
+// from its own handlers except through Application::retire, which ~ContextMenu uses.
+class ContextMenu {
+public:
+    ContextMenu(std::wstring name, Items, float rowHeight = 32, float maxHeight = 384, float width = 200);
+    ~ContextMenu();
+    ContextMenu(const ContextMenu&) = delete;
+    ContextMenu& operator=(const ContextMenu&) = delete;
+    // At a point in the owner's viewport, in DIPs.
+    bool show(ElementWindow& owner, layout::Point viewport);
+    // Where a context menu request on `source` asks: its position in the source, which for the
+    // keyboard is the focused element's lower-left corner.
+    bool show(ElementWindow& owner, const Element& source, const ContextMenuEvent& request);
+    void close();
+    [[nodiscard]] bool is_open() const noexcept { return window_ && window_->is_open(); }
+    void set_items(Items items) { list_->set_items(std::move(items)); }
+    [[nodiscard]] const List& list() const noexcept { return *list_; }
+    void set_row_renderer(List::RowRenderer renderer) { list_->set_row_renderer(std::move(renderer)); }
+    void set_tokens(std::optional<StyleTokens>);
+    void set_width(float width) { width_ = width; }
+    [[nodiscard]] PopupWindow* popup_window() const noexcept { return window_.get(); }
+    // After the menu closed, before the chosen row's command runs.
+    Connection on_activate(std::function<void(std::size_t)> f) { return activated_.connect(std::move(f)); }
+    Connection on_closed(std::function<void(PopupWindow::CloseReason)> f) { return closed_.connect(std::move(f)); }
+private:
+    bool show_at(ElementWindow& owner, layout::Point viewport, bool keyboard);
+    void release() noexcept;
+    std::shared_ptr<List> list_;
+    std::shared_ptr<StyleScope> scope_;
+    std::unique_ptr<PopupWindow> window_;
+    std::optional<StyleTokens> tokens_;
+    float maxHeight_, width_;
+    std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
+    Signal<std::size_t> activated_;
+    Signal<PopupWindow::CloseReason> closed_;
+    Connection activation_, windowClosed_;
+};
+
 class Dropdown final : public Picker {
 public:
     Dropdown(std::wstring name, Items items, float rowHeight = 32, float maxPopupHeight = 192)

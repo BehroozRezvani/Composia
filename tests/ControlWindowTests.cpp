@@ -260,6 +260,59 @@ int menu_window(const testing::Options& options) {
     return 0;
 }
 
+// A context menu shows at a point, makes the first enabled command current for the keyboard,
+// and closes before raising a choice and running its command.
+int context_menu(const testing::Options& options) {
+    Application app(options.warp);
+    namespace ui = composia::controls;
+    {
+        auto root = std::make_shared<Element>(ElementLayout{ElementLayout::Kind::stack});
+        auto source = std::make_shared<ui::Button>(L"Source", [] {});
+        root->add(source);
+        ElementWindow window(app, L"Context menu", 240, 160, root);
+        window.show(SW_SHOWNORMAL);
+        flush(window);
+        int copies{};
+        std::vector<std::wstring> order;
+        auto unavailable = std::make_shared<ui::Command>([] {});
+        unavailable->enabled.set(false);
+        auto copy = std::make_shared<ui::Command>([&] { ++copies; order.push_back(L"command"); });
+        auto items = ui::Items::strings({L"Cut", L"Copy", L"Paste"});
+        items.command = [&](std::size_t i) { return i == 0 ? unavailable : copy; };
+        ui::ContextMenu menu(L"Edit", items, 20, 200, 120);
+        std::vector<PopupWindow::CloseReason> closes;
+        auto watchClosed = menu.on_closed([&](PopupWindow::CloseReason reason) { closes.push_back(reason); });
+        auto watchChosen = menu.on_activate([&](std::size_t i) {
+            order.push_back(menu.is_open() ? L"open" : L"chosen " + std::to_wstring(i));
+        });
+        require(menu.show(window, {10, 20}), "The menu did not show");
+        auto* popup = menu.popup_window();
+        RECT placed{};
+        GetWindowRect(popup->hwnd(), &placed);
+        POINT at{std::lround(10 * window.scale()), std::lround(20 * window.scale())};
+        ClientToScreen(window.hwnd(), &at);
+        require(IsWindowVisible(popup->hwnd()) && placed.left == at.x && placed.top == at.y, "The menu was not at its point");
+        require(!menu.list().current(), "A pointer request made a row current");
+        require(menu.list().accessibility()->controlType == UIA_MenuControlTypeId, "The menu's list was not a Menu");
+        SendMessageW(popup->hwnd(), WM_KEYDOWN, VK_DOWN, 0);
+        require(menu.list().current() == 1, "Down did not pass the disabled command");
+        SendMessageW(popup->hwnd(), WM_KEYDOWN, VK_RETURN, 0);
+        require(order == std::vector<std::wstring>{L"chosen 1", L"command"} && copies == 1 && !menu.is_open(),
+            "The menu did not close, raise the choice, then run the command");
+        require(!closes.empty() && closes.back() == PopupWindow::CloseReason::requested, "Choosing did not close the menu");
+
+        // From the keyboard, the first enabled command is current; Escape closes.
+        flush(window);
+        require(window.focus_element(*source), "The source did not take the focus back");
+        require(menu.show(window, *source, ContextMenuEvent{{0, 32}, true}), "The menu did not show for the keyboard");
+        require(menu.list().current() == 1, "A keyboard request did not make the first enabled command current");
+        SendMessageW(menu.popup_window()->hwnd(), WM_KEYDOWN, VK_ESCAPE, 0);
+        require(!menu.is_open() && closes.back() == PopupWindow::CloseReason::escape, "Escape did not close the menu");
+    }
+    app.close();
+    return 0;
+}
+
 // A separator row draws a line in the border color across its middle, or through its renderer.
 int separator_drawing(const testing::Options& options) {
     Application app(options.warp);
@@ -392,6 +445,6 @@ int fixture(const testing::Options& options) {
 int main(int argc, char** argv) {
     return testing::run(argc, argv, {{"interaction", interaction}, {"fixture", fixture}, {"tokens", tokens}, {"scrollbar-drawing", scrollbar},
         {"separator-drawing", separator_drawing}, {"menu-states", menu_states},
-        {"dropdown-window", dropdown_window}, {"menu-window", menu_window},
+        {"dropdown-window", dropdown_window}, {"menu-window", menu_window}, {"context-menu", context_menu},
         {"overlay", overlay}});
 }
