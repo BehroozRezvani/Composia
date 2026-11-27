@@ -144,7 +144,10 @@ DirectWrite factory, so it survives device replacement.
 `AnimationHelpers.hpp` has shortcuts for building a visual tree: `container` and `sprite`
 visuals, `implicit_offset` (later offset changes animate), and `center_in_parent`
 (an expression that keeps a visual centered as sizes change). Composition runs every
-animation on its own; nothing in the application needs a timer.
+animation on its own, so no animation needs a timer. For a wait, such as a delay before saving or
+a tooltip's pause, `Timer` (`Timer.hpp`) runs a callback on the UI thread from the dispatcher
+queue: never after `stop()` or its destruction, with its errors rethrown by `run()` as a posted
+callback's are, and without the `WM_TIMER` a window procedure would have to tell apart from its own.
 
 ## Content inside one window
 

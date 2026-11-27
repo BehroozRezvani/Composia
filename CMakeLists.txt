@@ -66,6 +66,7 @@ set(COMPOSIA_SOURCES
     TextBoxHost.cpp
     TextLayout.cpp
     TextureSurface.cpp
+    Timer.cpp
     VirtualSurface.cpp
     Window.cpp
 )
