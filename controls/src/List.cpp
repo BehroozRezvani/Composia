@@ -96,7 +96,9 @@ public:
         // A checked row is not a selected one: selection is the highlight.
         s.selected = accessibility()->selected.value_or(false);
         s.focused = owner->current_ == index && (owner->focused() || owner->popupFocus_);
-        const auto* window = owner->host_window();
+        // In a picker's popup window, the trigger's window has the keyboard and its cue.
+        const Window* window = owner->cueWindow_;
+        if (!window) { window = owner->host_window(); }
         s.focusVisible = s.focused && window && window->focus_visible();
         auto b = bounds();
         owner->renderer_(draw, index, name(), {b.width, b.height}, s, owner->tokens());

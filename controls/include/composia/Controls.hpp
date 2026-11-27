@@ -1,6 +1,7 @@
 #pragma once
 #include <composia/Appearance.hpp>
 #include <composia/ElementAccessibility.hpp>
+#include <composia/PopupWindow.hpp>
 #include <composia/TextBox.hpp>
 #include <algorithm>
 #include <cstdint>
@@ -357,6 +358,7 @@ private:
     float rowHeight_;
     bool menu_;
     bool popupFocus_{};
+    const Window* cueWindow_{};   // Whose focus cue the rows show, while in a picker's popup window.
     std::wstring prefix_;
     std::uint64_t lastText_{};
     RowRenderer renderer_;
@@ -381,8 +383,13 @@ private:
     std::shared_ptr<Element> layer_;
 };
 
+// A dropdown or a menu: a trigger and a list in a popup. Under a PopupHost the list shows in the
+// host's layer, inside the window; without one it shows in a PopupWindow of its own, below the
+// trigger and as wide as it, which can reach past the window's edges. Either way the trigger keeps
+// the keyboard and drives the list.
 class Picker : public Pressable {
 public:
+    ~Picker() override;
     bool open();
     void close();
     [[nodiscard]] bool expanded() const noexcept;
@@ -391,6 +398,8 @@ public:
     void set_selected(List::Index);
     void set_items(Items);
     [[nodiscard]] const List& popup() const noexcept { return *list_; }
+    // The popup window the list shows in without a PopupHost; null until it first shows there.
+    [[nodiscard]] PopupWindow* popup_window() const noexcept { return window_.get(); }
     void set_row_renderer(List::RowRenderer renderer) { list_->set_row_renderer(std::move(renderer)); }
     void set_popup_renderer(Renderer renderer) { list_->set_renderer(std::move(renderer)); }
     void set_popup_tokens(std::optional<StyleTokens> tokens) { list_->set_tokens(tokens); }
@@ -406,10 +415,23 @@ private:
     void commit(List::Index, bool always = false);
     void activate() override;
     bool on_key(const KeyEvent&) override;
+    bool on_pointer(const PointerEvent&) override;
     bool on_text_input(std::wstring_view) override;
     void on_focus_changed(bool) override;
     void on_detaching() noexcept override;
+    void on_layout_updated() override;
+    bool open_window(ElementWindow& owner);
+    void window_closed() noexcept;
+    // Lets the popup window go after the current message, as one of its handlers may be running.
+    void release_window() noexcept;
+    [[nodiscard]] RECT screen_anchor(const ElementWindow& owner) const;
     std::shared_ptr<List> list_;
+    std::unique_ptr<PopupWindow> window_;
+    std::shared_ptr<StyleScope> scope_;   // The list's tokens inside the popup window.
+    Connection windowClosed_;
+    RECT anchor_{};
+    std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
+    bool ignoreActivation_{};
     List::Index selected_;
     std::wstring selectedText_;
     float maxHeight_;

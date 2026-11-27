@@ -91,6 +91,8 @@ change the API; each change is listed here.
   layout that changed them, however the view moved.
 - `labeledBy`, `describedBy` and `controllerFor` can name an element in another window of the
   application, such as a popup's list; they were dropped before.
+- A `Dropdown` or `Menu` with no `PopupHost` above it shows its list in a `PopupWindow` below the
+  trigger, as wide as it, while the trigger keeps the keyboard; `Picker::popup_window` reaches it.
 - List rows report their place among the list's rows, or among their siblings in a tree, with
   separators left out, as UI Automation's PositionInSet and SizeOfSet.
 - `ElementWindow::takes_focus`, overridden to return false, keeps a window out of the keyboard

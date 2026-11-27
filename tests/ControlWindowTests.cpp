@@ -1,5 +1,6 @@
 #include "../examples/controls/Playback.hpp"
 #include "support/TestSupport.hpp"
+#include <cmath>
 #include <map>
 #include <composia/HostedVisual.hpp>
 #include <thread>
@@ -139,6 +140,126 @@ int tokens(const testing::Options& options) {
     require(testing::matches(pixel(10, 10), ui::StyleTokens{}.background), "Without a scope the renderer did not get StyleTokens{}");
     return 0;
 }
+bool pump_until(const std::function<bool()>& condition) {
+    const auto end = GetTickCount64() + 2000;
+    while (!condition()) {
+        if (GetTickCount64() > end) { return false; }
+        MSG message{};
+        while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
+            TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
+        Sleep(5);
+    }
+    return true;
+}
+
+// Without a PopupHost, a dropdown's list shows in a popup window below the trigger, as wide as
+// it, while the trigger keeps the keyboard.
+int dropdown_window(const testing::Options& options) {
+    Application app(options.warp);
+    namespace ui = composia::controls;
+    {
+        auto root = std::make_shared<Element>(ElementLayout{ElementLayout::Kind::stack});
+        auto dropdown = std::make_shared<ui::Dropdown>(L"Output", ui::Items::strings({L"Stereo", L"Mono", L"Surround"}), 20, 60);
+        dropdown->set_selected(0);
+        root->add(dropdown);
+        root->add(std::make_shared<ui::Button>(L"Other", [] {}));
+        ElementWindow window(app, L"Dropdown window", 220, 160, root);
+        window.show(SW_SHOWNORMAL);
+        flush(window);
+        require(window.focus_element(*dropdown), "The dropdown did not take the focus");
+        const float scale = window.scale();
+        SendMessageW(window.hwnd(), WM_KEYDOWN, VK_F4, 0);
+        auto* popup = dropdown->popup_window();
+        require(dropdown->expanded() && popup && IsWindowVisible(popup->hwnd()), "F4 did not show the list in a popup window");
+        const auto box = dropdown->viewport_bounds();
+        POINT origin{};
+        ClientToScreen(window.hwnd(), &origin);
+        RECT placed{};
+        GetWindowRect(popup->hwnd(), &placed);
+        require(placed.left == origin.x + std::lround(box.x * scale) &&
+            placed.top == origin.y + std::lround((box.y + box.height) * scale) + static_cast<LONG>(std::ceil(4 * scale)) &&
+            placed.right - placed.left == std::lround((box.x + box.width) * scale) - std::lround(box.x * scale),
+            "The popup window was not below the trigger and as wide as it");
+        require(GetFocus() == window.hwnd() && dropdown->focused(), "Opening the popup window took the trigger's focus");
+        SendMessageW(window.hwnd(), WM_KEYDOWN, VK_DOWN, 0);
+        SendMessageW(window.hwnd(), WM_KEYDOWN, VK_RETURN, 0);
+        require(!dropdown->expanded() && dropdown->selected_text() == L"Mono" && !IsWindowVisible(popup->hwnd()),
+            "Down and Enter did not commit and close");
+
+        // A press on a row commits it, without the popup window taking the keyboard.
+        SendMessageW(window.hwnd(), WM_KEYDOWN, VK_F4, 0);
+        const auto row = MAKELPARAM(5, static_cast<int>(50 * scale));
+        SendMessageW(popup->hwnd(), WM_LBUTTONDOWN, MK_LBUTTON, row);
+        SendMessageW(popup->hwnd(), WM_LBUTTONUP, 0, row);
+        require(!dropdown->expanded() && dropdown->selected_text() == L"Surround" && GetFocus() == window.hwnd(),
+            "A press on a row did not commit it, or took the focus");
+
+        // A press on the trigger while it is open closes it and does not open it again.
+        SendMessageW(window.hwnd(), WM_KEYDOWN, VK_F4, 0);
+        const auto trigger = MAKELPARAM(static_cast<int>((box.x + 5) * scale), static_cast<int>((box.y + 5) * scale));
+        SendMessageW(window.hwnd(), WM_LBUTTONDOWN, MK_LBUTTON, trigger);
+        SendMessageW(window.hwnd(), WM_LBUTTONUP, 0, trigger);
+        require(pump_until([&] { return !dropdown->expanded(); }) && !IsWindowVisible(popup->hwnd()),
+            "A press on the trigger reopened the list or left it open");
+
+        // Removing the trigger while it is open closes it.
+        SendMessageW(window.hwnd(), WM_KEYDOWN, VK_F4, 0);
+        require(dropdown->expanded(), "The list did not open again");
+        root->remove(*dropdown);
+        flush(window);
+        require(!dropdown->expanded() && !IsWindowVisible(popup->hwnd()), "A detached trigger left its popup window open");
+
+        // Under a PopupHost the list stays in the window.
+        auto inner = std::make_shared<Element>(ElementLayout{ElementLayout::Kind::stack});
+        auto hosted = std::make_shared<ui::Dropdown>(L"Mode", ui::Items::strings({L"A", L"B"}), 20, 60);
+        inner->add(hosted);
+        ElementWindow second(app, L"Hosted dropdown", 200, 160, std::make_shared<ui::PopupHost>(inner));
+        second.show(SW_SHOWNORMAL);
+        flush(second);
+        require(second.focus_element(*hosted) && hosted->open() && !hosted->popup_window(), "A dropdown under a PopupHost used a popup window");
+        hosted->close();
+    }
+    app.close();
+    return 0;
+}
+
+// A menu in a popup window passes its disabled command, and closes before the chosen one runs.
+int menu_window(const testing::Options& options) {
+    Application app(options.warp);
+    namespace ui = composia::controls;
+    {
+        int actions{};
+        bool closedFirst{};
+        std::shared_ptr<ui::Menu> menu;
+        auto unavailable = std::make_shared<ui::Command>([] {});
+        unavailable->enabled.set(false);
+        auto apply = std::make_shared<ui::Command>([&] {
+            ++actions;
+            closedFirst = !menu->expanded() && !menu->popup_window()->is_open();
+        });
+        auto items = ui::Items::strings({L"Unavailable", L"Apply"});
+        items.command = [&](std::size_t i) { return i ? apply : unavailable; };
+        menu = std::make_shared<ui::Menu>(L"Actions", items, 20, 60);
+        auto root = std::make_shared<Element>(ElementLayout{ElementLayout::Kind::stack});
+        root->add(menu);
+        ElementWindow window(app, L"Menu window", 200, 120, root);
+        window.show(SW_SHOWNORMAL);
+        flush(window);
+        require(window.focus_element(*menu), "The menu did not take the focus");
+        SendMessageW(window.hwnd(), WM_KEYDOWN, VK_RETURN, 0);
+        require(menu->expanded() && menu->popup_window() && menu->popup().current() == 1, "Enter did not open the menu on its first command");
+        SendMessageW(window.hwnd(), WM_KEYDOWN, VK_RETURN, 0);
+        require(actions == 1 && closedFirst, "The command did not run once, after the menu closed");
+        SendMessageW(window.hwnd(), WM_KEYDOWN, VK_RETURN, 0);
+        SendMessageW(window.hwnd(), WM_KEYDOWN, VK_ESCAPE, 0);
+        require(!menu->expanded() && actions == 1, "Escape did not close the menu without running anything");
+    }
+    app.close();
+    return 0;
+}
+
 // A separator row draws a line in the border color across its middle, or through its renderer.
 int separator_drawing(const testing::Options& options) {
     Application app(options.warp);
@@ -271,5 +392,6 @@ int fixture(const testing::Options& options) {
 int main(int argc, char** argv) {
     return testing::run(argc, argv, {{"interaction", interaction}, {"fixture", fixture}, {"tokens", tokens}, {"scrollbar-drawing", scrollbar},
         {"separator-drawing", separator_drawing}, {"menu-states", menu_states},
+        {"dropdown-window", dropdown_window}, {"menu-window", menu_window},
         {"overlay", overlay}});
 }

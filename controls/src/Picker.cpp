@@ -6,6 +6,11 @@
 
 namespace composia::controls {
 namespace {
+bool light(std::uint32_t rgb) {
+    const auto r = (rgb >> 16) & 0xff, g = (rgb >> 8) & 0xff, b = rgb & 0xff;
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.5 * 255;
+}
+
 class PopupLayer final : public Element {
 public:
     explicit PopupLayer(std::weak_ptr<Picker> picker)
@@ -95,6 +100,8 @@ Picker::Picker(std::wstring name, Items items, bool menu, float rowHeight, float
     selection_ = list_->on_selection([this](List::Index index) {
         if (expanded() && !preview_ && !menu_) { commit(index); }
     });
+    // A trigger that moves while its list is open in a window closes it.
+    observe_layout();
     activation_ = list_->on_activate([this](std::size_t index) {
         // The keyboard can rest on a heading, but choosing it does nothing: the popup stays open.
         if (!list_->selectable(index)) { return; }
@@ -107,6 +114,24 @@ Picker::Picker(std::wstring name, Items items, bool menu, float rowHeight, float
         // A menu's choice is an action, so the same row again counts; a dropdown's is a value.
         commit(index, menu_);
     });
+}
+Picker::~Picker() {
+    *alive_ = false;
+    release_window();
+}
+void Picker::release_window() noexcept {
+    if (!window_) { return; }
+    try {
+        windowClosed_.disconnect();
+        if (window_->is_open()) { window_->close(); }
+        if (scope_ && list_->parent() == scope_.get()) { scope_->remove(*list_); }
+        // A choice in the popup may be destroying this picker from the popup's own message.
+        auto& application = window_->application();
+        application.retire(std::move(window_));
+    } catch (...) { LOG_CAUGHT_EXCEPTION(); }
+    window_.reset();
+    scope_.reset();
+    list_->cueWindow_ = nullptr;
 }
 PopupHost* Picker::host() const noexcept {
     for (auto* p = parent(); p; p = p->parent()) {
@@ -127,18 +152,83 @@ void Picker::set_expanded(bool value) {
 bool Picker::open() {
     if (expanded()) { return true; }
     auto* target = host();
-    if (!target || !list_->items().count || !interactive() || !request_focus()) { return false; }
+    auto* window = target ? nullptr : host_window();
+    if ((!target && !window) || !list_->items().count || !interactive() || !request_focus()) { return false; }
     list_->prefix_.clear();
     list_->select(menu_ ? List::Index{} : selected_);
     if (!list_->selected()) { list_->navigate({VK_HOME, true}); }
+    if (!target) { return open_window(*window); }
     target->present(*this);
     update_host_layout();
     if (auto i = list_->selected()) { list_->reveal(*i); }
     update_host_layout();
     return expanded();
 }
+RECT Picker::screen_anchor(const ElementWindow& owner) const {
+    const auto box = viewport_bounds(true);
+    const float scale = owner.scale();
+    RECT rect{std::lround(box.x * scale), std::lround(box.y * scale), std::lround((box.x + box.width) * scale),
+        std::lround((box.y + box.height) * scale)};
+    MapWindowPoints(owner.hwnd(), nullptr, reinterpret_cast<POINT*>(&rect), 2);
+    return rect;
+}
+bool Picker::open_window(ElementWindow& owner) {
+    const auto box = viewport_bounds(true);
+    if (box.width <= 0 || box.height <= 0) { return false; }
+    if (window_ && (!window_->hwnd() || window_->owner_hwnd() != GetAncestor(owner.hwnd(), GA_ROOT))) { release_window(); }
+    const auto palette = tokens();
+    if (!window_) {
+        scope_ = std::make_shared<StyleScope>(palette);
+        PopupWindow::Options options;
+        // The trigger keeps the keyboard and drives the list, as it does in a PopupHost.
+        options.activation = PopupWindow::Activation::keep_owner_focus;
+        options.background = palette.background;
+        options.menu = menu_;
+        window_ = std::make_unique<PopupWindow>(owner, scope_, name(), options);
+        windowClosed_ = window_->on_closed([this, alive = alive_](PopupWindow::CloseReason) {
+            if (*alive) { window_closed(); }
+        });
+    }
+    scope_->set_tokens(palette);
+    window_->set_background(palette.background);
+    window_->set_dark(!light(palette.background));
+    if (auto* parent = list_->parent()) { parent->remove(*list_); }
+    const float height = static_cast<float>(std::min(double(maxHeight_), list_->top(list_->items().count)));
+    const auto offset = list_->scroll_offset();
+    list_->set_layout({ElementLayout::Kind::scroll, layout::Axis::vertical, 0, 1, height});
+    list_->set_scroll_offset(offset);
+    list_->set_offset({});
+    list_->set_preferred_size({box.width, height});
+    scope_->add(list_);
+    list_->cueWindow_ = &owner;
+    anchor_ = screen_anchor(owner);
+    window_->show_below(anchor_, {box.width, height}, PopupWindow::Below::match_width);
+    if (!window_ || !window_->is_open()) { return false; }
+    set_expanded(true);
+    if (auto i = list_->selected()) { list_->reveal(*i); }
+    return expanded();
+}
+void Picker::window_closed() noexcept {
+    try {
+        list_->cueWindow_ = nullptr;
+        set_expanded(false);
+        if (scope_ && list_->parent() == scope_.get()) { scope_->remove(*list_); }
+    } catch (...) { LOG_CAUGHT_EXCEPTION(); }
+}
+void Picker::on_layout_updated() {
+    if (!window_ || !window_->is_open()) { return; }
+    auto* owner = host_window();
+    const auto box = viewport_bounds(true);
+    if (!owner || !interactive() || box.width <= 0 || box.height <= 0) { close(); return; }
+    const auto anchor = screen_anchor(*owner);
+    if (!EqualRect(&anchor, &anchor_)) { close(); }
+}
 void Picker::close() {
     if (!expanded()) { return; }
+    if (window_ && window_->is_open()) {
+        window_->close();
+        return;
+    }
     if (auto* target = host(); target && target->anchor_.lock().get() == this) { target->dismiss(); }
     else { set_expanded(false); }
 }
@@ -147,8 +237,13 @@ void Picker::on_focus_changed(bool gained) {
     if (!gained) { close(); }
 }
 void Picker::on_detaching() noexcept {
-    // The host may be walking its children during teardown. Its next layout removes the layer.
-    try { set_expanded(false); } catch (...) { LOG_CAUGHT_EXCEPTION(); }
+    // The host may be walking its children during teardown. Its next layout removes the layer. A
+    // popup window never had the keyboard, so hiding it moves nothing.
+    try {
+        list_->cueWindow_ = nullptr;
+        if (window_ && window_->is_open()) { window_->close(); }
+        set_expanded(false);
+    } catch (...) { LOG_CAUGHT_EXCEPTION(); }
 }
 void Picker::commit(List::Index index, bool always) {
     if (index && !list_->selectable(*index)) { return; }
@@ -168,7 +263,16 @@ void Picker::set_items(Items items) {
     list_->set_items(std::move(items));
     commit({});
 }
-void Picker::activate() { if (expanded()) { close(); } else { open(); } }
+void Picker::activate() {
+    if (ignoreActivation_) { return; }
+    if (expanded()) { close(); } else { open(); }
+}
+bool Picker::on_pointer(const PointerEvent& e) {
+    // The press that closed the popup window over the trigger does not open it again on release.
+    ignoreActivation_ = e.kind == PointerEvent::Kind::up && window_ && window_->closed_by_anchor_press();
+    const auto reset = wil::scope_exit([&] { ignoreActivation_ = false; });
+    return Pressable::on_pointer(e);
+}
 bool Picker::on_text_input(std::wstring_view text) {
     if (!expanded() && menu_) { return false; }
     preview_ = expanded();
