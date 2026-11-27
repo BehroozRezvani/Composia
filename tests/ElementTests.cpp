@@ -197,6 +197,66 @@ int cursors(const testing::Options&) {
     return 0;
 }
 
+// Layout hooks: an element observing layout hears of it once bounds are final, may change the
+// layout (another pass follows) or move the focus (it moves once layout settles), and a hook
+// that never lets layout settle stops after a bounded number of passes. A canvas keeps its
+// children at their offsets and measured sizes.
+class Watcher final : public Element {
+public:
+    Watcher() { observe_layout(); set_preferred_size({30, 10}); }
+    std::function<void()> hook;
+    int calls{};
+private:
+    void on_layout_updated() override { ++calls; if (hook) { hook(); } }
+};
+
+int layout_hooks(const testing::Options&) {
+    auto root = std::make_shared<Element>(ElementLayout{ElementLayout::Kind::stack});
+    auto watcher = std::make_shared<Watcher>();
+    auto target = leaf(30, 10);
+    target->set_focusable(true);
+    root->add(watcher);
+    root->add(target);
+    ElementTree tree(root);
+    tree.set_viewport({100, 100});
+    tree.update_layout();
+    require(watcher->calls >= 1, "A layout observer did not hear of layout");
+
+    // A hook that changes the layout: another pass follows, with the new size.
+    bool grown = false;
+    watcher->hook = [&] { if (!grown) { grown = true; watcher->set_preferred_size({30, 40}); } };
+    watcher->set_preferred_size({30, 20});
+    tree.update_layout();
+    require(grown && target->bounds().y == 40, "The layout a hook changed was not laid out again");
+
+    // A hook that moves the focus: it moves once the layout settles.
+    watcher->hook = [&] { (void)tree.focus(target.get()); };
+    watcher->set_preferred_size({30, 12});
+    tree.update_layout();
+    require(target->focused() && tree.focused() == target.get(), "A focus move from a layout hook was lost");
+
+    // A hook that never lets layout settle: update_layout still returns.
+    float height = 10;
+    watcher->hook = [&] { height = height == 10 ? 11 : 10; watcher->set_preferred_size({30, height}); };
+    watcher->set_preferred_size({30, 13});
+    tree.update_layout();
+    watcher->hook = nullptr;
+    tree.update_layout();
+
+    // A canvas: children at their offsets, at their measured size.
+    auto canvas = std::make_shared<Element>(ElementLayout{ElementLayout::Kind::canvas});
+    canvas->set_preferred_size({100, 100});
+    auto placed = leaf(20, 15);
+    placed->set_offset({30, 40});
+    canvas->add(placed);
+    ElementTree canvasTree(canvas);
+    canvasTree.set_viewport({100, 100});
+    canvasTree.update_layout();
+    const auto box = placed->viewport_bounds();
+    require(box.x == 30 && box.y == 40 && box.width == 20 && box.height == 15, "A canvas child left its offset or measured size");
+    return 0;
+}
+
 int routing(const testing::Options&) {
     auto root = std::make_shared<Probe>();
     auto back = leaf(10, 10), panel = leaf(40, 40), front = leaf(20, 20);
@@ -385,6 +445,6 @@ int hover(const testing::Options&) {
 }
 
 int main(int argc, char** argv) {
-    return testing::run(argc, argv, {{"layout", arrangement}, {"routing", routing}, {"cursors", cursors}, {"damage", damage},
+    return testing::run(argc, argv, {{"layout", arrangement}, {"routing", routing}, {"cursors", cursors}, {"layout-hooks", layout_hooks}, {"damage", damage},
         {"context-menu", context_menu}, {"hover", hover}});
 }

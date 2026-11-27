@@ -233,6 +233,7 @@ private:
     Element* captured_{};
     std::optional<layout::Point> pointerAt_;   // Where the pointer rests over the viewport, if it does.
     bool updatingLayout_{};
+    std::weak_ptr<Element> pendingFocus_;   // Asked for from a layout hook; given once layout settles.
     std::vector<std::shared_ptr<Element>> layoutCallbacks_;
     std::vector<HostedWindow*> hosted_;
     std::vector<HostedVisual*> visuals_;

@@ -235,9 +235,18 @@ content inside it.
 and hit-testing. Hover follows the pointer, and after each layout the tree finds the element
 under the pointer's resting place again, so content that appears, goes or moves under a still
 pointer, as when rows are replaced or a view scrolls, is hovered without the pointer moving. Pointer and key events bubble up the original path until a handler
-returns true. Pointer positions are relative to each recipient. Input handlers can remove
-elements during dispatch. Layout and paint hooks must leave tree properties and structure
-alone. A painter can use the supplied surface's brushes and must balance any drawing
+returns true. Pointer positions are relative to each recipient.
+
+Input handlers can remove elements during dispatch, their own element included, and a control's
+action can destroy the control. Destroying the window or the tree from inside its own handler is
+not safe: post the destruction (`Application::post`) instead. `post()` callbacks and `Timer`s
+also run inside modal loops, such as a native menu's or a dialog's, so a callback can find its
+window disabled or gone. `measure_content`, `arrange` and `paint` must leave tree properties and
+structure alone. An element that calls `observe_layout()` hears of each layout in
+`on_layout_updated`, once its bounds are final: it may change the layout there (another pass
+follows, up to a limit that keeps a hook from looping for ever), and a focus move it asks for
+happens once layout has settled. Removing a focused element there clears the focus as anywhere
+else. A painter can use the supplied surface's brushes and must balance any drawing
 state it changes.
 
 `set_focusable(true)` adds an element to keyboard navigation. A left press focuses the

@@ -152,6 +152,11 @@ bool ElementTree::text_input(std::wstring_view text) {
 
 bool ElementTree::focus(Element* element) {
     root_->check_mutation();
+    // Moved from a layout hook, the focus would reveal bounds still settling: it moves after.
+    if (updatingLayout_ && element) {
+        pendingFocus_ = reference(element);
+        return true;
+    }
     if (element) {
         if (element->tree_ != this || !element->focusable_ || !element->enabled() ||
             (window_ && !window_->enabled())) { return false; }

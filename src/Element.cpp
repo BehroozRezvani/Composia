@@ -2,6 +2,7 @@
 #include <composia/HostedVisual.hpp>
 #include <composia/HostedWindow.hpp>
 #include "ElementAutomation.hpp"
+#include "Logging.hpp"
 #include <composia/ScopedSurfaceDraw.hpp>
 #include <algorithm>
 #include <cmath>
@@ -373,19 +374,30 @@ void ElementTree::set_viewport(Size value) {
 void ElementTree::update_layout() {
     root_->check_mutation();
     if (updatingLayout_ || (!root_->arrangeDirty_ && layoutCallbacks_.empty())) { return; }
-    updatingLayout_ = true;
-    const auto reset = wil::scope_exit([&] { updatingLayout_ = traversing_ = false; });
-    do {
-        traversing_ = true;
-        root_->measure(viewport_);
-        root_->arrange({0, 0, viewport_.width, viewport_.height});
-        traversing_ = false;
-        while (!layoutCallbacks_.empty()) {
-            const auto e = layoutCallbacks_.back();
-            if (e->tree_ == this && e->observeLayout_) { e->on_layout_updated(); }
-            layoutCallbacks_.pop_back();
+    {
+        updatingLayout_ = true;
+        const auto reset = wil::scope_exit([&] { updatingLayout_ = traversing_ = false; });
+        // Layout hooks may change the layout again; a hook that always does would loop for ever.
+        constexpr int maximumPasses = 16;
+        for (int pass = 1;; ++pass) {
+            traversing_ = true;
+            root_->measure(viewport_);
+            root_->arrange({0, 0, viewport_.width, viewport_.height});
+            traversing_ = false;
+            while (!layoutCallbacks_.empty()) {
+                const auto e = layoutCallbacks_.back();
+                if (e->tree_ == this && e->observeLayout_) { e->on_layout_updated(); }
+                layoutCallbacks_.pop_back();
+            }
+            if (!root_->arrangeDirty_) { break; }
+            if (pass == maximumPasses) {
+                detail::log(LogLevel::warning, "event=layout_unsettled detail=layout_hooks_kept_changing_the_layout");
+                break;
+            }
         }
-    } while (root_->arrangeDirty_);
+    }
+    // A focus move a layout hook asked for, now that the bounds it reveals are final.
+    if (const auto pending = std::exchange(pendingFocus_, {}).lock()) { (void)focus(pending.get()); }
     // Content that appeared, went or moved under a still pointer (rows replaced, a scroll) takes
     // the hover where the pointer rests, as if it had moved there.
     if (pointerAt_) { update_hover(hit_test(*pointerAt_)); }
