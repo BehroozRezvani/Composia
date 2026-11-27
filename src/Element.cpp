@@ -329,9 +329,13 @@ ElementTree::~ElementTree() { root_->attach(nullptr); }
 void ElementTree::release_window() noexcept {
     if (!window_) { return; }
     focused_ = nullptr;
+    // A hosted window that hides as it detaches gives the keyboard focus back to the window, whose
+    // focus handling must then leave alone a tree that is coming apart.
+    releasing_ = true;
     root_->attach(nullptr);
     window_ = nullptr;
     root_->attach(this);
+    releasing_ = false;
 }
 
 void ElementTree::schedule() {

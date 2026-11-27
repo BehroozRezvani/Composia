@@ -361,6 +361,38 @@ int snapshot(const testing::Options& options) {
     return 0;
 }
 
+// A window destroyed while a hosted window inside it has the focus: as the tree is released the
+// hosted window hides and hands the focus back to the window, which must not then walk elements
+// that already left the tree (here the focusable one before it).
+int hosted_teardown(const testing::Options& options) {
+    Application app{options.warp};
+    {
+        auto root = std::make_shared<Element>(ElementLayout{Kind::stack});
+        auto before = std::make_shared<Tile>(0x203040);
+        before->set_preferred_size({100, 20});
+        before->set_focusable(true);
+        root->add(before);
+        auto window = std::make_unique<ElementWindow>(app, L"Hosted teardown", 200, 120, root);
+        NativeControl edit{*window, L"EDIT", WS_TABSTOP | WS_VISIBLE | ES_AUTOHSCROLL};
+        auto host = std::make_shared<HostedWindow>(edit.hwnd());
+        host->set_preferred_size({120, 30});
+        root->add(host);
+        window->show(SW_SHOWNORMAL);
+        flush(*window);
+        // The focus goes to the control itself, as a click or UI Automation gives it, from the
+        // element before it, which the window then remembers.
+        require(window->focus_element(*before), "Focus the element before the hosted window");
+        flush(*window);
+        SetFocus(edit.hwnd());
+        require(GetFocus() == edit.hwnd(), "The hosted window did not take the focus");
+        window.reset();
+        require(!IsWindow(edit.hwnd()), "The hosted window outlived its window");
+        require(!before->focused() && !host->focused(), "An element kept the focus of a destroyed window");
+    }
+    app.close();
+    return 0;
+}
+
 int tooltips(const testing::Options& options) {
     Application app{options.warp};
     {
@@ -469,5 +501,5 @@ int tooltips(const testing::Options& options) {
 
 int main(int argc, char** argv) {
     return testing::run(argc, argv, {{"pixels", pixels}, {"navigation", navigation}, {"hosted", hosted},
-        {"tooltips", tooltips}, {"visuals", visuals}, {"snapshot", snapshot}});
+        {"tooltips", tooltips}, {"visuals", visuals}, {"snapshot", snapshot}, {"hosted-teardown", hosted_teardown}});
 }

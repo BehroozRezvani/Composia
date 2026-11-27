@@ -184,6 +184,7 @@ void ElementWindow::on_paint() {
 }
 
 void ElementWindow::on_focus(bool value) {
+    if (tree_.releasing_) { return; }
     if (!value) {
         if (tipKeyboard_) { follow_tooltip(nullptr, false); }
         tree_.release_capture();

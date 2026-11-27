@@ -218,6 +218,7 @@ private:
     layout::Size viewport_{};
     std::optional<layout::Rect> dirty_;
     bool scheduled_{}, traversing_{};
+    bool releasing_{};   // The window is letting go of the tree; elements are detaching.
 };
 
 }
