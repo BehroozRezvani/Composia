@@ -112,7 +112,7 @@ int showing(const testing::Options& options) {
     Application app{options.warp};
     {
         ElementWindow owner{app, L"Owner", 300, 200, std::make_shared<Element>()};
-        owner.show(SW_SHOWNOACTIVATE);
+        owner.show(SW_SHOWNORMAL);
         flush(owner);
         PopupWindow::Options settings;
         settings.activation = PopupWindow::Activation::keep_owner_focus;
@@ -123,7 +123,7 @@ int showing(const testing::Options& options) {
         const auto style = GetWindowLongPtrW(popup.hwnd(), GWL_STYLE), extended = GetWindowLongPtrW(popup.hwnd(), GWL_EXSTYLE);
         require((style & WS_POPUP) && (extended & WS_EX_NOACTIVATE) && (extended & WS_EX_TOPMOST) && (extended & WS_EX_TOOLWINDOW),
             "A popup that keeps its owner's focus lacked its styles");
-        const auto foreground = GetForegroundWindow();
+        const auto active = GetActiveWindow();
         RECT ownerRect{};
         GetWindowRect(owner.hwnd(), &ownerRect);
         const RECT anchor{ownerRect.left + 10, ownerRect.top + 40, ownerRect.left + 110, ownerRect.top + 70};
@@ -139,7 +139,7 @@ int showing(const testing::Options& options) {
         RECT placed{};
         GetWindowRect(popup.hwnd(), &placed);
         require(same(placed, detail::place_popup(expected)), "The popup was not where its placement put it");
-        require(GetForegroundWindow() == foreground, "A popup that keeps its owner's focus took the foreground");
+        require(active == owner.hwnd() && GetActiveWindow() == owner.hwnd(), "A popup that keeps its owner's focus took the activation");
         const auto pixel = testing::surface_pixel(app, popup.composition_target().surface(), 5, 5);
         require(testing::matches(pixel, 0x204060), "The popup's background was not painted under its content");
         popup.set_background(0x406020);
@@ -198,16 +198,21 @@ int closing(const testing::Options& options) {
         require(menu.is_open(), "Activating a popup of its own closed the menu");
         SendMessageW(menu.hwnd(), WM_ACTIVATE, WA_INACTIVE, reinterpret_cast<LPARAM>(owner.hwnd()));
         require(menu.is_open(), "The menu closed during the activation change");
-        require(pump_until([&] { return !menu.is_open(); }), "Losing the activation did not close the menu");
+        require(pump_until([&] { return !menu.is_open() && !submenu.is_open(); }), "Losing the activation did not close the menu");
         require(menuReasons == std::vector<Reason>{Reason::deactivated}, "The menu did not report its deactivation");
+        // Closing a popup closes the popups it owns first, which hiding it would leave on screen.
+        menu.show_at(at, {100, 60});
+        submenu.show_at({at.x + 100, at.y}, {100, 60});
+        order.clear();
+        menu.close();
         require(order == std::vector<std::wstring>{L"submenu", L"menu"} && !submenu.is_open() && !IsWindowVisible(submenu.hwnd()),
-            "A popup the menu owns did not close before it");
+            "A popup the menu owns did not close before it"); 
 
         // Minimizing the owner closes the popup, which does not come back with it.
         popup.show_at(at, {100, 60});
         ShowWindow(owner.hwnd(), SW_MINIMIZE);
+        require(!popup.is_open() && reasons.back() == Reason::owner_changed, "Minimizing the owner did not close the popup at once");
         flush(owner);
-        require(!popup.is_open() && reasons.back() == Reason::owner_changed, "Minimizing the owner did not close the popup");
         ShowWindow(owner.hwnd(), SW_RESTORE);
         flush(owner);
         require(!IsWindowVisible(popup.hwnd()), "The popup came back with its owner");
@@ -253,7 +258,7 @@ struct Stage {
         root->add(a);
         root->add(b);
         owner = std::make_unique<ElementWindow>(app, L"Owner", 300, 200, root);
-        owner->show(SW_SHOWNOACTIVATE);
+        owner->show(SW_SHOWNORMAL);
         flush(*owner);
     }
     [[nodiscard]] LPARAM at(float x, float y) const {
@@ -325,6 +330,22 @@ int dismissal(const testing::Options& options) {
         SendMessageW(stage.owner->hwnd(), WM_LBUTTONDOWN, MK_LBUTTON, stage.at(10, 45));
         SendMessageW(stage.owner->hwnd(), WM_LBUTTONUP, 0, stage.at(10, 45));
         require(pump_until([&] { return !popup.is_open(); }), "A sent press did not close the popup");
+
+        // A press in one popup closes another it has nothing to do with.
+        PopupWindow card{*stage.owner, std::make_shared<Clicker>(), L"Card", keeping()};
+        popup.show_below(anchor, {100, 60});
+        card.show_at({anchor.right + 200, anchor.bottom}, {80, 40});
+        stage.click(card.hwnd(), MAKELPARAM(5, 5));
+        require(pump_until([&] { return !popup.is_open(); }) && card.is_open(), "A press in an unrelated popup did not close the other");
+        card.close();
+        // Shown while the application has no active window, it closes rather than float over others.
+        SetActiveWindow(nullptr);
+        if (!GetActiveWindow()) {
+            popup.show_below(anchor, {100, 60});
+            require(pump_until([&] { return !popup.is_open(); }) && reasons.back() == Reason::deactivated,
+                "A popup shown in the background stayed open");
+            SetActiveWindow(stage.owner->hwnd());
+        }
 
         auto sticky = keeping();
         sticky.lightDismiss = false;
@@ -433,9 +454,11 @@ int owner(const testing::Options& options) {
         SendMessageW(owner, WM_ACTIVATE, WA_INACTIVE, 0);
         require(pump_until([&] { return !popup.is_open(); }) && reasons.back() == Reason::deactivated, "The owner deactivating did not close the popup");
         show();
-        EnableWindow(owner, FALSE);
+        SendMessageW(owner, WM_ENABLE, FALSE, 0);
         require(pump_until([&] { return !popup.is_open(); }) && reasons.back() == Reason::owner_changed, "Disabling the owner did not close the popup");
-        EnableWindow(owner, TRUE);
+        show();
+        SendMessageW(owner, WM_SHOWWINDOW, FALSE, 0);
+        require(pump_until([&] { return !popup.is_open(); }) && reasons.back() == Reason::owner_changed, "Hiding the owner did not close the popup");
         show();
         SendMessageW(owner, WM_CANCELMODE, 0, 0);
         require(pump_until([&] { return !popup.is_open(); }) && reasons.back() == Reason::owner_changed, "WM_CANCELMODE to the owner did not close the popup");
@@ -470,7 +493,7 @@ public:
 int automation(const testing::Options& options) {
     Application app{options.warp};
     ElementWindow owner{app, L"Owner", 300, 200, std::make_shared<Element>()};
-    owner.show(SW_SHOWNOACTIVATE);
+    owner.show(SW_SHOWNORMAL);
     auto items = std::make_shared<Element>();
     items->set_accessibility({.name = L"Actions", .controlType = UIA_MenuControlTypeId});
     items->set_preferred_size({100, 60});

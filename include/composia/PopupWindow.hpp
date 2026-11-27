@@ -24,7 +24,11 @@ namespace composia {
 // closes. The popup is owned by the owner's top-level window.
 //
 // on_closed runs once per showing, last, possibly while the popup handles one of its own messages
-// (Escape, say): do not destroy the popup from it then, post the destruction instead.
+// (Escape, say): do not destroy the popup from it then, post the destruction instead. Nor run a
+// modal loop (a message box, a dialog) from inside the popup's handlers: post it, since the loop
+// would run that posted destruction while the handler is still on the stack. Presses in windows
+// of other threads, such as a browser's, are not seen; a popup that takes the focus still closes
+// when they activate the owner.
 class PopupWindow : public ElementWindow {
 public:
     enum class Activation { take_focus, keep_owner_focus };

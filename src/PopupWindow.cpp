@@ -86,9 +86,9 @@ public:
     [[nodiscard]] bool is_popup(HWND hwnd) const noexcept {
         return hwnd && std::ranges::any_of(all, [hwnd](const PopupWindow* popup) { return popup->hwnd() == hwnd; });
     }
-    void opened(PopupWindow& popup) noexcept {
-        std::erase(open, &popup);
-        open.push_back(&popup);
+    // A popup shown again keeps its place, so the popups it owns stay after it.
+    void opened(PopupWindow& popup) {
+        if (std::ranges::find(open, &popup) == open.end()) { open.push_back(&popup); }
         update_hooks();
     }
     void closed(PopupWindow& popup) noexcept {
@@ -106,6 +106,10 @@ public:
     bool input(HWND target, UINT message, WPARAM wparam, LPARAM lparam, bool consumable) noexcept {
         const bool press = is_press(message), wheel = is_wheel(message);
         if (!press && !wheel) { return false; }
+        try { return dismiss(target, message, wparam, lparam, consumable, press, wheel); }
+        catch (...) { LOG_CAUGHT_EXCEPTION(); return false; }
+    }
+    bool dismiss(HWND target, UINT message, WPARAM wparam, LPARAM lparam, bool consumable, bool press, bool wheel) {
         if (press) {
             // closed_by_anchor_press holds until the next press.
             for (auto* popup : std::exchange(holding, {})) { popup->anchorPressed_ = false; }
@@ -116,16 +120,19 @@ public:
         for (auto it = snapshot.rbegin(); it != snapshot.rend(); ++it) {
             auto* popup = *it;
             if (std::ranges::find(open, popup) == open.end() || !popup->hwnd()) { continue; }
-            if (popup->contains(target)) { break; }
+            // Inside this popup, or one it owns: it stays. A popup that owns this one counts it as
+            // inside too, and a popup unrelated to it closes.
+            if (popup->contains(target)) { continue; }
             RECT bounds{};
             if (wheel && GetWindowRect(popup->hwnd(), &bounds) && PtInRect(&bounds, point)) {
                 // The wheel goes to the focus window when inactive windows do not scroll: over the
                 // popup, it is the popup's.
-                if (consumable) {
+                if (consumable && !consume) {
                     PostMessageW(popup->hwnd(), message, wparam, lparam);
                     consume = true;
                 }
-                break;
+                target = popup->hwnd();
+                continue;
             }
             if (!popup->options_.lightDismiss) { continue; }
             if (press && popup->anchor_ && PtInRect(&*popup->anchor_, point) && GetAncestor(target, GA_ROOT) == popup->owner_) {
@@ -144,7 +151,7 @@ public:
     // entering a modal loop closes the popup.
     void owner_message(HWND target, UINT message, WPARAM wparam, LPARAM lparam) noexcept {
         if (message != WM_ACTIVATE && message != WM_ACTIVATEAPP && message != WM_CANCELMODE && message != WM_ENABLE &&
-            message != WM_ENTERSIZEMOVE && message != WM_WINDOWPOSCHANGED) { return; }
+            message != WM_ENTERSIZEMOVE && message != WM_WINDOWPOSCHANGED && message != WM_SHOWWINDOW) { return; }
         using enum PopupWindow::CloseReason;
         for (auto* popup : open) {
             if (popup->owner_ != target) { continue; }
@@ -156,11 +163,15 @@ public:
                 if (!wparam) { popup->close_later(deactivated); }
                 break;
             case WM_ENABLE:
+            case WM_SHOWWINDOW:
+                // Disabled, or hidden: hiding a window does not hide the windows it owns.
                 if (!wparam) { popup->close_later(owner_changed); }
                 break;
             case WM_WINDOWPOSCHANGED: {
+                const auto* position = reinterpret_cast<const WINDOWPOS*>(lparam);
                 RECT now{};
-                if (GetWindowRect(target, &now) && !EqualRect(&now, &popup->ownerRect_)) { popup->close_later(owner_changed); }
+                if ((position && (position->flags & SWP_HIDEWINDOW)) ||
+                    (GetWindowRect(target, &now) && !EqualRect(&now, &popup->ownerRect_))) { popup->close_later(owner_changed); }
                 break;
             }
             default:
@@ -288,7 +299,9 @@ PopupWindow::PopupWindow(Window& owner, std::shared_ptr<Surface> root, std::wstr
 
 PopupWindow::~PopupWindow() {
     *alive_ = false;
-    // The owner may be going too, so nothing is handed back to it.
+    // The owner may be going too, so nothing is handed back to it here; but destroying the window
+    // while it has the keyboard makes Windows activate the owner. Close a popup before its owner
+    // goes.
     if (open_) {
         open_ = false;
         raise_menu_event(false);
@@ -355,11 +368,14 @@ void PopupWindow::place(RECT bounds) {
     const auto handle = require_hwnd();
     if (!IsWindow(owner_)) { THROW_WIN32(ERROR_INVALID_WINDOW_HANDLE); }
     const bool take = takes_focus();
+    const auto alive = alive_;
     open_ = true;
     pending_.reset();
-    ++presentation_;
+    const auto showing = ++presentation_;
     GetWindowRect(owner_, &ownerRect_);
     PopupTracker::get().opened(*this);
+    // Activating the popup runs the owner's code, which may close it or show it again.
+    const auto superseded = [&] { return !*alive || presentation_ != showing || !open_; };
     {
         // Moving onto a monitor with another scale must keep the size worked out for it.
         placing_ = true;
@@ -367,13 +383,20 @@ void PopupWindow::place(RECT bounds) {
         THROW_IF_WIN32_BOOL_FALSE(SetWindowPos(handle, take ? HWND_TOP : HWND_TOPMOST, bounds.left, bounds.top,
             bounds.right - bounds.left, bounds.bottom - bounds.top, SWP_SHOWWINDOW | (take ? 0 : SWP_NOACTIVATE)));
     }
+    if (superseded()) { return; }
     if (take) {
         SetForegroundWindow(handle);
+        if (superseded()) { return; }
         // A menu opened from the keyboard shows where the keyboard is at once.
         if (auto* top = application().top_window(owner_)) { application().focus_cue(handle, top->focus_visible()); }
+    } else if (!GetActiveWindow()) {
+        // The application is in the background: a topmost popup would float over another
+        // application's windows, where no press of this thread could close it.
+        close_later(CloseReason::deactivated);
     }
     // The first frame the compositor shows already has the content.
     application().update(*this, [] {});
+    if (superseded()) { return; }
     // Events raised before a client asked for the tree would be lost.
     if (UiaClientsAreListening()) { ElementAutomation::attach(*this); }
     raise_menu_event(true);
@@ -401,22 +424,31 @@ void PopupWindow::finish_close(CloseReason reason) noexcept {
     pending_.reset();
     tracker.closed(*this);
     const bool destroyed = reason == CloseReason::destroyed || !hwnd();
+    const auto showing = presentation_;
     try {
         if (!destroyed) {
             raise_menu_event(false);
             const bool take = takes_focus();
             // Give the keyboard back to the window the popup came from, unless the user went
-            // elsewhere: taking the foreground back from another application would fail.
-            const bool giveBack = take && GetForegroundWindow() == hwnd() && IsWindowEnabled(owner_);
+            // elsewhere: then the popup is no longer this thread's active window.
+            const bool giveBack = take && GetActiveWindow() == hwnd() && IsWindowEnabled(owner_);
             ShowWindow(hwnd(), SW_HIDE);
             if (!*alive) { return; }
-            if (giveBack) { SetForegroundWindow(owner_); }
-            if (!*alive) { return; }
-            if (take) {
-                const auto frame = frame_owner();
-                if (frame) { SendMessageW(frame, WM_NCACTIVATE, GetForegroundWindow() == frame || GetForegroundWindow() == owner_, 0); }
+            // Hiding the popup ran the owner's code, which may have shown it again.
+            if (presentation_ == showing) {
+                if (giveBack && GetActiveWindow() != owner_) {
+                    SetForegroundWindow(owner_);
+                    // Without the foreground, as on a desktop that is not shown, activate it in
+                    // this thread at least, so it takes its focus back.
+                    if (*alive && GetActiveWindow() != owner_) { SetActiveWindow(owner_); }
+                }
+                if (!*alive) { return; }
+                if (take && presentation_ == showing) {
+                    const auto active = GetActiveWindow();
+                    if (const auto frame = frame_owner()) { SendMessageW(frame, WM_NCACTIVATE, active == frame || active == owner_, 0); }
+                }
+                if (!*alive) { return; }
             }
-            if (!*alive) { return; }
         }
         closed_.emit(reason);
     } catch (...) {
@@ -506,7 +538,11 @@ std::optional<LRESULT> PopupWindow::on_message(UINT message, WPARAM wparam, LPAR
         break;
     case WM_DESTROY:
         // The owner is being destroyed, or someone destroyed the window: nothing to hand back.
-        if (open_) { finish_close(CloseReason::destroyed); }
+        if (open_) {
+            const auto alive = alive_;
+            finish_close(CloseReason::destroyed);
+            if (!*alive) { return 0; }
+        }
         break;
     default: break;
     }
