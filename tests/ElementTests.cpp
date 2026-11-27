@@ -177,6 +177,15 @@ int routing(const testing::Options&) {
     require(tree.key({VK_TAB, true}) && back->focused() && tree.key({VK_TAB, true, true}) && front->focused(),
         "Tab and Shift+Tab did not wrap in insertion order");
     require(tree.next_focus(false, false) == nullptr, "Last stop blocked exit to native controls");
+    // A focusable element that keeps out of the focus a press gives: the press reaches it, and the
+    // focus stays where it was.
+    bool backPressed{};
+    back->pointer = [&](const auto&) { backPressed = true; return true; };
+    back->set_focus_on_press(false);
+    require(tree.pointer({PointerEvent::Kind::down, {1, 1}, PointerEvent::Button::left}) && backPressed && front->focused() &&
+        !back->focused(), "A press took the focus for an element that keeps out of it");
+    back->set_focus_on_press(true);
+    back->pointer = nullptr;
 
     std::weak_ptr<Probe> lifetime = front;
     front->pointer = [&](const auto&) {

@@ -309,7 +309,9 @@ std::optional<LRESULT> ElementWindow::on_message(UINT message, WPARAM wparam, LP
     if (!enabled()) { return std::nullopt; }
     event.position = pointer_position(lparam);
     if (event.kind == Kind::down) { hide_tooltip(); }
-    if (event.kind == Kind::down && event.button == Button::left && !focused()) {
+    // A press takes the keyboard from a window inside this one, unless it lands on an element that
+    // keeps out of the focus a press gives.
+    if (event.kind == Kind::down && event.button == Button::left && !focused() && !tree_.press_keeps_focus(event.position)) {
         pointerFocus_ = true;
         const auto reset = wil::scope_exit([&] { pointerFocus_ = false; });
         focus();

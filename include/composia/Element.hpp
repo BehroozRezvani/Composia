@@ -53,6 +53,10 @@ public:
     void set_z_index(int);
     void set_focusable(bool);
     [[nodiscard]] bool focusable() const noexcept { return focusable_; }
+    // False keeps a focusable element out of the focus a left press gives, as a splitter or a
+    // toolbar button that should not take the keyboard from a list: the press leaves the focus
+    // where it was. The keyboard still reaches the element.
+    void set_focus_on_press(bool value) noexcept { focusOnPress_ = value; }
     void set_enabled(bool);
     [[nodiscard]] bool enabled() const noexcept; // Includes retained ancestors.
     [[nodiscard]] bool interactive() const noexcept; // Also checks the host HWND.
@@ -152,6 +156,7 @@ private:
     float grow_{}, basis_{}, basisCross_{}, scrollOffset_{}, scrollLimit_{};
     int z_{};
     bool measureDirty_{true}, arrangeDirty_{true}, orderDirty_{true}, orderedBands_{}, focusable_{}, enabled_{true}, detaching_{};
+    bool focusOnPress_{true};
     bool hostsWindow_{}, hostsVisual_{};
 };
 
@@ -174,6 +179,9 @@ public:
     // the surface's origin: a picture of part of the tree, such as for a snapshot.
     void paint(ScopedSurfaceDraw&, layout::Rect area);
     [[nodiscard]] Element* hit_test(layout::Point);
+    // Whether a left press at a point (viewport DIPs) leaves the focus where it is: the element the
+    // press would focus keeps out of it (Element::set_focus_on_press).
+    [[nodiscard]] bool press_keeps_focus(layout::Point);
     bool pointer(PointerEvent);                // Input position in viewport DIPs.
     void pointer_leave();
     bool key(const KeyEvent&);

@@ -232,7 +232,9 @@ alone. A painter can use the supplied surface's brushes and must balance any dra
 state it changes.
 
 `set_focusable(true)` adds an element to keyboard navigation. A left press focuses the
-nearest focusable ancestor, including the hit itself. Tab and Shift+Tab traverse insertion
+nearest focusable ancestor, including the hit itself, unless that element called
+`set_focus_on_press(false)`, as a splitter does: the press then leaves the focus where it was,
+in the tree or in a window it hosts. Tab and Shift+Tab traverse insertion
 order and scroll a focused descendant into view. At a scroll boundary, wheel input
 continues to the enclosing container. Individual drawn elements have logical keyboard
 focus. Call `window.focus_element(element)` to give a drawn control both Windows and retained

@@ -385,6 +385,14 @@ int hosted_teardown(const testing::Options& options) {
         flush(*window);
         SetFocus(edit.hwnd());
         require(GetFocus() == edit.hwnd(), "The hosted window did not take the focus");
+        // A press on an element that keeps out of the focus a press gives leaves it in the control.
+        before->set_focus_on_press(false);
+        const auto at = [&](float x, float y) {
+            return MAKELPARAM(std::lround(x * window->scale()), std::lround(y * window->scale()));
+        };
+        SendMessageW(window->hwnd(), WM_LBUTTONDOWN, MK_LBUTTON, at(5, 5));
+        SendMessageW(window->hwnd(), WM_LBUTTONUP, 0, at(5, 5));
+        require(GetFocus() == edit.hwnd() && !before->focused(), "A press took the focus from the hosted window");
         window.reset();
         require(!IsWindow(edit.hwnd()), "The hosted window outlived its window");
         require(!before->focused() && !host->focused(), "An element kept the focus of a destroyed window");

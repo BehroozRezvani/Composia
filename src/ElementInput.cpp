@@ -27,6 +27,13 @@ bool ElementTree::bubble(Element& target, Handler&& handle) {
     return false;
 }
 
+bool ElementTree::press_keeps_focus(layout::Point position) {
+    for (auto* p = captured_ ? captured_ : hit_test(position); p; p = p->parent_) {
+        if (p->focusable_) { return !p->focusOnPress_; }
+    }
+    return false;
+}
+
 bool ElementTree::pointer(PointerEvent event) {
     pointerAt_ = event.position;
     auto* hit = hit_test(event.position);
@@ -36,7 +43,9 @@ bool ElementTree::pointer(PointerEvent event) {
     if (event.kind == PointerEvent::Kind::down && event.button == PointerEvent::Button::left) {
         const auto keepTarget = reference(target);
         for (auto* p = target; p; p = p->parent_) {
-            if (p->focusable_) { focus(p); break; }
+            if (!p->focusable_) { continue; }
+            if (p->focusOnPress_) { focus(p); }
+            break;
         }
         if (target->tree_ != this || !target->enabled()) { return false; }
     }
