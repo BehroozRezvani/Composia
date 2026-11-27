@@ -178,7 +178,16 @@ its owner's title bar stays active; when it closes it gives the activation back.
 `keep_owner_focus` it never activates and stays above its owner, as a dropdown's list does while
 the field keeps the keyboard and forwards keys to it. It closes on Escape, `WM_CANCELMODE`,
 losing the activation (to anything but a popup it owns), its owner being minimized or destroyed,
-and with the popup that owns it; `on_closed` reports why, once per showing. A popup with
+and with the popup that owns it; `on_closed` reports why, once per showing.
+
+A press or the wheel outside the popup closes it too (`Options::lightDismiss`), after the press
+has reached what it was on; the wheel over the popup goes to the popup even when Windows sends it
+to the focus window. A press on the rectangle the popup was shown below closes it without
+reaching anything (`Options::consumeAnchorPress`), so the button there does not open it again on
+release; with that off, the button gets the press and `closed_by_anchor_press` tells it the popup
+just closed for it. The owner moving, deactivating, being disabled or entering a modal state also
+closes the popup. Thread hooks watch for these only while a popup is open, and close it after the
+message, never inside the hook. A popup with
 `Options::menu` raises UI Automation's MenuOpened and MenuClosed. `on_closed` can run while the
 popup handles one of its own messages, so post its destruction rather than destroying it there.
 For a window with a native Win32 menu bar, pass `Window::Content::native` before

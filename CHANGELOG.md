@@ -97,7 +97,10 @@ change the API; each change is listed here.
   at that monitor's DPI. It takes the keyboard, keeping its owner's title bar active, or leaves it
   with the owner; it closes on Escape, `WM_CANCELMODE`, deactivation, the owner minimizing or
   closing, and with the popup that owns it, reporting why through `on_closed`; and a menu popup
-  raises UI Automation's MenuOpened and MenuClosed.
+  raises UI Automation's MenuOpened and MenuClosed. A press or the wheel outside it closes it,
+  a press on the rectangle it was shown below closes it without reaching anything (or reaches the
+  button there, which `closed_by_anchor_press` tells why), and so does its owner moving,
+  deactivating, being disabled or entering a modal state.
 - `ElementLayout::crossAlign` and `mainAlign` align a stack's or flex container's children
   across and along its axis (`layout::Align`), and `Element::set_align` aligns one child.
   `ElementLayout` compares with `==`.

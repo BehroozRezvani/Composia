@@ -13,8 +13,9 @@ namespace composia {
 // A popup in an owned top-level window of its own, so it can reach past its owner's edges: a
 // menu, a dropdown's list or suggestions under a text field. It shows at a point or below a
 // rectangle, flipped and shortened to stay on the monitor's work area, and closes on Escape,
-// WM_CANCELMODE and losing the activation (a popup that takes the focus), when its owner is
-// minimized, and with the popups it owns. The content is any element tree; the popup paints its
+// WM_CANCELMODE and losing the activation (a popup that takes the focus), at a press or the
+// wheel outside it, when its owner moves, deactivates, is disabled or minimized, and with the
+// popups it owns. The content is any element tree; the popup paints its
 // background under it. Created hidden, it can be shown and closed again and again. UI thread only.
 //
 // It takes the keyboard (Activation::take_focus), as a menu does, or leaves it with its owner
@@ -38,6 +39,12 @@ public:
         std::uint32_t background{0xffffff};   // 0xRRGGBB under the content.
         float gap{4};                         // DIPs between a rectangle and the popup below or above it.
         bool menu{};                          // Raise UI Automation's MenuOpened and MenuClosed.
+        // Close at a press or the wheel outside the popup, after the press reaches what it was on.
+        bool lightDismiss{true};
+        // A press on the rectangle the popup was shown below closes it and reaches nothing, so the
+        // button there does not open it again on release. Off, the press goes on, and the button
+        // can ask closed_by_anchor_press whether to open it again.
+        bool consumeAnchorPress{true};
     };
 
     // `owner` is any window in the top-level window that will own the popup; `name` is the popup
@@ -55,6 +62,9 @@ public:
     void show_below(const RECT& anchor, layout::Size size, Below = Below::leading);
     void close();
     [[nodiscard]] bool is_open() const noexcept { return open_; }
+    // Whether the popup closed at a press on the rectangle it was shown below, from that press
+    // until the next press on this thread.
+    [[nodiscard]] bool closed_by_anchor_press() const noexcept { return anchorPressed_; }
     [[nodiscard]] Activation activation() const noexcept { return options_.activation; }
     [[nodiscard]] HWND owner_hwnd() const noexcept { return owner_; }
     // The part of the owner's top-level window on the work area of the monitor at a screen point,
@@ -94,7 +104,9 @@ private:
     std::shared_ptr<bool> alive_{std::make_shared<bool>(true)};
     std::uint64_t presentation_{};
     std::optional<CloseReason> pending_;
-    bool open_{}, placing_{}, closing_{};
+    std::optional<RECT> anchor_;      // On the screen, while shown below it.
+    RECT ownerRect_{};                // The owner's place when shown, to notice it moving.
+    bool open_{}, placing_{}, closing_{}, anchorPressed_{};
     Signal<CloseReason> closed_;
 };
 

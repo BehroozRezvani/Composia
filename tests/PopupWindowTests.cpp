@@ -228,6 +228,222 @@ int closing(const testing::Options& options) {
     return 0;
 }
 
+// Counts the presses, releases and wheel turns that reach it, and what a popup said at the press.
+class Clicker : public Element {
+public:
+    Clicker() { set_preferred_size({100, 30}); }
+    unsigned downs{}, ups{}, wheels{};
+    std::function<void()> onDown;
+private:
+    bool on_pointer(const PointerEvent& e) override {
+        if (e.kind == PointerEvent::Kind::down) { ++downs; if (onDown) { onDown(); } }
+        if (e.kind == PointerEvent::Kind::up) { ++ups; }
+        if (e.kind == PointerEvent::Kind::wheel) { ++wheels; }
+        return true;
+    }
+};
+
+// An owner with two buttons, A over B, and a way to press them as the mouse does.
+struct Stage {
+    Application& app;
+    std::shared_ptr<Element> root = std::make_shared<Element>(ElementLayout{ElementLayout::Kind::stack});
+    std::shared_ptr<Clicker> a = std::make_shared<Clicker>(), b = std::make_shared<Clicker>();
+    std::unique_ptr<ElementWindow> owner;
+    explicit Stage(Application& application) : app(application) {
+        root->add(a);
+        root->add(b);
+        owner = std::make_unique<ElementWindow>(app, L"Owner", 300, 200, root);
+        owner->show(SW_SHOWNOACTIVATE);
+        flush(*owner);
+    }
+    [[nodiscard]] LPARAM at(float x, float y) const {
+        return MAKELPARAM(static_cast<int>(x * owner->scale()), static_cast<int>(y * owner->scale()));
+    }
+    // A's place on the screen.
+    [[nodiscard]] RECT anchor() const {
+        RECT rect{0, 0, static_cast<LONG>(100 * owner->scale()), static_cast<LONG>(30 * owner->scale())};
+        MapWindowPoints(owner->hwnd(), nullptr, reinterpret_cast<POINT*>(&rect), 2);
+        return rect;
+    }
+    void click(HWND target, LPARAM where) const {
+        PostMessageW(target, WM_LBUTTONDOWN, MK_LBUTTON, where);
+        PostMessageW(target, WM_LBUTTONUP, 0, where);
+    }
+};
+
+PopupWindow::Options keeping() {
+    PopupWindow::Options options;
+    options.activation = PopupWindow::Activation::keep_owner_focus;
+    return options;
+}
+
+// A press or the wheel outside a popup closes it after the press reaches its target; inside,
+// it stays.
+int dismissal(const testing::Options& options) {
+    Application app{options.warp};
+    {
+        Stage stage{app};
+        auto content = std::make_shared<Clicker>();
+        PopupWindow popup{*stage.owner, content, L"Choices", keeping()};
+        std::vector<Reason> reasons;
+        auto watch = popup.on_closed([&](Reason reason) { reasons.push_back(reason); });
+        const auto anchor = stage.anchor();
+        popup.show_below(anchor, {100, 60});
+        stage.click(stage.owner->hwnd(), stage.at(10, 45));
+        require(pump_until([&] { return !popup.is_open(); }), "A press outside did not close the popup");
+        require(reasons.back() == Reason::outside_press && stage.b->downs == 1 && stage.b->ups == 1,
+            "The press outside did not reach its target, or closed the popup for another reason");
+        require(!detail::popup_hooks_installed(true) && !detail::popup_hooks_installed(false), "The hooks stayed after the popup closed");
+
+        popup.show_below(anchor, {100, 60});
+        require(detail::popup_hooks_installed(true) && detail::popup_hooks_installed(false), "An open popup did not watch presses");
+        stage.click(popup.hwnd(), MAKELPARAM(5, 5));
+        pump_until([] { return false; }, std::chrono::milliseconds{100});
+        require(popup.is_open() && content->downs == 1, "A press inside closed the popup or did not reach it");
+
+        // Presses on the frame and the wheel outside close it too.
+        RECT ownerRect{};
+        GetWindowRect(stage.owner->hwnd(), &ownerRect);
+        PostMessageW(stage.owner->hwnd(), WM_NCLBUTTONDOWN, HTNOWHERE, MAKELPARAM(ownerRect.left + 2, ownerRect.top + 2));
+        require(pump_until([&] { return !popup.is_open(); }), "A press on the owner's frame did not close the popup");
+        popup.show_below(anchor, {100, 60});
+        PostMessageW(stage.owner->hwnd(), WM_MOUSEWHEEL, MAKEWPARAM(0, -WHEEL_DELTA), MAKELPARAM(ownerRect.right - 5, ownerRect.bottom - 5));
+        require(pump_until([&] { return !popup.is_open(); }), "The wheel outside did not close the popup");
+        // The wheel over the popup is the popup's, wherever Windows sent it.
+        popup.show_below(anchor, {100, 60});
+        RECT popupRect{};
+        GetWindowRect(popup.hwnd(), &popupRect);
+        PostMessageW(stage.owner->hwnd(), WM_MOUSEWHEEL, MAKEWPARAM(0, -WHEEL_DELTA), MAKELPARAM(popupRect.left + 5, popupRect.top + 5));
+        require(pump_until([&] { return content->wheels == 1; }) && popup.is_open(), "The wheel over the popup did not reach it, or closed it");
+
+        // A press in another window, or sent rather than posted, closes it as well.
+        ElementWindow other{app, L"Other", 100, 100, std::make_shared<Clicker>()};
+        other.show(SW_SHOWNOACTIVATE);
+        stage.click(other.hwnd(), MAKELPARAM(5, 5));
+        require(pump_until([&] { return !popup.is_open(); }), "A press in another window did not close the popup");
+        popup.show_below(anchor, {100, 60});
+        SendMessageW(stage.owner->hwnd(), WM_LBUTTONDOWN, MK_LBUTTON, stage.at(10, 45));
+        SendMessageW(stage.owner->hwnd(), WM_LBUTTONUP, 0, stage.at(10, 45));
+        require(pump_until([&] { return !popup.is_open(); }), "A sent press did not close the popup");
+
+        auto sticky = keeping();
+        sticky.lightDismiss = false;
+        PopupWindow pinned{*stage.owner, std::make_shared<Clicker>(), L"Pinned", sticky};
+        pinned.show_below(anchor, {100, 60});
+        stage.click(stage.owner->hwnd(), stage.at(10, 45));
+        pump_until([] { return false; }, std::chrono::milliseconds{100});
+        require(pinned.is_open(), "A popup without light dismissal closed at a press outside");
+        pinned.close();
+    }
+    app.close();
+    return 0;
+}
+
+// A press on the rectangle a popup was shown below closes it and, by default, reaches nothing,
+// so the button there does not open it again; closed_by_anchor_press holds until the next press.
+int anchor(const testing::Options& options) {
+    Application app{options.warp};
+    {
+        Stage stage{app};
+        PopupWindow popup{*stage.owner, std::make_shared<Clicker>(), L"Choices", keeping()};
+        std::vector<Reason> reasons;
+        auto watch = popup.on_closed([&](Reason reason) { reasons.push_back(reason); });
+        popup.show_below(stage.anchor(), {100, 60});
+        stage.click(stage.owner->hwnd(), stage.at(10, 10));
+        require(pump_until([&] { return !popup.is_open(); }), "A press on the anchor did not close the popup");
+        require(reasons.back() == Reason::anchor_press && stage.a->downs == 0 && popup.closed_by_anchor_press(),
+            "The anchor press was not consumed or not reported");
+        require(detail::popup_hooks_installed(false) && !detail::popup_hooks_installed(true),
+            "Holding closed_by_anchor_press kept the wrong hooks");
+        stage.click(stage.owner->hwnd(), stage.at(10, 45));
+        pump_until([] { return false; }, std::chrono::milliseconds{50});
+        require(!popup.closed_by_anchor_press() && !detail::popup_hooks_installed(false), "The next press did not end closed_by_anchor_press");
+
+        // Without consuming it, the button sees the press and can tell the popup closed for it.
+        auto passing = keeping();
+        passing.consumeAnchorPress = false;
+        PopupWindow menu{*stage.owner, std::make_shared<Clicker>(), L"Menu", passing};
+        bool sawClose{};
+        stage.a->onDown = [&] { sawClose = menu.closed_by_anchor_press(); };
+        menu.show_below(stage.anchor(), {100, 60});
+        stage.click(stage.owner->hwnd(), stage.at(10, 10));
+        require(pump_until([&] { return !menu.is_open(); }), "A press on the anchor did not close the popup");
+        require(stage.a->downs == 1 && sawClose, "The anchor did not get the press, or could not tell the popup closed for it");
+        // A popup destroyed while it holds the flag lets go of the hook.
+        auto doomed = std::make_unique<PopupWindow>(*stage.owner, std::make_shared<Clicker>(), L"Doomed", keeping());
+        doomed->show_below(stage.anchor(), {100, 60});
+        stage.click(stage.owner->hwnd(), stage.at(10, 10));
+        pump_until([&] { return !doomed->is_open(); });
+        doomed.reset();
+        require(!detail::popup_hooks_installed(false), "A popup destroyed while it held closed_by_anchor_press kept the hook");
+    }
+    app.close();
+    return 0;
+}
+
+// A press inside a popup's own popup keeps both; inside the outer one, only the inner closes;
+// outside both, both close, the inner first.
+int nested(const testing::Options& options) {
+    Application app{options.warp};
+    {
+        Stage stage{app};
+        PopupWindow outer{*stage.owner, std::make_shared<Clicker>(), L"Outer", keeping()};
+        PopupWindow inner{outer, std::make_shared<Clicker>(), L"Inner", keeping()};
+        std::vector<std::wstring> order;
+        auto watchOuter = outer.on_closed([&](Reason) { order.push_back(L"outer"); });
+        auto watchInner = inner.on_closed([&](Reason) { order.push_back(L"inner"); });
+        RECT ownerRect{};
+        GetWindowRect(stage.owner->hwnd(), &ownerRect);
+        outer.show_at({ownerRect.left + 150, ownerRect.top + 40}, {80, 60});
+        inner.show_at({ownerRect.left + 240, ownerRect.top + 40}, {80, 60});
+        stage.click(inner.hwnd(), MAKELPARAM(5, 5));
+        pump_until([] { return false; }, std::chrono::milliseconds{100});
+        require(outer.is_open() && inner.is_open(), "A press in the inner popup closed one of them");
+        stage.click(outer.hwnd(), MAKELPARAM(5, 5));
+        require(pump_until([&] { return !inner.is_open(); }) && outer.is_open(), "A press in the outer popup did not close only the inner");
+        inner.show_at({ownerRect.left + 240, ownerRect.top + 40}, {80, 60});
+        order.clear();
+        stage.click(stage.owner->hwnd(), stage.at(10, 45));
+        require(pump_until([&] { return !outer.is_open() && !inner.is_open(); }), "A press outside did not close both");
+        require(order == std::vector<std::wstring>{L"inner", L"outer"}, "The inner popup did not close first");
+    }
+    app.close();
+    return 0;
+}
+
+// The owner moving, deactivating, being disabled or entering a modal state closes its popup.
+int owner(const testing::Options& options) {
+    Application app{options.warp};
+    {
+        Stage stage{app};
+        PopupWindow popup{*stage.owner, std::make_shared<Clicker>(), L"Choices", keeping()};
+        std::vector<Reason> reasons;
+        auto watch = popup.on_closed([&](Reason reason) { reasons.push_back(reason); });
+        const auto owner = stage.owner->hwnd();
+        const auto show = [&] { popup.show_below(stage.anchor(), {100, 60}); };
+        show();
+        RECT ownerRect{};
+        GetWindowRect(owner, &ownerRect);
+        SetWindowPos(owner, nullptr, ownerRect.left + 10, ownerRect.top, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+        require(pump_until([&] { return !popup.is_open(); }) && reasons.back() == Reason::owner_changed, "Moving the owner did not close the popup");
+        show();
+        SendMessageW(owner, WM_ACTIVATE, WA_INACTIVE, reinterpret_cast<LPARAM>(popup.hwnd()));
+        pump_until([] { return false; }, std::chrono::milliseconds{50});
+        require(popup.is_open(), "The owner's activation going to the popup closed it");
+        SendMessageW(owner, WM_ACTIVATE, WA_INACTIVE, 0);
+        require(pump_until([&] { return !popup.is_open(); }) && reasons.back() == Reason::deactivated, "The owner deactivating did not close the popup");
+        show();
+        EnableWindow(owner, FALSE);
+        require(pump_until([&] { return !popup.is_open(); }) && reasons.back() == Reason::owner_changed, "Disabling the owner did not close the popup");
+        EnableWindow(owner, TRUE);
+        show();
+        SendMessageW(owner, WM_CANCELMODE, 0, 0);
+        require(pump_until([&] { return !popup.is_open(); }) && reasons.back() == Reason::owner_changed, "WM_CANCELMODE to the owner did not close the popup");
+    }
+    app.close();
+    return 0;
+}
+
 class Handler : public IUIAutomationEventHandler {
 public:
     wil::unique_event opened{wil::EventOptions::ManualReset}, closed{wil::EventOptions::ManualReset};
@@ -295,5 +511,6 @@ int automation(const testing::Options& options) {
 }
 
 int main(int argc, char** argv) {
-    return testing::run(argc, argv, {{"placement", placement}, {"showing", showing}, {"closing", closing}, {"automation", automation}});
+    return testing::run(argc, argv, {{"placement", placement}, {"showing", showing}, {"closing", closing}, {"automation", automation},
+        {"dismissal", dismissal}, {"anchor", anchor}, {"nested", nested}, {"owner", owner}});
 }

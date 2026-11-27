@@ -46,7 +46,37 @@ RECT place_popup(const PopupRequest& request) noexcept {
 }
 }
 
-// The popups on this thread: all of them, and the open ones in the order they opened.
+namespace {
+bool is_press(UINT message) noexcept {
+    switch (message) {
+    case WM_LBUTTONDOWN: case WM_LBUTTONDBLCLK: case WM_RBUTTONDOWN: case WM_RBUTTONDBLCLK:
+    case WM_MBUTTONDOWN: case WM_MBUTTONDBLCLK: case WM_XBUTTONDOWN: case WM_XBUTTONDBLCLK:
+    case WM_NCLBUTTONDOWN: case WM_NCLBUTTONDBLCLK: case WM_NCRBUTTONDOWN: case WM_NCRBUTTONDBLCLK:
+    case WM_NCMBUTTONDOWN: case WM_NCMBUTTONDBLCLK: case WM_NCXBUTTONDOWN: case WM_NCXBUTTONDBLCLK:
+        return true;
+    default: return false;
+    }
+}
+
+bool is_wheel(UINT message) noexcept { return message == WM_MOUSEWHEEL || message == WM_MOUSEHWHEEL; }
+
+// Where a press or the wheel happened on the screen: client presses carry client coordinates,
+// the rest screen coordinates.
+POINT screen_point(HWND target, UINT message, LPARAM lparam) noexcept {
+    POINT point{static_cast<short>(LOWORD(lparam)), static_cast<short>(HIWORD(lparam))};
+    const bool nonclient = message >= WM_NCMOUSEMOVE && message <= WM_NCXBUTTONDBLCLK;
+    if (!nonclient && !is_wheel(message) && target) { ClientToScreen(target, &point); }
+    return point;
+}
+
+LRESULT CALLBACK message_hook(int code, WPARAM removal, LPARAM data) noexcept;
+LRESULT CALLBACK sent_hook(int code, WPARAM sentByThread, LPARAM data) noexcept;
+}
+
+// The popups on this thread: all of them, the open ones in the order they opened, and those that
+// hold closed_by_anchor_press until the next press. It watches presses and the wheel, posted or
+// sent, and the owners' messages, through hooks it keeps only while they are needed. The hooks
+// never close anything themselves: they post the closes.
 class PopupTracker {
 public:
     static PopupTracker& get() noexcept {
@@ -56,8 +86,132 @@ public:
     [[nodiscard]] bool is_popup(HWND hwnd) const noexcept {
         return hwnd && std::ranges::any_of(all, [hwnd](const PopupWindow* popup) { return popup->hwnd() == hwnd; });
     }
-    std::vector<PopupWindow*> all, open;
+    void opened(PopupWindow& popup) noexcept {
+        std::erase(open, &popup);
+        open.push_back(&popup);
+        update_hooks();
+    }
+    void closed(PopupWindow& popup) noexcept {
+        std::erase(open, &popup);
+        update_hooks();
+    }
+    void forget(PopupWindow& popup) noexcept {
+        std::erase(open, &popup);
+        std::erase(holding, &popup);
+        std::erase(all, &popup);
+        update_hooks();
+    }
+    // A press or the wheel: closes the open popups it is outside of, newest first, up to the one
+    // it is in. Returns true to keep the message from its target.
+    bool input(HWND target, UINT message, WPARAM wparam, LPARAM lparam, bool consumable) noexcept {
+        const bool press = is_press(message), wheel = is_wheel(message);
+        if (!press && !wheel) { return false; }
+        if (press) {
+            // closed_by_anchor_press holds until the next press.
+            for (auto* popup : std::exchange(holding, {})) { popup->anchorPressed_ = false; }
+        }
+        const auto point = screen_point(target, message, lparam);
+        bool consume = false;
+        const auto snapshot = open;
+        for (auto it = snapshot.rbegin(); it != snapshot.rend(); ++it) {
+            auto* popup = *it;
+            if (std::ranges::find(open, popup) == open.end() || !popup->hwnd()) { continue; }
+            if (popup->contains(target)) { break; }
+            RECT bounds{};
+            if (wheel && GetWindowRect(popup->hwnd(), &bounds) && PtInRect(&bounds, point)) {
+                // The wheel goes to the focus window when inactive windows do not scroll: over the
+                // popup, it is the popup's.
+                if (consumable) {
+                    PostMessageW(popup->hwnd(), message, wparam, lparam);
+                    consume = true;
+                }
+                break;
+            }
+            if (!popup->options_.lightDismiss) { continue; }
+            if (press && popup->anchor_ && PtInRect(&*popup->anchor_, point) && GetAncestor(target, GA_ROOT) == popup->owner_) {
+                popup->anchorPressed_ = true;
+                if (std::ranges::find(holding, popup) == holding.end()) { holding.push_back(popup); }
+                popup->close_later(PopupWindow::CloseReason::anchor_press);
+                consume = consume || (consumable && popup->options_.consumeAnchorPress);
+            } else {
+                popup->close_later(PopupWindow::CloseReason::outside_press);
+            }
+        }
+        update_hooks();
+        return consume;
+    }
+    // A message sent to a window: an open popup's owner moving, deactivating, being disabled or
+    // entering a modal loop closes the popup.
+    void owner_message(HWND target, UINT message, WPARAM wparam, LPARAM lparam) noexcept {
+        if (message != WM_ACTIVATE && message != WM_ACTIVATEAPP && message != WM_CANCELMODE && message != WM_ENABLE &&
+            message != WM_ENTERSIZEMOVE && message != WM_WINDOWPOSCHANGED) { return; }
+        using enum PopupWindow::CloseReason;
+        for (auto* popup : open) {
+            if (popup->owner_ != target) { continue; }
+            switch (message) {
+            case WM_ACTIVATE:
+                if (LOWORD(wparam) == WA_INACTIVE && !popup->contains(reinterpret_cast<HWND>(lparam))) { popup->close_later(deactivated); }
+                break;
+            case WM_ACTIVATEAPP:
+                if (!wparam) { popup->close_later(deactivated); }
+                break;
+            case WM_ENABLE:
+                if (!wparam) { popup->close_later(owner_changed); }
+                break;
+            case WM_WINDOWPOSCHANGED: {
+                RECT now{};
+                if (GetWindowRect(target, &now) && !EqualRect(&now, &popup->ownerRect_)) { popup->close_later(owner_changed); }
+                break;
+            }
+            default:
+                popup->close_later(owner_changed);
+                break;
+            }
+        }
+    }
+    [[nodiscard]] bool hooked(bool sent) const noexcept { return sent ? sentHook_.is_valid() : messageHook_.is_valid(); }
+
+    std::vector<PopupWindow*> all, open, holding;
+
+private:
+    // The message hook while a popup is open or holds closed_by_anchor_press; the sent-message
+    // hook, which every SendMessage on the thread passes, only while one is open.
+    void update_hooks() noexcept {
+        const bool messages = !open.empty() || !holding.empty(), sent = !open.empty();
+        if (messages && !messageHook_) { messageHook_.reset(SetWindowsHookExW(WH_GETMESSAGE, message_hook, nullptr, GetCurrentThreadId())); }
+        if (!messages) { messageHook_.reset(); }
+        if (sent && !sentHook_) { sentHook_.reset(SetWindowsHookExW(WH_CALLWNDPROC, sent_hook, nullptr, GetCurrentThreadId())); }
+        if (!sent) { sentHook_.reset(); }
+    }
+    wil::unique_hhook messageHook_, sentHook_;
 };
+
+namespace {
+// Presses and the wheel as they are taken from the queue, real or posted: a consumed one becomes
+// WM_NULL.
+LRESULT CALLBACK message_hook(int code, WPARAM removal, LPARAM data) noexcept {
+    if (code == HC_ACTION && removal == PM_REMOVE) {
+        auto& message = *reinterpret_cast<MSG*>(data);
+        if (PopupTracker::get().input(message.hwnd, message.message, message.wParam, message.lParam, true)) { message.message = WM_NULL; }
+    }
+    return CallNextHookEx(nullptr, code, removal, data);
+}
+
+// Sent presses, which cannot be kept from their target, and the owners' messages.
+LRESULT CALLBACK sent_hook(int code, WPARAM sentByThread, LPARAM data) noexcept {
+    if (code == HC_ACTION) {
+        const auto& message = *reinterpret_cast<const CWPSTRUCT*>(data);
+        auto& tracker = PopupTracker::get();
+        (void)tracker.input(message.hwnd, message.message, message.wParam, message.lParam, false);
+        tracker.owner_message(message.hwnd, message.message, message.wParam, message.lParam);
+    }
+    return CallNextHookEx(nullptr, code, sentByThread, data);
+}
+}
+
+namespace detail {
+bool popup_hooks_installed(bool sentMessages) noexcept { return PopupTracker::get().hooked(sentMessages); }
+}
 
 class PopupWindow::Surface final : public Element {
 public:
@@ -139,9 +293,7 @@ PopupWindow::~PopupWindow() {
         open_ = false;
         raise_menu_event(false);
     }
-    auto& tracker = PopupTracker::get();
-    std::erase(tracker.open, this);
-    std::erase(tracker.all, this);
+    PopupTracker::get().forget(*this);
 }
 
 UINT PopupWindow::dpi_at(POINT screen) noexcept {
@@ -181,6 +333,7 @@ void PopupWindow::show_at(POINT screen, layout::Size size) {
     request.gap = options_.gap;
     request.work = work_area(screen);
     request.dpi = dpi_at(screen);
+    anchor_.reset();
     place(detail::place_popup(request));
 }
 
@@ -194,6 +347,7 @@ void PopupWindow::show_below(const RECT& anchor, layout::Size size, Below below)
     request.work = work_area(at);
     request.dpi = dpi_at(at);
     if (below == Below::trailing_inside_owner) { request.ownerArea = owner_area(at); }
+    anchor_ = anchor;
     place(detail::place_popup(request));
 }
 
@@ -204,9 +358,8 @@ void PopupWindow::place(RECT bounds) {
     open_ = true;
     pending_.reset();
     ++presentation_;
-    auto& tracker = PopupTracker::get();
-    std::erase(tracker.open, this);
-    tracker.open.push_back(this);
+    GetWindowRect(owner_, &ownerRect_);
+    PopupTracker::get().opened(*this);
     {
         // Moving onto a monitor with another scale must keep the size worked out for it.
         placing_ = true;
@@ -246,7 +399,7 @@ void PopupWindow::finish_close(CloseReason reason) noexcept {
     }
     open_ = false;
     pending_.reset();
-    std::erase(tracker.open, this);
+    tracker.closed(*this);
     const bool destroyed = reason == CloseReason::destroyed || !hwnd();
     try {
         if (!destroyed) {

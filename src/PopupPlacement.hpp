@@ -23,4 +23,8 @@ struct PopupRequest {
 // or there is no more room above, else above it, shortened to the room on that side.
 [[nodiscard]] RECT place_popup(const PopupRequest&) noexcept;
 
+// Whether this thread's popup hooks are installed: while a popup is open, and the message hook
+// alone while a popup holds closed_by_anchor_press. For tests.
+[[nodiscard]] bool popup_hooks_installed(bool sentMessages) noexcept;
+
 }
