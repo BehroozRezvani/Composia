@@ -706,7 +706,11 @@ int roles(const testing::Options&) {
     listTree.update_layout();
     listTree.pointer({PointerEvent::Kind::down, {8, 40}, PointerEvent::Button::left});
     listTree.pointer({PointerEvent::Kind::up, {8, 40}, PointerEvent::Button::left});
-    require(!opened && list->selected() == 1, "One click activated a list row"); 
+    require(!opened && list->selected() == 1, "One click activated a list row");
+    // Enter held down chooses once.
+    require(list->request_focus(), "The list did not take the focus");
+    listTree.key({VK_RETURN, true});
+    require(listTree.key({VK_RETURN, true, false, false, false, 1L << 30}) && opened == 1, "A repeated Enter chose again");
     auto plain = std::make_shared<ui::List>(L"Folders", items);
     require(plain->role() == ui::ListRole::list && plain->accessibility()->controlType == UIA_TreeControlTypeId,
         "A list with levels was not a Tree");

@@ -450,7 +450,9 @@ bool List::tree_key(bool right) {
 }
 bool List::navigate(const KeyEvent& e) {
     if (!interactive() || !e.down || e.alt || e.control || e.shift || !items_.count) { return false; }
-    if (e.key == VK_RETURN || e.key == VK_SPACE) { return activate_selected(); }
+    // A key held down repeats: only its first press chooses, so the key that opened a menu, or
+    // chose once, does not go on choosing.
+    if (e.key == VK_RETURN || e.key == VK_SPACE) { return (e.keyData & (1L << 30)) ? true : activate_selected(); }
     const auto last = items_.count - 1;
     const bool backwards = e.key == VK_UP || e.key == VK_PRIOR || e.key == VK_END;
     std::size_t candidate{};

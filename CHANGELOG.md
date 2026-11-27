@@ -105,6 +105,7 @@ change the API; each change is listed here.
 - The tooltip's pause and a `TextBox`'s timers use `Timer`, so none of Composia's `WM_TIMER`
   messages reach a window procedure, and a text box's timers work without the focus.
 - A whole-surface draw clips to its surface too, since the surface may share an atlas.
+- A list ignores Enter and Space while they repeat, so a key held down chooses once.
 - A menu raises `on_selection` for every choice, the same row again included; a dropdown still
   raises it only when its value changes.
 
