@@ -44,9 +44,10 @@ public:
     [[nodiscard]] const wil::com_ptr<ID2D1DeviceContext6>& d2d_context() const noexcept { return d2dContext_; }
     [[nodiscard]] const wil::com_ptr<IDWriteFactory7>& text_factory() const noexcept { return textFactory_; }
     [[nodiscard]] const composition::CompositionGraphicsDevice& composition_device() const noexcept { return compositionDevice_; }
-    // Composition can lose a drawing surface's retained pixels when a partial update of it follows
-    // an update of a virtual surface before the two are committed: outside the update the surface
-    // shows the virtual surface's tiles instead. VirtualSurface marks its updates here, a commit
+    // After a BeginDraw has failed (one surface drawn inside another's draw), Composition was seen
+    // to lose a drawing surface's retained pixels when a partial update of it followed an update of
+    // a virtual surface before the two were committed: outside the update the surface showed the
+    // virtual surface's tiles instead. VirtualSurface marks its updates here, a commit
     // clears the mark (Application::commit calls committed()), and CompositionWindowTarget draws
     // whole surfaces while it is set.
     void mark_virtual_update() const noexcept { virtualUpdatePending_ = true; }
