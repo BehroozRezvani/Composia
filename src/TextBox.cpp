@@ -87,10 +87,10 @@ bool TextBox::redo() {
     return !options_.readOnly && host_->send(EM_REDO) != 0;
 }
 void TextBox::copy() {
-    host_->send(WM_COPY);
+    if (!options_.passwordChar) { host_->send(WM_COPY); }
 }
 void TextBox::cut() {
-    if (!options_.readOnly) { host_->send(WM_CUT); }
+    if (!options_.readOnly && !options_.passwordChar) { host_->send(WM_CUT); }
 }
 void TextBox::paste() {
     if (!options_.readOnly) { host_->send(EM_PASTESPECIAL, CF_UNICODETEXT); }
@@ -100,6 +100,12 @@ void TextBox::set_read_only(bool value) {
     options_.readOnly = value;
     THROW_IF_FAILED(host_->engine->OnTxPropertyBitsChange(TXTBIT_READONLY, value ? TXTBIT_READONLY : 0));
     invalidate();
+}
+void TextBox::set_max_length(long value) {
+    value = std::max(0L, value);
+    if (options_.maxLength == value) { return; }
+    options_.maxLength = value;
+    THROW_IF_FAILED(host_->engine->OnTxPropertyBitsChange(TXTBIT_MAXLENGTHCHANGE, TXTBIT_MAXLENGTHCHANGE));
 }
 bool TextBox::can_undo() const {
     return !options_.readOnly && host_->send(EM_CANUNDO) != 0;

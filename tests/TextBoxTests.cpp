@@ -73,6 +73,35 @@ int cursor(const testing::Options& options) {
     return 0;
 }
 
+int password(const testing::Options& options) {
+    Application app{options.warp};
+    {
+        auto edit = std::make_shared<TextBox>(TextBox::Options{.name = L"Password", .passwordChar = L'\x25CF', .maxLength = 5});
+        ElementWindow window{app, L"Password", 220, 60, edit};
+        window.show(SW_SHOWNOACTIVATE);
+        flush(window);
+        window.focus();
+        for (const wchar_t c : std::wstring_view{L"secret!"}) { SendMessageW(window.hwnd(), WM_CHAR, c, 1); }
+        require(edit->text() == L"secre", "The maximum length did not hold back typing");
+        require(edit->options().passwordChar == L'\x25CF', "The password character was lost");
+        if (OpenClipboard(window.hwnd())) {
+            EmptyClipboard();
+            CloseClipboard();
+        }
+        edit->select(0, -1);
+        edit->copy();
+        edit->cut();
+        require(edit->text() == L"secre" && !IsClipboardFormatAvailable(CF_UNICODETEXT), "A password was copied or cut");
+        edit->set_max_length(7);
+        SendMessageW(window.hwnd(), WM_CHAR, L't', 1);
+        require(edit->text() == L"t", "Typing over the selection with a new limit");
+        edit->set_text(L"longer than the limit");
+        require(edit->text() == L"longer than the limit", "set_text was limited");
+    }
+    app.close();
+    return 0;
+}
+
 int editing(const testing::Options& options) {
     Application app{options.warp};
     {
@@ -412,6 +441,7 @@ int accessibility(const testing::Options& options) {
 int main(int argc, char** argv) {
     return testing::run(argc, argv,
                         {{"editing", editing},
+                         {"password", password},
                          {"cursor", cursor},
                          {"rendering", rendering},
                          {"clipboard", clipboard},

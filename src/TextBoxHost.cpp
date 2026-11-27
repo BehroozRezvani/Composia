@@ -337,6 +337,7 @@ HRESULT TextBox::Host::TxGetPropertyBits(DWORD mask, DWORD* bits) {
     DWORD flags = TXTBIT_D2DDWRITE | TXTBIT_HIDESELECTION | TXTBIT_SAVESELECTION | TXTBIT_DISABLEDRAG;
     if (box && box->options().multiline) { flags |= TXTBIT_WORDWRAP | TXTBIT_MULTILINE; }
     if (box && box->options().readOnly) { flags |= TXTBIT_READONLY; }
+    if (box && box->options().passwordChar) { flags |= TXTBIT_USEPASSWORD; }
     *bits = flags & mask;
     return S_OK;
 }

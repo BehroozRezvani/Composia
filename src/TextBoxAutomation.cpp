@@ -43,6 +43,17 @@ HRESULT TextBox::Host::GetPropertyOverrideValue(PROPERTYID property, VARIANT* ou
         out->bstrVal = SysAllocString(box->options().name.c_str());
         return out->bstrVal ? S_OK : E_OUTOFMEMORY;
     }
+    if (property == UIA_IsPasswordPropertyId) {
+        out->vt = VT_BOOL;
+        out->boolVal = box->options().passwordChar ? VARIANT_TRUE : VARIANT_FALSE;
+        return S_OK;
+    }
+    if (property == UIA_ValueValuePropertyId && box->options().passwordChar) {
+        // A password's value is not read out.
+        out->vt = VT_BSTR;
+        out->bstrVal = SysAllocString(L"");
+        return out->bstrVal ? S_OK : E_OUTOFMEMORY;
+    }
     if (property == UIA_HasKeyboardFocusPropertyId || property == UIA_IsEnabledPropertyId) {
         out->vt = VT_BOOL;
         out->boolVal = (property == UIA_IsEnabledPropertyId ? box->enabled() && box->host_window()->enabled()

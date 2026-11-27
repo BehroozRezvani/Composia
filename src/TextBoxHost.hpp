@@ -93,13 +93,14 @@ struct TextBox::Host final : ITextHost2,
         return S_OK;
     }
     HRESULT TxGetMaxLength(DWORD* value) override {
-        *value = INT_MAX - 1;
+        const auto limit = box ? box->options().maxLength : 0;
+        *value = limit > 0 ? static_cast<DWORD>(limit) : INT_MAX - 1;
         return S_OK;
     }
     HRESULT TxGetScrollBars(DWORD* value) override;
     HRESULT TxGetPasswordChar(TCHAR* value) override {
-        *value = 0;
-        return S_FALSE;
+        *value = box ? box->options().passwordChar : 0;
+        return *value ? S_OK : S_FALSE;
     }
     HRESULT TxGetAcceleratorPos(LONG* value) override {
         *value = -1;

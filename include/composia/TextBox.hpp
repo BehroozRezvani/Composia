@@ -27,6 +27,11 @@ public:
         COLORREF background{GetSysColor(COLOR_WINDOW)};
         COLORREF selectionColor{GetSysColor(COLOR_HIGHLIGHT)};
         COLORREF selectedTextColor{GetSysColor(COLOR_HIGHLIGHTTEXT)};
+        // A password field shows this character for each one typed, refuses copy and cut, and
+        // tells UI Automation it is a password, whose value it then keeps to itself. 0: plain text.
+        wchar_t passwordChar{};
+        // The most UTF-16 code units the user can enter; 0 for no limit. set_text is not limited.
+        long maxLength{};
     };
     struct Selection {
         long start{}, end{};
@@ -49,6 +54,8 @@ public:
     void cut();
     void paste();
     void set_read_only(bool);
+    // The most UTF-16 code units the user can enter from now on (Options::maxLength); 0 for none.
+    void set_max_length(long);
     // Whether undo() or redo() has something to do now.
     [[nodiscard]] bool can_undo() const;
     [[nodiscard]] bool can_redo() const;
