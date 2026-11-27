@@ -3,6 +3,8 @@
 #include <composia/Element.hpp>
 #include <composia/Native.hpp>
 #include <composia/Signal.hpp>
+#include <richedit.h>
+#include <textserv.h>
 #include <string>
 #include <string_view>
 
@@ -47,6 +49,19 @@ public:
     void cut();
     void paste();
     void set_read_only(bool);
+    // Whether undo() or redo() has something to do now.
+    [[nodiscard]] bool can_undo() const;
+    [[nodiscard]] bool can_redo() const;
+    // Changes the font, the colors and the padding (the name, multiline and read-only state stay
+    // as they are) and sizes the element for the new font. Throws std::invalid_argument for an
+    // invalid font or padding.
+    void set_style(const Options& style);
+    // A message straight to Rich Edit's text services, for what this class does not cover, such
+    // as EM_GETLINECOUNT or EM_SETLIMITTEXT. TextBox keeps the text mode, the event mask and the
+    // read-only state itself: change those through it, or it loses track of them.
+    LRESULT send(UINT message, WPARAM wparam = 0, LPARAM lparam = 0);
+    // Rich Edit's text services, under the same terms as send().
+    [[nodiscard]] ITextServices2* text_services() const noexcept;
     [[nodiscard]] const Options& options() const noexcept { return options_; }
     void set_painter(Painter);
     void draw_text(ScopedSurfaceDraw&); // Includes native selection and IME decorations.
@@ -57,6 +72,8 @@ public:
     // Visible selection rectangles in local DIPs, including wrapped and bidirectional runs.
     [[nodiscard]] std::vector<layout::Rect> selection_rectangles() const;
     Connection on_text_changed(std::function<void()> f) { return changed_.connect(std::move(f)); }
+    // Raised when the editor takes or loses the keyboard: once per change, after Rich Edit knows.
+    Connection on_focus(std::function<void(bool)> f) { return focusChanged_.connect(std::move(f)); }
 
 private:
     friend class ElementWindow;
@@ -72,6 +89,7 @@ private:
     Options options_;
     Painter painter_;
     Signal<> changed_;
+    Signal<bool> focusChanged_;
     wil::com_ptr<Host> host_;
 };
 

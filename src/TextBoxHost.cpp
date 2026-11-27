@@ -31,16 +31,28 @@ LONG rounded(float n) {
 }
 
 TextBox::Host::Host(TextBox& owner) : box(&owner) {
-    const auto& o = owner.options();
+    fill_format();
+    paragraph.cbSize = sizeof(paragraph);
+    paragraph.dwMask = PFM_ALIGNMENT;
+    paragraph.wAlignment = PFA_LEFT;
+}
+
+void TextBox::Host::fill_format() {
+    const auto& o = box->options();
+    format = {};
     format.cbSize = sizeof(format);
     format.dwMask = CFM_FACE | CFM_SIZE | CFM_COLOR | CFM_CHARSET;
     format.yHeight = rounded(o.fontSize * 15); // DIPs to twips
     format.crTextColor = o.foreground;
     format.bCharSet = DEFAULT_CHARSET;
     wcscpy_s(format.szFaceName, o.fontFamily.c_str());
-    paragraph.cbSize = sizeof(paragraph);
-    paragraph.dwMask = PFM_ALIGNMENT;
-    paragraph.wAlignment = PFA_LEFT;
+}
+
+void TextBox::Host::restyle() {
+    fill_format();
+    if (!engine) { return; }
+    THROW_IF_FAILED(engine->OnTxPropertyBitsChange(TXTBIT_CHARFORMATCHANGE | TXTBIT_VIEWINSETCHANGE,
+        TXTBIT_CHARFORMATCHANGE | TXTBIT_VIEWINSETCHANGE));
 }
 
 void TextBox::Host::initialize() {
@@ -135,12 +147,14 @@ void TextBox::Host::focus(bool value) {
         THROW_IF_FAILED(engine->OnTxUIActivate());
         active = true;
         send(WM_SETFOCUS);
+        if (box) { box->focusChanged_.emit(true); }
     } else {
         active = false;
         send(WM_KILLFOCUS);
         THROW_IF_FAILED(engine->OnTxUIDeactivate());
         TxSetCapture(FALSE);
         TxDestroyCaret();
+        if (box) { box->focusChanged_.emit(false); }
     }
     invalidate();
 }

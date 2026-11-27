@@ -31,6 +31,9 @@ struct TextBox::Host final : ITextHost2,
     void focus(bool);
     void invalidate(const RECT* = nullptr) noexcept;
     void blink(bool restart) noexcept;
+    // The options' font, colors and padding changed: Rich Edit reads them again.
+    void restyle();
+    void fill_format();
     HWND hwnd() const noexcept;
     RECT client() const noexcept;
 

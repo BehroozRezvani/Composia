@@ -16,22 +16,30 @@ D2D1_COLOR_F color(COLORREF c) {
 }
 }
 
-TextBox::TextBox(Options options, std::wstring_view initial, Painter painter)
-    : options_(std::move(options)), painter_(std::move(painter)) {
-    if (!std::isfinite(options_.fontSize) || options_.fontSize <= 0 || options_.fontSize > 1638 ||
-        !std::isfinite(options_.padding) || options_.padding < 0 || options_.padding > 32767 ||
-        options_.fontFamily.empty() || options_.fontFamily.size() >= LF_FACESIZE ||
-        options_.fontFamily.find(L'\0') != std::wstring::npos) {
+namespace {
+void check_style(const TextBox::Options& o) {
+    if (!std::isfinite(o.fontSize) || o.fontSize <= 0 || o.fontSize > 1638 ||
+        !std::isfinite(o.padding) || o.padding < 0 || o.padding > 32767 ||
+        o.fontFamily.empty() || o.fontFamily.size() >= LF_FACESIZE ||
+        o.fontFamily.find(L'\0') != std::wstring::npos) {
         throw std::invalid_argument("Invalid text box font or padding");
     }
+}
+layout::Size size_for(const TextBox::Options& o) {
+    return {180, (o.multiline ? 4.f : 1.f) * std::ceil(o.fontSize * 1.5f) + 2 * o.padding};
+}
+}
+
+TextBox::TextBox(Options options, std::wstring_view initial, Painter painter)
+    : options_(std::move(options)), painter_(std::move(painter)) {
+    check_style(options_);
     host_.attach(new Host(*this));
     auto rollback = wil::scope_exit([&] { host_->shutdown(); });
     host_->initialize();
     set_text(initial);
     set_focusable(true);
     set_cursor(Cursor::text);
-    set_preferred_size(
-        {180, (options_.multiline ? 4.f : 1.f) * std::ceil(options_.fontSize * 1.5f) + 2 * options_.padding});
+    set_preferred_size(size_for(options_));
     rollback.release();
 }
 
@@ -93,6 +101,29 @@ void TextBox::set_read_only(bool value) {
     THROW_IF_FAILED(host_->engine->OnTxPropertyBitsChange(TXTBIT_READONLY, value ? TXTBIT_READONLY : 0));
     invalidate();
 }
+bool TextBox::can_undo() const {
+    return !options_.readOnly && host_->send(EM_CANUNDO) != 0;
+}
+bool TextBox::can_redo() const {
+    return !options_.readOnly && host_->send(EM_CANREDO) != 0;
+}
+void TextBox::set_style(const Options& style) {
+    check_style(style);
+    options_.fontFamily = style.fontFamily;
+    options_.fontSize = style.fontSize;
+    options_.padding = style.padding;
+    options_.foreground = style.foreground;
+    options_.background = style.background;
+    options_.selectionColor = style.selectionColor;
+    options_.selectedTextColor = style.selectedTextColor;
+    host_->restyle();
+    set_preferred_size(size_for(options_));
+    invalidate();
+}
+LRESULT TextBox::send(UINT message, WPARAM wparam, LPARAM lparam) {
+    return host_->send(message, wparam, lparam);
+}
+ITextServices2* TextBox::text_services() const noexcept { return host_->engine.get(); }
 void TextBox::set_painter(Painter painter) {
     painter_ = std::move(painter);
     invalidate();

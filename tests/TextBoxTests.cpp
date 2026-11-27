@@ -1,6 +1,7 @@
 #include <composia/ElementWindow.hpp>
 #include <composia/ScopedSurfaceDraw.hpp>
 #include <composia/TextBox.hpp>
+#include <vector>
 #include "support/TestSupport.hpp"
 #include <UIAutomation.h>
 #include <msctf.h>
@@ -83,6 +84,11 @@ int editing(const testing::Options& options) {
         flush(window);
         window.focus();
         require(edit->focused(), "Editor did not take focus");
+        std::vector<bool> focusHeard;
+        auto focusWatch = edit->on_focus([&](bool value) { focusHeard.push_back(value); });
+        (void)window.elements().focus(nullptr);
+        (void)window.elements().focus(edit.get());
+        require(focusHeard == std::vector<bool>{false, true}, "The editor's focus changes were not raised once each");
         unsigned changes{};
         auto changed = edit->on_text_changed([&] { ++changes; });
         edit->select(0, -1);
@@ -90,6 +96,9 @@ int editing(const testing::Options& options) {
         edit->replace_selection(L"Word");
         require(edit->text() == L"Word" && edit->undo() && edit->text() == sample, "Undo lost Unicode text");
         require(edit->redo() && edit->text() == L"Word", "Redo failed");
+        require(edit->can_undo() && !edit->can_redo(), "can_undo or can_redo after an edit");
+        require(edit->send(EM_GETLINECOUNT) == 1, "A message straight to the text services");
+        require(edit->text_services() != nullptr, "No text services");
         SendMessageW(window.hwnd(), WM_UNICHAR, 0x1F600, 1);
         require(edit->text() == L"Word\U0001F600", "Supplementary keyboard input failed");
         SendMessageW(window.hwnd(), WM_KEYDOWN, VK_BACK, 1);
@@ -110,7 +119,22 @@ int editing(const testing::Options& options) {
         require(edit->text().ends_with(L"中漢") && !edit->undo(), "Read-only input changed document");
         edit->set_read_only(false);
         edit->set_text(L"replacement");
-        require(!edit->undo(), "Replacing the document retained undo history");
+        require(!edit->undo() && !edit->can_undo(), "Replacing the document retained undo history");
+        // A new style: the font, colors and padding change, and the element sizes for the font.
+        auto style = edit->options();
+        style.fontSize = 24;
+        style.padding = 10;
+        style.foreground = RGB(200, 0, 0);
+        edit->set_style(style);
+        CHARFORMAT2W format{};
+        format.cbSize = sizeof(format);
+        edit->send(EM_GETCHARFORMAT, SCF_DEFAULT, reinterpret_cast<LPARAM>(&format));
+        require(edit->options().fontSize == 24 && edit->options().multiline && format.yHeight == 24 * 15 && format.crTextColor == RGB(200, 0, 0),
+            "set_style did not reach Rich Edit or did not keep the rest");
+        bool threw = false;
+        try { style.fontSize = 0; edit->set_style(style); } catch (const std::invalid_argument&) { threw = true; }
+        require(threw && edit->options().fontSize == 24, "An invalid style was taken");
+        flush(window);
         edit->set_text(L"alpha beta");
         const auto mouse = MAKELPARAM(int(15 * window.scale()), int(12 * window.scale()));
         SendMessageW(window.hwnd(), WM_LBUTTONDOWN, MK_LBUTTON, mouse);
