@@ -141,6 +141,10 @@ change the API; each change is listed here.
 
 ### Fixed
 
+- A window could show a virtual surface's tiles (a list's rows) in place of its own content
+  after a partial repaint that followed a `VirtualSurface` update in the same uncommitted
+  batch, a Composition fault. `CompositionWindowTarget` now repaints whole surfaces until
+  the next commit; `GraphicsDevice::virtual_update_pending` reports when that applies.
 - A dropdown or menu no longer chooses a row that cannot be selected, such as a heading, when
   the keyboard or the pointer rests on it; the popup stays open.
 - A window letting go of its tree leaves the focus alone, so a hosted window that hides as it

@@ -146,7 +146,10 @@ void Application::close() {
 void Application::commit() {
     verify_thread();
     if (closing_ || closed_) { throw std::logic_error("Application is closing"); }
-    if (!updateDepth_) { controller_.Commit(); }
+    if (!updateDepth_) {
+        controller_.Commit();
+        graphics_->committed();
+    }
 }
 
 void Application::update(Window& root, const std::function<void()>& layout) {

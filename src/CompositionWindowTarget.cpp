@@ -239,8 +239,9 @@ bool CompositionWindowTarget::render(Window& window, const Painter& paint) {
         auto& graphics = application.graphics();
         std::optional<RECT> update;
         // Composition keeps the content outside an update, so a partial repaint is enough while
-        // the surface holds a complete frame from the current device.
-        if (requested && complete_ && generation_ == graphics.generation()) {
+        // the surface holds a complete frame from the current device, unless a virtual surface
+        // update awaits the same commit (see GraphicsDevice::virtual_update_pending).
+        if (requested && complete_ && generation_ == graphics.generation() && !graphics.virtual_update_pending()) {
             const RECT whole{0, 0, pixels.cx, pixels.cy};
             RECT area{};
             if (!IntersectRect(&area, &*requested, &whole)) { return; }

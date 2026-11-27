@@ -44,7 +44,8 @@ public:
     // and calls paint with the scope and the logical size in DIPs. Inside on_paint, when the
     // surface already holds a complete frame, only the area being repainted is updated: the
     // scope is clipped to it and ScopedSurfaceDraw::update_bounds() reports it. A resize, a DPI
-    // change, or a replaced graphics device repaints everything. Returns false without painting
+    // change, a replaced graphics device, or a VirtualSurface update not yet committed
+    // (GraphicsDevice::virtual_update_pending) repaints everything. Returns false without painting
     // when the client area is empty, the window is minimized, or no visible area needs painting.
     bool render(Window&, const Painter& paint);
     // A fill under the canvas and children, including newly exposed space during a resize.

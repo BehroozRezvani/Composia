@@ -23,6 +23,7 @@ VirtualSurface::VirtualSurface(const GraphicsDevice& graphics, SIZE pixels, LONG
 }
 
 void VirtualSurface::clear() {
+    graphics_.mark_virtual_update();
     surface_.Trim({});
     tiles_.clear();
     retained_ = {};
@@ -64,6 +65,7 @@ void VirtualSurface::update(RECT viewport, const Painter& paint) {
     const auto count = static_cast<std::uint64_t>(right - left) * static_cast<std::uint64_t>(bottom - top);
     THROW_HR_IF(HRESULT_FROM_WIN32(ERROR_NOT_ENOUGH_MEMORY), count > maximumTiles_);
     if (generation_ != graphics_.generation()) { clear(); }
+    graphics_.mark_virtual_update();
     const RECT region{left * tileSize_, top * tileSize_, std::min(size_.cx, right * tileSize_), std::min(size_.cy, bottom * tileSize_)};
     // Trim takes regions to retain. Trim before allocating the next viewport.
     const std::array regions{winrt::Windows::Graphics::RectInt32{region.left, region.top, region.right - region.left, region.bottom - region.top}};

@@ -7,6 +7,7 @@
 #include <composia/ScopedSurfaceDraw.hpp>
 #include <composia/ScreenCapture.hpp>
 #include <composia/SwapChainSurface.hpp>
+#include <composia/VirtualSurface.hpp>
 #include "support/TestSupport.hpp"
 #include <commctrl.h>
 #include <uxtheme.h>
@@ -413,6 +414,29 @@ void render(bool warp) {
         window.invalidate({10, 10, 10, 10});
         repaint();
         require(updates.size() == 6 && whole(updates.back()), "A surface from a replaced device was only partly repainted");
+        // Composition can show a virtual surface's tiles in place of a drawing surface's retained
+        // pixels when a partial update follows a virtual surface update in the same batch: until
+        // the commit, updates are whole.
+        {
+            composia::VirtualSurface tiles{app.graphics(), {64, 64}};
+            app.commit();
+            window.invalidate({10, 10, 10, 10});
+            repaint();
+            require(updates.size() == 7 && !whole(updates.back()), "A committed surface was not updated in part");
+            tiles.update({0, 0, 64, 64}, [](composia::ScopedSurfaceDraw&, const RECT&) {});
+            require(app.graphics().virtual_update_pending(), "A virtual surface update was not marked");
+            window.invalidate({10, 10, 10, 10});
+            repaint();
+            require(updates.size() == 8 && whole(updates.back()), "A partial update followed an uncommitted virtual surface update");
+            app.commit();
+            require(!app.graphics().virtual_update_pending(), "A commit left the virtual surface update marked");
+            window.invalidate({10, 10, 10, 10});
+            repaint();
+            require(updates.size() == 9 && !whole(updates.back()), "Updates stayed whole after the commit");
+            tiles.clear();
+            require(app.graphics().virtual_update_pending(), "Trimming a virtual surface was not marked");
+            app.commit();
+        }
         require(rejects(E_INVALIDARG, [&] { window.invalidate({0, 0, -1, 5}); }), "A negative invalidation size was accepted");
         window.paint = nullptr;
 
