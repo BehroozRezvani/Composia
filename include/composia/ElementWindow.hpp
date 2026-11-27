@@ -44,6 +44,10 @@ public:
     [[nodiscard]] HWND tooltip_hwnd() const noexcept { return tooltip_.get(); }
 
 protected:
+    // False keeps the window out of the keyboard focus, as a popup that leaves it with its owner
+    // does: presses neither focus the window nor an element in it, and focus_element refuses.
+    // Keys reach the tree only through the owner, which forwards them.
+    [[nodiscard]] virtual bool takes_focus() const noexcept { return true; }
     void on_resize() override;
     void on_paint() override;
     void on_focus(bool) override;

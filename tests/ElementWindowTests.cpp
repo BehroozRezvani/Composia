@@ -542,8 +542,51 @@ int tooltips(const testing::Options& options) {
 }
 }
 
+// A window that keeps out of the focus, as a popup that leaves it with its owner: presses reach
+// its elements but focus neither the window nor them.
+int focus_keeping(const testing::Options& options) {
+    Application app{options.warp};
+    {
+        struct Keeper final : ElementWindow {
+            using ElementWindow::ElementWindow;
+            bool takes_focus() const noexcept override { return false; }
+        };
+        auto mainRoot = std::make_shared<Element>(ElementLayout{Kind::stack});
+        auto field = std::make_shared<Tile>(0x203040);
+        field->set_preferred_size({100, 20});
+        field->set_focusable(true);
+        mainRoot->add(field);
+        ElementWindow main{app, L"Owner", 200, 120, mainRoot};
+        auto popupRoot = std::make_shared<Element>(ElementLayout{Kind::stack});
+        auto choice = std::make_shared<Tile>(0x406080);
+        choice->set_preferred_size({100, 20});
+        choice->set_focusable(true);
+        popupRoot->add(choice);
+        Window::Options options;
+        options.style = WS_POPUP;
+        options.extendedStyle = WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW;
+        options.owner = main.hwnd();
+        Keeper popup{app, L"Choices", 120, 60, popupRoot, options};
+        main.show(SW_SHOWNORMAL);
+        popup.show(SW_SHOWNOACTIVATE);
+        flush(main);
+        flush(popup);
+        require(main.focus_element(*field), "The owner did not take the focus");
+        const auto at = [&](float x, float y) {
+            return MAKELPARAM(static_cast<int>(x * popup.scale()), static_cast<int>(y * popup.scale()));
+        };
+        SendMessageW(popup.hwnd(), WM_LBUTTONDOWN, MK_LBUTTON, at(10, 10));
+        SendMessageW(popup.hwnd(), WM_LBUTTONUP, 0, at(10, 10));
+        require(choice->lastPress.x == 10 && !choice->focused() && !popup.elements().focused(), "A press focused an element of the popup");
+        require(GetFocus() == main.hwnd() && field->focused(), "A press in the popup took the owner's focus");
+        require(!popup.focus_element(*choice) && !choice->focused(), "focus_element focused a window that keeps out of the focus");
+    }
+    app.close();
+    return 0;
+}
+
 int main(int argc, char** argv) {
-    return testing::run(argc, argv, {{"pixels", pixels}, {"navigation", navigation}, {"hosted", hosted},
+    return testing::run(argc, argv, {{"pixels", pixels}, {"navigation", navigation}, {"hosted", hosted}, {"focus-keeping", focus_keeping},
         {"tooltips", tooltips}, {"visuals", visuals}, {"snapshot", snapshot}, {"hosted-teardown", hosted_teardown},
         {"focus-cues", focus_cues}});
 }

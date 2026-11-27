@@ -147,7 +147,7 @@ void ElementWindow::refresh_tooltip() {
 }
 
 bool ElementWindow::focus_element(Element& element) {
-    if (!hwnd() || !enabled() || !tree_.focus(&element)) { return false; }
+    if (!hwnd() || !enabled() || !takes_focus() || !tree_.focus(&element)) { return false; }
     if (auto* hosted = dynamic_cast<HostedWindow*>(&element)) {
         tree_.place_windows();
         return hosted->take_focus();
@@ -340,7 +340,8 @@ std::optional<LRESULT> ElementWindow::on_message(UINT message, WPARAM wparam, LP
     if (event.kind == Kind::down) { hide_tooltip(); }
     // A press takes the keyboard from a window inside this one, unless it lands on an element that
     // keeps out of the focus a press gives.
-    if (event.kind == Kind::down && event.button == Button::left && !focused() && !tree_.press_keeps_focus(event.position)) {
+    tree_.pressFocus_ = takes_focus();
+    if (event.kind == Kind::down && event.button == Button::left && tree_.pressFocus_ && !focused() && !tree_.press_keeps_focus(event.position)) {
         pointerFocus_ = true;
         const auto reset = wil::scope_exit([&] { pointerFocus_ = false; });
         focus();

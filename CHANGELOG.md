@@ -89,6 +89,9 @@ change the API; each change is listed here.
   expose ExpandCollapse nor open or fold with Left and Right.
 - List rows report their place among the list's rows, or among their siblings in a tree, with
   separators left out, as UI Automation's PositionInSet and SizeOfSet.
+- `ElementWindow::takes_focus`, overridden to return false, keeps a window out of the keyboard
+  focus, as a popup that leaves it with its owner: presses focus neither the window nor its
+  elements, and `focus_element` refuses.
 - `ElementLayout::crossAlign` and `mainAlign` align a stack's or flex container's children
   across and along its axis (`layout::Align`), and `Element::set_align` aligns one child.
   `ElementLayout` compares with `==`.

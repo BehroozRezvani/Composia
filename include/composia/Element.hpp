@@ -238,6 +238,7 @@ private:
     std::vector<Recipient> route_;
     Element* focused_{};
     Element* hovered_{};
+    bool pressFocus_{true};   // A left press focuses the focusable element under it.
     Element* captured_{};
     std::optional<layout::Point> pointerAt_;   // Where the pointer rests over the viewport, if it does.
     bool updatingLayout_{};

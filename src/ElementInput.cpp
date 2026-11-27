@@ -49,7 +49,7 @@ bool ElementTree::pointer(PointerEvent event) {
     update_hover(hit);
     auto* target = captured_ && event.kind != PointerEvent::Kind::wheel ? captured_ : hit;
     if (!target || !target->enabled()) { return false; }
-    if (event.kind == PointerEvent::Kind::down && event.button == PointerEvent::Button::left) {
+    if (event.kind == PointerEvent::Kind::down && event.button == PointerEvent::Button::left && pressFocus_) {
         const auto keepTarget = reference(target);
         for (auto* p = target; p; p = p->parent_) {
             if (!p->focusable_) { continue; }
