@@ -226,6 +226,9 @@ struct Items {
     // Optional shortcut of each row, such as L"Ctrl+R": UI Automation's AcceleratorKey. A row
     // renderer draws it, conventionally at the right, from items().accelerator.
     std::function<std::wstring(std::size_t)> accelerator{};
+    // Optional: whether choosing a row in a menu or dropdown leaves the popup open, as an option
+    // that toggles in place does. A list closes nothing itself.
+    std::function<bool(std::size_t)> staysOpen{};
     static Items strings(std::vector<std::wstring>);
 };
 

@@ -82,6 +82,8 @@ change the API; each change is listed here.
   and `State::checked` for renderers. The list reads it again after each choice and at `refresh`.
 - `Items::accelerator` gives list rows a shortcut, UI Automation's AcceleratorKey, for the row
   renderer to draw.
+- `Items::staysOpen` keeps a menu or dropdown open when the row is chosen, for options that
+  toggle in place.
 - List rows report their place among the list's rows, or among their siblings in a tree, with
   separators left out, as UI Automation's PositionInSet and SizeOfSet.
 - `ElementLayout::crossAlign` and `mainAlign` align a stack's or flex container's children

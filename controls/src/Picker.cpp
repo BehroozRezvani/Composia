@@ -98,6 +98,11 @@ Picker::Picker(std::wstring name, Items items, bool menu, float rowHeight, float
     activation_ = list_->on_activate([this](std::size_t index) {
         // The keyboard can rest on a heading, but choosing it does nothing: the popup stays open.
         if (!list_->selectable(index)) { return; }
+        // A row that toggles in place, such as a menu's option, leaves the popup open.
+        if (const auto& items = list_->items(); items.staysOpen && items.staysOpen(index)) {
+            commit(index, true);
+            return;
+        }
         close();
         // A menu's choice is an action, so the same row again counts; a dropdown's is a value.
         commit(index, menu_);

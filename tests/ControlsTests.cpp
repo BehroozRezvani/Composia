@@ -638,9 +638,46 @@ int checks(const testing::Options&) {
     return 0;
 }
 
+// A menu option that toggles in place leaves the menu open, showing its new state.
+int stays_open(const testing::Options&) {
+    bool wrap{};
+    auto items = ui::Items::strings({L"Reply", L"Wrap lines", L"Delete"});
+    items.checked = [&](std::size_t i) { return i == 1 ? std::optional<bool>{wrap} : std::nullopt; };
+    items.staysOpen = [](std::size_t i) { return i == 1; };
+    auto content = std::make_shared<Element>(ElementLayout{ElementLayout::Kind::stack});
+    auto menu = std::make_shared<ui::Menu>(L"View", items, 20, 80);
+    content->add(menu);
+    auto host = std::make_shared<ui::PopupHost>(content);
+    ElementTree tree(host);
+    tree.set_viewport({180, 200});
+    std::vector<std::size_t> chosen;
+    auto watch = menu->on_selection([&](ui::List::Index i) {
+        if (!i) { return; }
+        chosen.push_back(*i);
+        if (*i == 1) { wrap = !wrap; }
+    });
+    const auto toggled = [&] {
+        for (const auto& row : menu->popup().children().front()->children().front()->children()) {
+            if (row->accessibility()->name == L"Wrap lines") { return row->accessibility()->toggle && row->accessibility()->toggle->on; }
+        }
+        return false;
+    };
+    require(menu->open(), "The menu did not open");
+    tree.update_layout();
+    tree.key({VK_DOWN, true});
+    tree.key({VK_RETURN, true});
+    require(menu->expanded() && wrap && toggled(), "Choosing an option closed the menu or did not show its state");
+    tree.key({VK_RETURN, true});
+    require(menu->expanded() && !wrap && !toggled() && chosen == std::vector<std::size_t>{1, 1}, "Choosing the option again did not toggle it back");
+    tree.key({VK_DOWN, true});
+    tree.key({VK_RETURN, true});
+    require(!menu->expanded() && chosen.back() == 2, "Choosing a command left the menu open");
+    return 0;
+}
+
 int main(int argc, char** argv) {
     return testing::run(argc, argv, {{"behaviour", behaviour}, {"virtualization", virtualization}, {"popup", popup}, {"choices", choices},
-        {"separators", separators}, {"positions", positions}, {"checks", checks},
+        {"separators", separators}, {"positions", positions}, {"checks", checks}, {"stays-open", stays_open},
         {"style", style}, {"scrollbar", scrollbar}, {"context", context}, {"heights", heights},
         {"current", current}, {"tree", tree}, {"replace", replace},
         {"content", content}});
