@@ -32,6 +32,11 @@ struct Insets {
 
 enum class Axis { horizontal, vertical };
 
+// Where children sit in a stack or flex container. Across its axis: stretched to fill it, or at
+// their measured breadth at its start, centre or end. Along it: where the children sit as a
+// group when they leave room, where stretch is the same as start.
+enum class Align { stretch, start, center, end };
+
 // Places items one after another along the axis inside bounds, each as long as requested and as
 // wide as bounds across the axis, with gap between them. Items that do not fit are shortened, down
 // to zero length at the far edge. Throws std::invalid_argument for non-finite or negative sizes.

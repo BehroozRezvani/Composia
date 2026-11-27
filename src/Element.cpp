@@ -131,6 +131,14 @@ void Element::set_flex_grow(float value) {
     if (parent_) { parent_->mark_layout(true); }
 }
 
+void Element::set_align(std::optional<layout::Align> value) {
+    check_mutation();
+    if (align_ == value) { return; }
+    align_ = value;
+    // Alignment moves the element inside the slot its parent gives it, at the same measurements.
+    if (parent_) { parent_->mark_layout(false); }
+}
+
 void Element::set_offset(Point value) {
     check_mutation();
     if (!std::isfinite(value.x) || !std::isfinite(value.y)) { throw std::invalid_argument("Expected a finite offset"); }

@@ -444,7 +444,68 @@ int hover(const testing::Options&) {
     return 0;
 }
 
+// Stack and flex children sit across the axis as their parent or they ask, and leftover room goes
+// where the parent's main alignment puts it.
+int alignment(const testing::Options&) {
+    using layout::Align;
+    auto column = std::make_shared<Element>(ElementLayout{Kind::stack, Axis::vertical, 0});
+    auto stretched = leaf(30, 10), start = leaf(30, 10), centred = leaf(30, 10), ended = leaf(30, 10), wide = leaf(300, 10);
+    start->set_align(Align::start);
+    centred->set_align(Align::center);
+    ended->set_align(Align::end);
+    wide->set_align(Align::center);
+    for (const auto& child : {stretched, start, centred, ended, wide}) { column->add(child); }
+    ElementTree tree(column);
+    tree.set_viewport({100, 100});
+    tree.update_layout();
+    require(same(stretched->bounds(), {0, 0, 100, 10}), "A child stretched across the column by default");
+    require(same(start->bounds(), {0, 10, 30, 10}), "A start-aligned child kept its breadth at the start");
+    require(same(centred->bounds(), {35, 20, 30, 10}), "A centred child sat in the middle");
+    require(same(ended->bounds(), {70, 30, 30, 10}), "An end-aligned child sat at the end");
+    require(same(wide->bounds(), {0, 40, 100, 10}), "A child broader than the column was not clamped to it");
+    require(tree.hit_test({10, 25}) != centred.get() && tree.hit_test({40, 25}) == centred.get(), "Hit testing ignored the alignment");
+
+    // The parent's alignment applies to every child without one of its own, and changing either
+    // arranges them again.
+    auto plain = leaf(30, 10);
+    column->add(plain);
+    column->set_layout(ElementLayout{.kind = Kind::stack, .crossAlign = Align::end});
+    tree.update_layout();
+    require(same(stretched->bounds(), {70, 0, 30, 10}) && same(plain->bounds(), {70, 50, 30, 10}), "The column's alignment was ignored");
+    require(same(start->bounds(), {0, 10, 30, 10}), "A child's own alignment did not win over the column's");
+    start->set_align(std::nullopt);
+    tree.update_layout();
+    require(same(start->bounds(), {70, 10, 30, 10}), "Clearing a child's alignment did not follow the column");
+    start->set_align(Align::stretch);
+    tree.update_layout();
+    require(same(start->bounds(), {0, 10, 100, 10}), "A stretched child in an end-aligned column did not fill it");
+
+    // A row centres children across its height, and leftover length goes where main alignment says.
+    auto row = std::make_shared<Element>(ElementLayout{.kind = Kind::flex, .axis = Axis::horizontal, .gap = 10,
+        .crossAlign = Align::center, .mainAlign = Align::center});
+    auto a = leaf(20, 10), b = leaf(30, 40);
+    row->add(a);
+    row->add(b);
+    ElementTree rowTree(row);
+    rowTree.set_viewport({100, 40});
+    rowTree.update_layout();
+    require(same(a->bounds(), {20, 15, 20, 10}) && same(b->bounds(), {50, 0, 30, 40}), "A centred row misplaced its children");
+    row->set_layout(ElementLayout{.kind = Kind::flex, .axis = Axis::horizontal, .gap = 10, .crossAlign = Align::end, .mainAlign = Align::end});
+    rowTree.update_layout();
+    require(same(a->bounds(), {40, 30, 20, 10}) && same(b->bounds(), {70, 0, 30, 40}), "An end-aligned row misplaced its children");
+    // A flex weight takes the room, so main alignment has none to place.
+    a->set_flex_grow(1);
+    rowTree.update_layout();
+    require(same(a->bounds(), {0, 30, 60, 10}) && same(b->bounds(), {70, 0, 30, 40}), "Main alignment moved a row whose weights took the room");
+    // Children that overflow start at the start.
+    a->set_flex_grow(0);
+    rowTree.set_viewport({40, 40});
+    rowTree.update_layout();
+    require(a->bounds().x == 0, "Overflowing children did not start at the start");
+    return 0;
+}
+
 int main(int argc, char** argv) {
-    return testing::run(argc, argv, {{"layout", arrangement}, {"routing", routing}, {"cursors", cursors}, {"layout-hooks", layout_hooks}, {"damage", damage},
+    return testing::run(argc, argv, {{"layout", arrangement}, {"alignment", alignment}, {"routing", routing}, {"cursors", cursors}, {"layout-hooks", layout_hooks}, {"damage", damage},
         {"context-menu", context_menu}, {"hover", hover}});
 }

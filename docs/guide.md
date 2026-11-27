@@ -207,8 +207,8 @@ unbounded measurement axis is positive infinity. Return finite, nonnegative dime
 | --- | --- |
 | Overlay (default) | Each child fills the parent. Higher z indices paint later. Ties follow insertion order. |
 | Canvas | The canvas supplies its intrinsic extent. Children keep their measured size and use their offsets as coordinates. |
-| Stack | Children take their measured length and stretch across the other axis. Overflowing lengths shorten at the far edge. |
-| Flex | A single row or column. Extra space follows each child's flex-grow weight. A deficit shrinks children in proportion to their measured lengths. |
+| Stack | Children take their measured length and, by default, stretch across the other axis. Overflowing lengths shorten at the far edge. |
+| Flex | A single row or column. Extra space follows each child's flex-grow weight. A deficit shrinks children in proportion to their measured lengths. Children stretch across the axis by default. |
 | Grid | Equal-width columns in insertion order. Each row takes the height of its tallest child. The gap applies in both directions. |
 | Scroll | One child measured without a limit on the scrolling axis. The viewport clips its content and clamps the offset. Nest scroll containers for two axes. |
 
@@ -225,6 +225,14 @@ tooltip of its own, for the system's hover time, and below the element when keyb
 reaches it. A press, a key, the wheel, or the pointer leaving hides it, and it shows again
 only after the pointer or focus moves on. The text is also the element's UI Automation help
 text when its accessibility description has none, so icon-only controls are described.
+
+Stack and flex containers align their children. `crossAlign` places them across the axis:
+`stretch` (the default) fills it, while `start`, `center` and `end` keep each child at its
+measured breadth there, at most the container's. `set_align` on a child overrides its
+parent's `crossAlign` for that child, as a button that keeps its own width in a column does.
+`mainAlign` places the children as a group along the axis when they leave room and no flex
+weight takes it: at the `start` (the default), in the `center`, or at the `end`. Alignment
+moves children within their measurements, so changing it arranges again without measuring.
 
 Every container insets its children by its `padding` (`layout::Insets`, or `Insets::all(n)`
 for the same space on each edge). The padding adds to the container's intrinsic size, so a

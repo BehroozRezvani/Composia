@@ -35,8 +35,16 @@ void Element::set_layout(ElementLayout value) {
     if (value.kind == ElementLayout::Kind::scroll && children_.size() > 1) {
         throw std::invalid_argument("A scroll element accepts one child");
     }
-    if (layout_.kind == value.kind && layout_.gap == value.gap && layout_.axis == value.axis &&
-        layout_.columns == value.columns && layout_.viewportLength == value.viewportLength && layout_.padding == value.padding) { return; }
+    if (layout_ == value) { return; }
+    auto aligned = layout_;
+    aligned.crossAlign = value.crossAlign;
+    aligned.mainAlign = value.mainAlign;
+    if (aligned == value) {
+        // Alignment moves children within the same measurements.
+        layout_ = value;
+        mark_layout(false);
+        return;
+    }
     layout_ = value;
     orderDirty_ = true;
     scrollOffset_ = scrollLimit_ = 0;
@@ -151,8 +159,16 @@ Size Element::layout_children(Size available, bool arranging, layout::Point orig
         return vertical ? Size{breadth, length} : Size{length, breadth};
     };
     const auto place = [&](Element& child, float start, float length) {
-        const auto s = size(length, cross(available));
-        child.arrange({origin.x + (vertical ? 0.0f : start), origin.y + (vertical ? start : 0.0f), s.width, s.height});
+        // A scroll child fills the viewport across; a stack or flex child follows its alignment.
+        const float room = cross(available);
+        float breadth = room, across = 0;
+        const auto align = kind == scroll ? layout::Align::stretch : child.align_.value_or(layout_.crossAlign);
+        if (align != layout::Align::stretch) {
+            breadth = std::min(room, cross(child.desired_));
+            across = align == layout::Align::start ? 0.0f : align == layout::Align::center ? (room - breadth) / 2 : room - breadth;
+        }
+        const auto s = size(length, breadth);
+        child.arrange({origin.x + (vertical ? across : start), origin.y + (vertical ? start : across), s.width, s.height});
     };
     const auto intrinsic = size(unbounded, cross(available));
     if (kind == scroll) {
@@ -183,6 +199,11 @@ Size Element::layout_children(Size available, bool arranging, layout::Point orig
     const double room = std::max(0.0, static_cast<double>(main(available)) - gaps);
     const double free = room - bases;
     float start{};
+    // Room the children leave (no flex weight takes it) goes before them, around them, or after them.
+    if (arranging && free > 0 && std::isfinite(free) && !(kind == flex && weights > 0)) {
+        if (layout_.mainAlign == layout::Align::center) { start = static_cast<float>(free / 2); }
+        else if (layout_.mainAlign == layout::Align::end) { start = static_cast<float>(free); }
+    }
     if (arranging || (kind == flex && std::isfinite(room))) {
         breadth = 0;
         for (auto& child : children_) {

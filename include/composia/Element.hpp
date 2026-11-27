@@ -29,6 +29,9 @@ struct ElementLayout {
     std::size_t columns{1};                   // Equal width, row-major grid.
     std::optional<float> viewportLength{};    // Intrinsic length of a scroll viewport.
     layout::Insets padding{};                 // Space between the element's edges and its children.
+    layout::Align crossAlign{layout::Align::stretch}; // Stack and flex: children across the axis.
+    layout::Align mainAlign{layout::Align::start};    // Stack and flex: the children along the axis, with room left.
+    bool operator==(const ElementLayout&) const = default;
 };
 
 // A UI-thread element. A parent owns its children. Siblings lay out and take focus in
@@ -49,6 +52,10 @@ public:
     void set_layout(ElementLayout);
     void set_preferred_size(layout::Size);     // Intrinsic size, before constraints and children.
     void set_flex_grow(float weight);
+    // Where the element sits across its stack or flex parent's axis, instead of the parent's
+    // crossAlign; nullopt (the default) follows the parent.
+    void set_align(std::optional<layout::Align>);
+    [[nodiscard]] std::optional<layout::Align> align() const noexcept { return align_; }
     void set_offset(layout::Point);            // Translation after layout, in parent DIPs.
     void set_z_index(int);
     void set_focusable(bool);
@@ -167,6 +174,7 @@ private:
     bool measureDirty_{true}, arrangeDirty_{true}, orderDirty_{true}, orderedBands_{}, focusable_{}, enabled_{true}, detaching_{};
     bool focusOnPress_{true};
     std::optional<Cursor> cursor_;
+    std::optional<layout::Align> align_;
     bool hostsWindow_{}, hostsVisual_{};
 };
 
