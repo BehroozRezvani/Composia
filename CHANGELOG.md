@@ -85,7 +85,8 @@ change the API; each change is listed here.
 - `Items::staysOpen` keeps a menu or dropdown open when the row is chosen, for options that
   toggle in place.
 - `ListRole::menu` makes a `List` a Menu of MenuItems to UI Automation, for menus an application
-  shows itself; `List::role` reports it. A menu's rows do not expose ExpandCollapse.
+  shows itself; `List::role` reports it. One click chooses a menu's row, and its rows do not
+  expose ExpandCollapse.
 - List rows report their place among the list's rows, or among their siblings in a tree, with
   separators left out, as UI Automation's PositionInSet and SizeOfSet.
 - `ElementLayout::crossAlign` and `mainAlign` align a stack's or flex container's children

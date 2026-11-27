@@ -692,6 +692,21 @@ int roles(const testing::Options&) {
         return row->accessibility()->controlType == UIA_MenuItemControlTypeId && !row->accessibility()->expansion;
     }), "A menu list's rows were not plain MenuItems");
     require(rows[2]->accessibility()->level == 2, "A menu list's rows lost their levels");
+    // One click chooses in a menu; a list takes two.
+    std::vector<std::size_t> chosen;
+    auto onChosen = menu->on_activate([&](std::size_t i) { chosen.push_back(i); });
+    tree.pointer({PointerEvent::Kind::down, {8, 40}, PointerEvent::Button::left});
+    tree.pointer({PointerEvent::Kind::up, {8, 40}, PointerEvent::Button::left});
+    require(chosen == std::vector<std::size_t>{1} && menu->selected() == 1, "One click did not choose a menu row");
+    auto list = std::make_shared<ui::List>(L"Folders", ui::Items::strings({L"Inbox", L"Sent"}), 32, 120);
+    std::size_t opened{};
+    auto onOpened = list->on_activate([&](std::size_t) { ++opened; });
+    ElementTree listTree(list);
+    listTree.set_viewport({160, 120});
+    listTree.update_layout();
+    listTree.pointer({PointerEvent::Kind::down, {8, 40}, PointerEvent::Button::left});
+    listTree.pointer({PointerEvent::Kind::up, {8, 40}, PointerEvent::Button::left});
+    require(!opened && list->selected() == 1, "One click activated a list row"); 
     auto plain = std::make_shared<ui::List>(L"Folders", items);
     require(plain->role() == ui::ListRole::list && plain->accessibility()->controlType == UIA_TreeControlTypeId,
         "A list with levels was not a Tree");

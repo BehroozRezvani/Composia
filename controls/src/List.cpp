@@ -63,7 +63,8 @@ public:
     }
     void activate() override {
         if (separator) { return; }
-        choose(doubleClick || (owner && owner->popupFocus_));
+        // One click chooses in a menu, or in a picker's popup; elsewhere it takes two.
+        choose(doubleClick || (owner && (owner->menu_ || owner->popupFocus_)));
     }
     bool on_pointer(const PointerEvent& e) override {
         // Presses on a separator do nothing; the wheel goes on to the list.
