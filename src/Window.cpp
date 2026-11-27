@@ -69,14 +69,31 @@ NotificationHandler* notification_handler(HWND parent, HWND control) noexcept {
 }
 }
 
+namespace {
+Window::Options with_content(Window::Content content) {
+    Window::Options options;
+    options.content = content;
+    return options;
+}
+Window::Options with_extended_style(DWORD extendedStyle) {
+    Window::Options options;
+    options.extendedStyle = extendedStyle;
+    return options;
+}
+}
+
 Window::Window(Application& application, std::wstring_view title, int widthDip, int heightDip, Content content, HWND parent)
-    : Window(application, title, widthDip, heightDip, parent, content == Content::composition ? WS_EX_NOREDIRECTIONBITMAP : 0) {}
+    : Window(application, title, widthDip, heightDip, with_content(content), parent) {}
 
 Window::Window(Application& application, std::wstring_view title, int widthDip, int heightDip, HWND parent, DWORD extendedStyle)
-    : Window(application, title, widthDip, heightDip, parent, extendedStyle, false) {}
+    : Window(application, title, widthDip, heightDip, parent, with_extended_style(extendedStyle), false) {}
 
-Window::Window(Application& application, std::wstring_view title, int widthDip, int heightDip, HWND parent, DWORD extendedStyle, bool doubleClicks)
-    : application_(application), topLevel_(parent == nullptr), unredirected_((extendedStyle & WS_EX_NOREDIRECTIONBITMAP) != 0) {
+Window::Window(Application& application, std::wstring_view title, int widthDip, int heightDip, const Options& options, HWND parent)
+    : Window(application, title, widthDip, heightDip, parent, options, false) {}
+
+Window::Window(Application& application, std::wstring_view title, int widthDip, int heightDip, HWND parent, const Options& options, bool doubleClicks)
+    : application_(application), topLevel_(parent == nullptr),
+      unredirected_(options.content == Content::composition || (options.extendedStyle & WS_EX_NOREDIRECTIONBITMAP) != 0) {
     application_.verify_thread();
     const auto instance = GetModuleHandleW(nullptr);
     WNDCLASSEXW wc{};
@@ -90,16 +107,17 @@ Window::Window(Application& application, std::wstring_view title, int widthDip, 
         THROW_LAST_ERROR_IF(GetLastError() != ERROR_CLASS_ALREADY_EXISTS);
     }
 
-    const auto initialDpi = parent ? GetDpiForWindow(parent) : GetDpiForSystem();
-    const DWORD style = parent ? WS_CHILD | WS_TABSTOP | WS_CLIPSIBLINGS | WS_VISIBLE
-                               : WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN;
-    extendedStyle |= parent ? 0 : WS_EX_CONTROLPARENT;
+    const auto initialDpi = parent ? GetDpiForWindow(parent) : options.owner ? GetDpiForWindow(options.owner) : GetDpiForSystem();
+    DWORD style = options.style.value_or(parent ? WS_CHILD | WS_TABSTOP | WS_CLIPSIBLINGS | WS_VISIBLE
+                                                : WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN);
+    if (parent) { style = (style | WS_CHILD) & ~WS_POPUP; }
+    DWORD extendedStyle = options.extendedStyle | (parent ? 0 : WS_EX_CONTROLPARENT) | (unredirected_ ? WS_EX_NOREDIRECTIONBITMAP : 0);
     RECT bounds{0, 0, MulDiv(widthDip, initialDpi, 96), MulDiv(heightDip, initialDpi, 96)};
     THROW_IF_WIN32_BOOL_FALSE(AdjustWindowRectExForDpi(&bounds, style, FALSE, extendedStyle, initialDpi));
     const std::wstring ownedTitle{title};
     auto handle = CreateWindowExW(extendedStyle, wc.lpszClassName, ownedTitle.c_str(), style,
         parent ? 0 : CW_USEDEFAULT, parent ? 0 : CW_USEDEFAULT, bounds.right - bounds.left, bounds.bottom - bounds.top,
-        parent, nullptr, instance, this);
+        parent ? parent : options.owner, nullptr, instance, this);
     hwnd_.reset(handle);
     rethrow_callback_error();
     THROW_LAST_ERROR_IF_NULL(handle);
@@ -154,6 +172,23 @@ void Window::invalidate(layout::Rect bounds) {
         pixel(std::ceil((static_cast<double>(bounds.y) + bounds.height) * factor))};
     THROW_IF_WIN32_BOOL_FALSE(InvalidateRect(handle, &area, FALSE));
     paintPending_ = true;
+}
+
+void Window::center_on(HWND other) {
+    application_.verify_thread();
+    if (!hwnd_ || !topLevel_ || !other) { return; }
+    RECT self{}, around{};
+    THROW_IF_WIN32_BOOL_FALSE(GetWindowRect(hwnd_.get(), &self));
+    THROW_IF_WIN32_BOOL_FALSE(GetWindowRect(other, &around));
+    MONITORINFO monitor{};
+    monitor.cbSize = sizeof(monitor);
+    THROW_IF_WIN32_BOOL_FALSE(GetMonitorInfoW(MonitorFromWindow(other, MONITOR_DEFAULTTONEAREST), &monitor));
+    const auto w = self.right - self.left, h = self.bottom - self.top;
+    const auto& work = monitor.rcWork;
+    const auto x = std::clamp(around.left + (around.right - around.left - w) / 2, work.left, std::max(work.left, work.right - w));
+    const auto y = std::clamp(around.top + (around.bottom - around.top - h) / 2, work.top, std::max(work.top, work.bottom - h));
+    THROW_IF_WIN32_BOOL_FALSE(SetWindowPos(hwnd_.get(), nullptr, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE));
+    rethrow_callback_error();
 }
 
 void Window::set_bounds(layout::Rect bounds) { detail::place(require_hwnd(), bounds); }

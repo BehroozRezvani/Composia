@@ -59,6 +59,12 @@ windows are tab stops. Derive from it and override the hooks you need: `on_paint
 `on_message` for any raw message. `on_message` runs first; returning a result stops further
 processing.
 
+`Window::Options` gives a window its styles, extended styles and owner at creation, which a
+dialog or a popup needs: Windows takes an owner and `WS_EX_NOREDIRECTIONBITMAP` only then, and
+changing styles later redraws the frame. `center_on(owner)` places a dialog over its owner, and
+a `ModalScope` disables the owner for as long as the dialog is open, as a modal dialog does,
+without a nested message loop.
+
 The window tracks the state every control needs, before `on_message` sees the message,
 so an override can handle a raw message and still read the state:
 

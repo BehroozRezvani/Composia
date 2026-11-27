@@ -9,6 +9,7 @@
 #include <memory>
 #include <optional>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 struct IRawElementProviderSimple;
@@ -38,11 +39,26 @@ protected:
 class Window {
 public:
     enum class Content { native, composition };
+    // How a window is made beyond its size, given at creation: Windows takes some of it only then
+    // (an owner, WS_EX_NOREDIRECTIONBITMAP), and a change later redraws the frame.
+    struct Options {
+        // Replaces the default styles: WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN for a top-level window
+        // (WS_POPUP for one without a frame, without the sizing and minimize styles for a dialog),
+        // WS_CHILD | WS_TABSTOP | WS_CLIPSIBLINGS | WS_VISIBLE for a child, which keeps WS_CHILD.
+        std::optional<DWORD> style;
+        // Added to what the window needs: WS_EX_CONTROLPARENT for a top-level window, and
+        // WS_EX_NOREDIRECTIONBITMAP for composition content.
+        DWORD extendedStyle{};
+        // A top-level window's owner, which it stays above and is minimized and destroyed with.
+        HWND owner{};
+        Content content{Content::native};
+    };
     // Composition windows get their required redirection style at creation. Use a shared
     // CompositionWindowTarget to host resizable panes; native controls keep their own HWNDs.
     Window(Application&, std::wstring_view title, int widthDip, int heightDip, Content, HWND parent = nullptr);
     // Extra styles are applied at creation; some, such as WS_EX_NOREDIRECTIONBITMAP, cannot be added later.
     Window(Application&, std::wstring_view title, int widthDip, int heightDip, HWND parent = nullptr, DWORD extendedStyle = 0);
+    Window(Application&, std::wstring_view title, int widthDip, int heightDip, const Options&, HWND parent = nullptr);
     virtual ~Window();
     Window(const Window&) = delete;
     Window& operator=(const Window&) = delete;
@@ -53,6 +69,9 @@ public:
     void invalidate();
     void invalidate(layout::Rect);
     void set_bounds(layout::Rect);
+    // Moves a top-level window to the middle of another (its owner, say), kept on that window's
+    // monitor's work area, at its current size.
+    void center_on(HWND other);
     void rethrow_callback_error();
     [[nodiscard]] HWND hwnd() const noexcept { return hwnd_.get(); }
     [[nodiscard]] UINT dpi() const noexcept;
@@ -127,7 +146,7 @@ public:
     void set_dark_title_bar(bool dark);
 
 protected:
-    Window(Application&, std::wstring_view, int widthDip, int heightDip, HWND parent, DWORD extendedStyle, bool doubleClicks);
+    Window(Application&, std::wstring_view, int widthDip, int heightDip, HWND parent, const Options&, bool doubleClicks);
     [[nodiscard]] HWND require_hwnd() const;
     virtual void on_graphics_recreated() {}
     // Runs when the system appearance changes (see Application::appearance), before the window
@@ -171,6 +190,38 @@ private:
     Signal<> captureLost_, destroying_;
     struct KeyPreview { std::shared_ptr<bool> active; std::function<bool(const KeyEvent&)> handler; };
     std::vector<std::shared_ptr<KeyPreview>> keyPreviews_;
+};
+
+// Disables a window while a dialog it owns is open, as a modal dialog does, and enables it again
+// when the scope ends or end() is called, unless it was disabled already. Movable.
+class ModalScope {
+public:
+    ModalScope() noexcept = default;
+    explicit ModalScope(HWND owner) noexcept {
+        if (owner && IsWindowEnabled(owner)) {
+            EnableWindow(owner, FALSE);
+            owner_ = owner;
+        }
+    }
+    ~ModalScope() { end(); }
+    ModalScope(ModalScope&& other) noexcept : owner_(std::exchange(other.owner_, nullptr)) {}
+    ModalScope& operator=(ModalScope&& other) noexcept {
+        if (this != &other) {
+            end();
+            owner_ = std::exchange(other.owner_, nullptr);
+        }
+        return *this;
+    }
+    ModalScope(const ModalScope&) = delete;
+    ModalScope& operator=(const ModalScope&) = delete;
+    // Enables the owner now, before the dialog hides, so it takes the activation back.
+    void end() noexcept {
+        if (const auto owner = std::exchange(owner_, nullptr); owner && IsWindow(owner)) { EnableWindow(owner, TRUE); }
+    }
+    [[nodiscard]] bool active() const noexcept { return owner_ != nullptr; }
+
+private:
+    HWND owner_{};
 };
 
 }

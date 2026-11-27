@@ -209,8 +209,56 @@ int key_preview(const testing::Options&) {
     return 0;
 }
 
+// A dialog made with its owner and style at creation, centred on its owner, which a ModalScope
+// disables while it is open.
+int dialog_options(const testing::Options&) {
+    Application app;
+    {
+        TestWindow owner{app};
+        owner.show(SW_SHOWNORMAL);
+        Window::Options options;
+        options.style = WS_POPUP | WS_CAPTION | WS_SYSMENU;
+        options.extendedStyle = WS_EX_TOOLWINDOW;
+        options.owner = owner.hwnd();
+        Window dialog{app, L"Dialog", 160, 100, options};
+        const auto style = static_cast<DWORD>(GetWindowLongPtrW(dialog.hwnd(), GWL_STYLE));
+        const auto extended = static_cast<DWORD>(GetWindowLongPtrW(dialog.hwnd(), GWL_EXSTYLE));
+        require(dialog.top_level() && GetWindow(dialog.hwnd(), GW_OWNER) == owner.hwnd(), "The owner was not set at creation");
+        require((style & WS_POPUP) && !(style & WS_THICKFRAME) && (extended & WS_EX_TOOLWINDOW) && (extended & WS_EX_CONTROLPARENT),
+            "The styles were not the ones asked for, with what the window needs");
+        dialog.center_on(owner.hwnd());
+        RECT a{}, b{};
+        GetWindowRect(owner.hwnd(), &a);
+        GetWindowRect(dialog.hwnd(), &b);
+        const auto middle = [](const RECT& r) { return POINT{(r.left + r.right) / 2, (r.top + r.bottom) / 2}; };
+        require(std::abs(middle(a).x - middle(b).x) <= 1 && std::abs(middle(a).y - middle(b).y) <= 1, "center_on did not centre the dialog");
+        {
+            ModalScope modal{owner.hwnd()};
+            require(modal.active() && !IsWindowEnabled(owner.hwnd()), "ModalScope did not disable the owner");
+            ModalScope moved = std::move(modal);
+            require(!modal.active() && moved.active() && !IsWindowEnabled(owner.hwnd()), "Moving the scope enabled the owner");
+        }
+        require(IsWindowEnabled(owner.hwnd()) != FALSE, "The scope's end left the owner disabled");
+        EnableWindow(owner.hwnd(), FALSE);
+        {
+            ModalScope modal{owner.hwnd()};
+            require(!modal.active(), "A scope took over an owner disabled already");
+        }
+        require(!IsWindowEnabled(owner.hwnd()), "A scope enabled an owner it had not disabled");
+        EnableWindow(owner.hwnd(), TRUE);
+        // A child keeps WS_CHILD whatever style it is given.
+        Window::Options childOptions;
+        childOptions.style = WS_VISIBLE;
+        Window child{app, L"Child", 20, 20, childOptions, owner.hwnd()};
+        require(!child.top_level() && (GetWindowLongPtrW(child.hwnd(), GWL_STYLE) & WS_CHILD), "A child lost WS_CHILD");
+    }
+    app.close();
+    return 0;
+}
+
 int main(int argc, char** argv) {
     return testing::run(argc, argv, {
+        {"dialog-options", dialog_options},
         {"closed", closed_window},
         {"closed-parent", closed_parent},
         {"secondary-close", secondary_close},

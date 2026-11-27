@@ -50,7 +50,15 @@ ElementWindow::ElementWindow(Application& app, std::wstring_view title, int widt
 
 ElementWindow::ElementWindow(Application& app, std::wstring_view title, int widthDip, int heightDip,
     Content content, std::shared_ptr<Element> root, HWND parent)
-    : Window(app, title, widthDip, heightDip, parent, content == Content::composition ? WS_EX_NOREDIRECTIONBITMAP : 0, true),
+    : ElementWindow(app, title, widthDip, heightDip, std::move(root), Options{}, content, parent) {}
+
+ElementWindow::ElementWindow(Application& app, std::wstring_view title, int widthDip, int heightDip,
+    std::shared_ptr<Element> root, const Options& options, HWND parent)
+    : ElementWindow(app, title, widthDip, heightDip, std::move(root), options, Content::composition, parent) {}
+
+ElementWindow::ElementWindow(Application& app, std::wstring_view title, int widthDip, int heightDip,
+    std::shared_ptr<Element> root, Options options, Content content, HWND parent)
+    : Window(app, title, widthDip, heightDip, parent, (options.content = content, options), true),
       tree_(std::move(root), [this] {
           if (hwnd()) { THROW_IF_WIN32_BOOL_FALSE(PostMessageW(hwnd(), update_message(), 0, 0)); }
       }),

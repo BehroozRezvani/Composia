@@ -21,6 +21,10 @@ public:
     // The retained tree still draws into its own standalone Composition target.
     ElementWindow(Application&, std::wstring_view title, int widthDip, int heightDip,
         Content, std::shared_ptr<Element> root, HWND parent = nullptr);
+    // With the window's style, extended style and owner (Window::Options). The content is
+    // composition, whatever the options say; use the Content overload for native content.
+    ElementWindow(Application&, std::wstring_view title, int widthDip, int heightDip,
+        std::shared_ptr<Element> root, const Options&, HWND parent = nullptr);
     ~ElementWindow() override;
     // Gives keyboard focus to this window and reveals the requested retained tab stop. For a
     // HostedWindow element, the focus goes to its window.
@@ -50,6 +54,8 @@ protected:
     std::optional<LRESULT> on_message(UINT, WPARAM, LPARAM) override;
 
 private:
+    ElementWindow(Application&, std::wstring_view title, int widthDip, int heightDip,
+        std::shared_ptr<Element> root, Options, Content, HWND parent);
     friend struct ElementAutomation;
     friend class HostedWindow;
     // The tab stop outside this window that Tab or Shift+Tab reaches from it, skipping windows
