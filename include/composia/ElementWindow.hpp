@@ -2,6 +2,7 @@
 
 #include <composia/CompositionWindowTarget.hpp>
 #include <composia/Element.hpp>
+#include <composia/Timer.hpp>
 #include <composia/Window.hpp>
 
 namespace composia {
@@ -60,6 +61,7 @@ private:
     bool pointerFocus_{};
     std::weak_ptr<Element> previousFocus_;
     wil::unique_hwnd tooltip_;
+    Timer tipDelay_{application(), [this] { show_tooltip(); }};
     std::weak_ptr<Element> tipSource_;
     std::wstring tipText_;
     layout::Point lastPointer_{};

@@ -233,16 +233,6 @@ std::optional<LRESULT> TextBox::window_message(UINT msg, WPARAM w, LPARAM l) {
             return host_->input(msg, w, MAKELPARAM(std::lround(p.x - b.x), std::lround(p.y - b.y)));
         }
         break;
-    case WM_TIMER:
-        if (host_->blinkTimer && w == host_->blinkTimer) {
-            host_->caretOn = !host_->caretOn;
-            host_->invalidate(&host_->caret);
-            return 0;
-        }
-        for (const auto& [id, native] : host_->timers) {
-            if (w == native) { return host_->input(WM_TIMER, id, 0); }
-        }
-        break;
     }
     return std::nullopt;
 }

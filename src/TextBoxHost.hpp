@@ -3,12 +3,14 @@
 #include <composia/TextBox.hpp>
 #include <composia/ElementWindow.hpp>
 #include <composia/ScopedSurfaceDraw.hpp>
+#include <composia/Timer.hpp>
 #include <imm.h>
 #include <richedit.h>
 #include <textserv.h>
 #include <UIAutomation.h>
 #include <atomic>
 #include <map>
+#include <memory>
 
 namespace composia {
 
@@ -142,8 +144,10 @@ struct TextBox::Host final : ITextHost2,
     CHARFORMAT2W format{};
     PARAFORMAT2 paragraph{};
     RECT arranged{}, caret{};
-    std::map<UINT, UINT_PTR> timers;
-    UINT_PTR blinkTimer{};
+    // Rich Edit's timers by its ids, and the caret's blink. They run on the dispatcher queue, so they
+    // reach the text services whichever element has the focus, and no window procedure sees them.
+    std::map<UINT, std::unique_ptr<Timer>> timers;
+    std::unique_ptr<Timer> blinkTimer;
     bool inPlace{}, active{}, captured{}, showCaret{}, caretOn{}, nativeCaret{}, ole{}, changePending{};
 };
 

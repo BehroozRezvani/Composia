@@ -19,8 +19,6 @@ UINT update_message() {
 
 bool key_down(int key) { return (GetKeyState(key) & 0x8000) != 0; }
 
-constexpr UINT_PTR tooltipTimer = 0x54495053; // 'TIPS'
-
 // The element whose tooltip applies: the nearest one, from the element up, that has one.
 Element* tooltip_owner(Element* element) {
     while (element && element->tooltip().empty()) { element = element->parent(); }
@@ -58,11 +56,11 @@ void ElementWindow::follow_tooltip(Element* source, bool keyboard) {
     hide_tooltip();
     tipSource_ = tree_.reference(source);
     tipKeyboard_ = keyboard;
-    if (source && hwnd()) { SetTimer(hwnd(), tooltipTimer, GetDoubleClickTime(), nullptr); }
+    if (source && hwnd()) { tipDelay_.start(std::chrono::milliseconds{GetDoubleClickTime()}); }
 }
 
 void ElementWindow::show_tooltip() {
-    KillTimer(hwnd(), tooltipTimer);
+    tipDelay_.stop();
     const auto source = tipSource_.lock();
     if (!source || source->tooltip().empty() || !hwnd() || !IsWindowVisible(hwnd())) { return; }
     TOOLINFOW tool{};
@@ -93,7 +91,7 @@ void ElementWindow::show_tooltip() {
 }
 
 void ElementWindow::hide_tooltip() noexcept {
-    if (hwnd()) { KillTimer(hwnd(), tooltipTimer); }
+    tipDelay_.stop();
     if (tooltip_ && tipShown_) {
         TOOLINFOW tool{};
         tool.cbSize = sizeof(tool);
@@ -229,10 +227,6 @@ std::optional<LRESULT> ElementWindow::on_message(UINT message, WPARAM wparam, LP
         const auto handled = keyboard ? tree_.context_menu(std::nullopt)
                                       : tree_.context_menu(pointer_position_from_screen(lparam));
         return handled ? std::optional<LRESULT>{0} : std::nullopt;
-    }
-    if (message == WM_TIMER && wparam == tooltipTimer) {
-        show_tooltip();
-        return 0;
     }
     using Kind = PointerEvent::Kind;
     using Button = PointerEvent::Button;

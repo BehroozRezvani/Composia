@@ -158,9 +158,6 @@ void TextBox::Host::deactivate() noexcept {
     }
     TxSetCapture(FALSE);
     TxDestroyCaret();
-    for (const auto& [id, native] : timers) {
-        KillTimer(hwnd(), native);
-    }
     timers.clear();
 }
 
@@ -178,30 +175,35 @@ void TextBox::Host::invalidate(const RECT* r) noexcept {
 }
 
 BOOL TextBox::Host::TxSetTimer(UINT id, UINT delay) {
-    if (!hwnd()) { return FALSE; }
+    auto* window = box ? box->host_window() : nullptr;
+    if (!window || !window->hwnd()) { return FALSE; }
     try {
-        auto& native = timers[id];
-        native = SetTimer(hwnd(), reinterpret_cast<UINT_PTR>(&native), delay, nullptr);
-        return native != 0;
+        auto& timer = timers[id];
+        if (!timer) { timer = std::make_unique<Timer>(window->application(), [this, id] { (void)input(WM_TIMER, id, 0); }); }
+        timer->start(std::chrono::milliseconds{delay}, true);
+        return TRUE;
     } catch (...) { return FALSE; }
 }
 void TextBox::Host::TxKillTimer(UINT id) {
-    if (auto i = timers.find(id); i != timers.end()) {
-        KillTimer(hwnd(), i->second);
-        timers.erase(i);
-    }
+    if (auto i = timers.find(id); i != timers.end()) { timers.erase(i); }
 }
 
 void TextBox::Host::blink(bool restart) noexcept {
-    if (blinkTimer) {
-        KillTimer(hwnd(), blinkTimer);
-        blinkTimer = 0;
-    }
+    if (blinkTimer) { blinkTimer->stop(); }
     caretOn = restart && active && showCaret;
-    if (caretOn && hwnd()) {
+    auto* window = box ? box->host_window() : nullptr;
+    if (caretOn && window && window->hwnd()) {
         const auto delay = GetCaretBlinkTime();
         if (delay && delay != INFINITE) {
-            blinkTimer = SetTimer(hwnd(), reinterpret_cast<UINT_PTR>(&blinkTimer), delay, nullptr);
+            try {
+                if (!blinkTimer) {
+                    blinkTimer = std::make_unique<Timer>(window->application(), [this] {
+                        caretOn = !caretOn;
+                        invalidate(&caret);
+                    });
+                }
+                blinkTimer->start(std::chrono::milliseconds{delay}, true);
+            } catch (...) { LOG_CAUGHT_EXCEPTION(); }
         }
     }
     invalidate(&caret);
