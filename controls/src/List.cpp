@@ -28,6 +28,7 @@ public:
         auto a = *accessibility();
         if (list.selectable(i)) { a.selected = false; }
         a.invoke = [this] { choose(true); };
+        describe(list, a, false);
         std::tie(a.positionInSet, a.sizeOfSet) = list.place_in_set(i);
         if (list.tree()) {
             a.level = static_cast<int>(std::min<std::size_t>(list.level(i), INT_MAX - 1)) + 1;
@@ -48,6 +49,15 @@ public:
         if (list.items_.content) {
             if (auto content = list.items_.content(i)) { add(std::move(content)); }
         }
+    }
+    // What the items say of the row that can change while it is realized: its label (when
+    // `relabel`; a new row has it already) and check state.
+    void describe(const List& list, ElementAccessibility& a, bool relabel) {
+        if (relabel) { a.name = list.items_.label(index); }
+        const auto on = list.items_.checked ? list.items_.checked(index) : std::nullopt;
+        if (!on) { a.toggle.reset(); }
+        else if (a.toggle) { a.toggle->on = *on; }
+        else { a.toggle = ElementAccessibility::Switch{*on, [this](bool) { choose(true); }}; }
     }
     void activate() override {
         if (separator) { return; }
@@ -80,6 +90,8 @@ public:
         }
         if (!owner->renderer_) { return; }
         auto s = state();
+        // A checked row is not a selected one: selection is the highlight.
+        s.selected = accessibility()->selected.value_or(false);
         s.focused = owner->current_ == index && (owner->focused() || owner->popupFocus_);
         const auto* window = owner->host_window();
         s.focusVisible = s.focused && window && window->focus_visible();
@@ -111,6 +123,7 @@ List::List(std::wstring name, Items items, float rowHeight, float height, bool m
     set_items(std::move(items));
 }
 List::~List() {
+    *alive_ = false;
     for (auto& child : rows_->children()) { static_cast<Row&>(*child).owner = nullptr; }
 }
 void List::set_items(Items items) {
@@ -168,6 +181,7 @@ void List::assign(Items items, Index selected, Index current, bool keepView) {
     current_.reset();
     prefix_.clear();
     items_ = std::move(items);
+    ++generation_;
     tops_ = std::move(tops);
     separators_ = std::move(separators);
     peerGroups_.clear();
@@ -334,11 +348,13 @@ void List::refresh(std::size_t index) {
     for (const auto& child : rows_->children()) {
         auto& row = static_cast<Row&>(*child);
         if (row.index != index) { continue; }
-        auto label = items_.label(index);
-        if (row.name() != label) {
-            auto a = *row.accessibility();
-            a.name = std::move(label);
-            row.set_accessibility(std::move(a));
+        if (!row.separator) {
+            const auto& old = *row.accessibility();
+            auto a = old;
+            row.describe(*this, a, true);
+            if (a.name != old.name || a.toggle.has_value() != old.toggle.has_value() || (a.toggle && a.toggle->on != old.toggle->on)) {
+                row.set_accessibility(std::move(a));
+            }
         }
         row.invalidate();
         return;
@@ -368,8 +384,12 @@ bool List::activate_selected() {
     auto& row = realize(index);
     if (!row.interactive()) { return false; }
     auto command = row.command;
+    const auto alive = alive_;
+    const auto generation = generation_;
     activated_.emit(index);
     if (command) { command->execute(); }
+    // The choice may have checked or cleared the row: show it, unless the list or its rows went.
+    if (*alive && generation == generation_ && items_.checked) { refresh(index); }
     return true;
 }
 bool List::type_ahead(std::wstring_view text) {

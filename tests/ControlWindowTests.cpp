@@ -1,5 +1,6 @@
 #include "../examples/controls/Playback.hpp"
 #include "support/TestSupport.hpp"
+#include <map>
 #include <composia/HostedVisual.hpp>
 #include <thread>
 
@@ -165,6 +166,29 @@ int separator_drawing(const testing::Options& options) {
     require(testing::matches(pixel(100, 33), 0x204060), "The separator renderer did not draw the separator");
     return 0;
 }
+// A checked row's renderer gets State::checked, and State::selected only while it is highlighted.
+int menu_states(const testing::Options& options) {
+    Application app(options.warp);
+    namespace ui = composia::controls;
+    auto items = ui::Items::strings({L"Reply", L"Wrap lines"});
+    items.checked = [](std::size_t i) { return i == 1 ? std::optional<bool>{true} : std::nullopt; };
+    auto list = std::make_shared<ui::List>(L"View", items, 32, 100);
+    std::map<std::size_t, ui::State> states;
+    list->set_row_renderer([&](ScopedSurfaceDraw&, std::size_t i, std::wstring_view, layout::Size, ui::State s, const ui::StyleTokens&) {
+        states[i] = s;
+    });
+    ElementWindow window(app, L"Menu states", 200, 120, list);
+    window.show(SW_SHOWNOACTIVATE);
+    list->select(0);
+    flush(window);
+    require(states.contains(1) && states[1].checked && !states[1].selected, "A checked row was painted as selected");
+    require(states.contains(0) && states[0].selected && !states[0].checked, "The selected row was painted as checked");
+    list->select(1);
+    states.clear();
+    flush(window);
+    require(states[1].checked && states[1].selected, "A checked, selected row lost either state");
+    return 0;
+}
 // The scrollbar draws over the content at the right edge, wider under the pointer, or through
 // a renderer that receives its track, thumb and state.
 int scrollbar(const testing::Options& options) {
@@ -246,6 +270,6 @@ int fixture(const testing::Options& options) {
 }
 int main(int argc, char** argv) {
     return testing::run(argc, argv, {{"interaction", interaction}, {"fixture", fixture}, {"tokens", tokens}, {"scrollbar-drawing", scrollbar},
-        {"separator-drawing", separator_drawing},
+        {"separator-drawing", separator_drawing}, {"menu-states", menu_states},
         {"overlay", overlay}});
 }

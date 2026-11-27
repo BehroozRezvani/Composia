@@ -78,6 +78,8 @@ change the API; each change is listed here.
   current or chosen, which the keyboard, type-ahead and the pointer pass by and UI Automation
   sees as Separators. They are `List::separatorHeight` tall without `Items::height`, and
   `List::set_separator_renderer` draws them instead of the default line.
+- `Items::checked` gives list rows a check state: UI Automation's Toggle, which chooses the row,
+  and `State::checked` for renderers. The list reads it again after each choice and at `refresh`.
 - List rows report their place among the list's rows, or among their siblings in a tree, with
   separators left out, as UI Automation's PositionInSet and SizeOfSet.
 - `ElementLayout::crossAlign` and `mainAlign` align a stack's or flex container's children

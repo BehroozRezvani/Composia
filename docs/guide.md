@@ -375,6 +375,11 @@ also reports its level; the owner changes its rows and sets them again. The list
 rows for the pointer: a renderer draws the expander, and the owner toggles from `on_activate`
 or from a control in the row.
 
+`Items::checked` gives rows a check state, such as a menu's option: UI Automation's Toggle
+chooses the row, and a renderer gets `State::checked`, while `State::selected` stays the
+highlight. The owner keeps the state and flips it when the row is chosen; the list reads it
+again after every choice, and `refresh` reads it after a change from elsewhere.
+
 `Items::separator` makes rows lines between groups, as in a menu. A separator is never
 selected, current or chosen; the arrows, Home and End, type-ahead and the pointer pass it by,
 and UI Automation sees a Separator that is not content. It is `List::separatorHeight` tall

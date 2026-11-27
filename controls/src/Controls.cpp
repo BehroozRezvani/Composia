@@ -75,7 +75,7 @@ Control::Control(std::wstring name, long role, ElementLayout layout) : Element(l
 State Control::state() const {
     const auto* a = accessibility();
     const bool selected = a && (a->toggle ? a->toggle->on : a->selected.value_or(false));
-    return {hovered(), pressed_, focused(), !interactive(), selected, focus_visible()};
+    return {hovered(), pressed_, focused(), !interactive(), selected, focus_visible(), a && a->toggle && a->toggle->on};
 }
 std::wstring_view Control::name() const noexcept {
     return accessibility() ? std::wstring_view(accessibility()->name) : std::wstring_view{};

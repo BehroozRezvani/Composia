@@ -597,9 +597,43 @@ int positions(const testing::Options&) {
     return 0;
 }
 
+// A row with a check state is UI Automation's Toggle, which chooses it, and shows the state the
+// owner gives it after each choice.
+int checks(const testing::Options&) {
+    bool wrap{};
+    auto items = ui::Items::strings({L"Reply", L"Wrap lines"});
+    items.checked = [&](std::size_t i) { return i == 1 ? std::optional<bool>{wrap} : std::nullopt; };
+    auto list = std::make_shared<ui::List>(L"View", items, 32, 200);
+    auto onActivate = list->on_activate([&](std::size_t i) { if (i == 1) { wrap = !wrap; } });
+    ElementTree tree(list);
+    tree.set_viewport({160, 200});
+    tree.update_layout();
+    const auto row = [&](std::size_t index) -> const Element& {
+        for (const auto& child : list->children().front()->children().front()->children()) {
+            if (child->bounds().y == list->row_bounds(index).y) { return *child; }
+        }
+        throw std::logic_error("The row is not realized");
+    };
+    require(!row(0).accessibility()->toggle && row(1).accessibility()->toggle && !row(1).accessibility()->toggle->on,
+        "Rows did not report whether they can be checked");
+    require(list->request_focus() && list->go_to(1), "Could not go to the checked row");
+    tree.key({VK_RETURN, true});
+    require(wrap && row(1).accessibility()->toggle->on, "Choosing the row did not show its new state");
+    row(1).accessibility()->toggle->set(false);
+    require(!wrap && !row(1).accessibility()->toggle->on, "UI Automation's Toggle did not choose the row");
+    wrap = true;
+    list->refresh(1);
+    require(row(1).accessibility()->toggle->on, "Refresh did not read the check state again");
+    // The owner may replace the rows while the choice is handled.
+    auto replaced = list->on_activate([&](std::size_t) { list->set_items(ui::Items::strings({L"Other"})); });
+    tree.key({VK_RETURN, true});
+    require(list->items().count == 1, "Replacing the rows during a choice failed");
+    return 0;
+}
+
 int main(int argc, char** argv) {
     return testing::run(argc, argv, {{"behaviour", behaviour}, {"virtualization", virtualization}, {"popup", popup}, {"choices", choices},
-        {"separators", separators}, {"positions", positions},
+        {"separators", separators}, {"positions", positions}, {"checks", checks},
         {"style", style}, {"scrollbar", scrollbar}, {"context", context}, {"heights", heights},
         {"current", current}, {"tree", tree}, {"replace", replace},
         {"content", content}});

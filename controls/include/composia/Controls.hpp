@@ -43,7 +43,9 @@ private:
 
 // focusVisible: focused while the window shows keyboard focus (Window::focus_visible), when a
 // renderer draws its focus ring.
-struct State { bool hovered{}, pressed{}, focused{}, disabled{}, selected{}, focusVisible{}; };
+// selected is a control's toggle state or a selection; checked is only the toggle state, for a
+// list row that is both, such as a checked menu item that is highlighted.
+struct State { bool hovered{}, pressed{}, focused{}, disabled{}, selected{}, focusVisible{}, checked{}; };
 // The colors and metrics a renderer draws with. Colors are 0xRRGGBB.
 struct StyleTokens {
     std::uint32_t foreground{0x202020}, background{0xffffff}, accent{0x0067c0};
@@ -216,6 +218,11 @@ struct Items {
     // Separator, which is not content. Without `height` it is List::separatorHeight tall. The list
     // reads every row's flag when the items are set.
     std::function<bool(std::size_t)> separator{};
+    // Optional check state of each row, or nullopt for a row that cannot be checked. A checked
+    // row is UI Automation's Toggle, which chooses the row, and renderers get State::checked.
+    // The owner keeps the state: it flips it when the row is chosen, and the list reads it again
+    // after each choice (or at refresh).
+    std::function<std::optional<bool>(std::size_t)> checked{};
     static Items strings(std::vector<std::wstring>);
 };
 
@@ -252,8 +259,8 @@ public:
     // The row at a point in the list's own DIPs, as its pointer and context menu events give
     // them, or nullopt.
     [[nodiscard]] Index index_at(layout::Point) const noexcept;
-    // Reads a realized row's label again and repaints it, for a change that keeps its height,
-    // such as a count, or a look the renderer gives it, such as a drop target.
+    // Reads a realized row's label and check state again and repaints it, for a change that keeps
+    // its height, such as a count, or a look the renderer gives it, such as a drop target.
     void refresh(std::size_t);
     // Lays Composition content over all the rows, in their coordinates: it scrolls with them and
     // spans the whole list, for decorations across rows, such as an indicator that glides from
@@ -314,6 +321,8 @@ private:
     std::shared_ptr<HostedVisual> overlay_;
     Items items_;
     std::vector<double> tops_;   // With Items::height or separators: each row's top, then the extent.
+    std::uint64_t generation_{};   // Counts the times the items were set.
+    std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);   // False once the list is gone.
     std::vector<std::size_t> separators_;   // The separator rows, in order.
     // In a tree, each group of rows with the same parent found so far, and the group of each of
     // its rows; found when a row is first realized, forgotten when the items change.
