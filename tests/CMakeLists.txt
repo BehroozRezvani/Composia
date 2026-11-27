@@ -153,7 +153,7 @@ endif()
 # Optional appearance-independent controls.
 if(COMPOSIA_BUILD_CONTROLS)
     composia_test_target(composia-controls-tests ControlsTests.cpp Composia::Controls)
-    composia_add_scenarios(composia-controls-tests controls CORE SCENARIOS behaviour virtualization popup choices separators style scrollbar context heights current tree replace content)
+    composia_add_scenarios(composia-controls-tests controls CORE SCENARIOS behaviour virtualization popup choices separators positions style scrollbar context heights current tree replace content)
     composia_test_target(composia-control-window-tests ControlWindowTests.cpp Composia::Controls)
     composia_add_scenarios(composia-control-window-tests controls WARP SCENARIOS interaction tokens scrollbar-drawing separator-drawing overlay)
     if(COMPOSIA_TEST_NVDA AND COMPOSIA_TEST_ACCCHECK)

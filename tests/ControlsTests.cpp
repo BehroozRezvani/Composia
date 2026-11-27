@@ -1,5 +1,6 @@
 #include <composia/Controls.hpp>
 #include "support/TestSupport.hpp"
+#include <array>
 
 using namespace composia;
 namespace ui = composia::controls;
@@ -553,9 +554,52 @@ int separators(const testing::Options&) {
     return 0;
 }
 
+// Rows tell UI Automation their place among their peers, which the realized rows alone cannot:
+// in a flat list all the rows, in a tree the rows with the same parent, separators left out.
+int positions(const testing::Options&) {
+    auto items = ui::Items::strings({L"Reply", L"Forward", L"", L"Delete"});
+    items.separator = [](std::size_t i) { return i == 2; };
+    auto list = std::make_shared<ui::List>(L"Actions", items, 32, 400);
+    ElementTree tree(list);
+    tree.set_viewport({160, 400});
+    tree.update_layout();
+    const auto place = [&](std::size_t index) {
+        for (const auto& row : list->children().front()->children().front()->children()) {
+            if (row->bounds().y == static_cast<float>(list->row_bounds(index).y)) {
+                return std::pair{row->accessibility()->positionInSet, row->accessibility()->sizeOfSet};
+            }
+        }
+        return std::pair{-1, -1};
+    };
+    require(place(0) == std::pair{1, 3} && place(1) == std::pair{2, 3} && place(2) == std::pair{0, 0} &&
+        place(3) == std::pair{3, 3}, "A flat list's rows misreported their place, or counted the separator");
+
+    // Mail, its Inbox and Projects, Projects' Website, then Work.
+    auto folders = ui::Items::strings({L"Mail", L"Inbox", L"Projects", L"Website", L"Work"});
+    folders.level = [](std::size_t i) { return std::array<std::size_t, 5>{0, 1, 1, 2, 0}[i]; };
+    list->set_items(folders);
+    tree.update_layout();
+    require(place(0) == std::pair{1, 2} && place(1) == std::pair{1, 2} && place(2) == std::pair{2, 2} &&
+        place(3) == std::pair{1, 1} && place(4) == std::pair{2, 2}, "A tree's rows did not count their siblings");
+
+    list->set_items(ui::Items::strings({L"One", L"Two", L"Three"}));
+    tree.update_layout();
+    require(place(2) == std::pair{3, 3}, "New rows kept the old count");
+
+    // A million rows: the last knows its place without the others being read.
+    std::size_t reads{};
+    list->set_items({1000000, [&](std::size_t i) { ++reads; return std::to_wstring(i); }});
+    tree.update_layout();
+    require(list->request_focus(), "The list did not take the focus");
+    tree.key({VK_END, true});
+    tree.update_layout();
+    require(place(999999) == std::pair{1000000, 1000000} && reads < 200, "A long list's last row misreported its place");
+    return 0;
+}
+
 int main(int argc, char** argv) {
     return testing::run(argc, argv, {{"behaviour", behaviour}, {"virtualization", virtualization}, {"popup", popup}, {"choices", choices},
-        {"separators", separators},
+        {"separators", separators}, {"positions", positions},
         {"style", style}, {"scrollbar", scrollbar}, {"context", context}, {"heights", heights},
         {"current", current}, {"tree", tree}, {"replace", replace},
         {"content", content}});

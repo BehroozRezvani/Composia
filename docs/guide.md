@@ -394,7 +394,9 @@ the rows covering the viewport, including partially visible rows, and retains
 the selected row when it scrolls offscreen. Rows take the list's row height, or each its own
 from an `Items::height` callback, which the list reads for every row when the items are set;
 paging moves by the viewport's height either way. Existing rows keep their UIA identity while
-realized. For indexed data sources, supply `findPrefix` to search directly. The fallback
+realized, and each reports its place among the rows, or among its siblings in a tree, with
+separators left out, as UI Automation's PositionInSet and SizeOfSet, so a screen reader counts
+rows that are not realized. For indexed data sources, supply `findPrefix` to search directly. The fallback
 scans labels when the user types. Call `set_items` when the backing collection changes, and
 `replace_items` when the rows change under a view that stays, such as a tree row opening: it
 keeps the scroll position and takes the selected and current rows from the owner.

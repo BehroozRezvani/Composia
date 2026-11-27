@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <cstdint>
 #include <optional>
+#include <unordered_map>
+#include <utility>
 
 namespace composia {
 class HostedVisual;
@@ -287,6 +289,10 @@ private:
     [[nodiscard]] Index row_at(double y) const noexcept;
     [[nodiscard]] bool selectable(std::size_t) const;
     [[nodiscard]] bool separator(std::size_t i) const noexcept { return std::ranges::binary_search(separators_, i); }
+    // A row's place among its peers, from 1, and their number, for UI Automation: among the rows
+    // of a flat list, or the rows with the same parent in a tree, separators left out. 0 and 0
+    // for a separator.
+    [[nodiscard]] std::pair<int, int> place_in_set(std::size_t) const;
     [[nodiscard]] bool tree() const noexcept { return items_.level || items_.expanded; }
     [[nodiscard]] std::size_t level(std::size_t i) const { return items_.level ? items_.level(i) : 0; }
     [[nodiscard]] std::optional<bool> expansion(std::size_t i) const {
@@ -309,6 +315,10 @@ private:
     Items items_;
     std::vector<double> tops_;   // With Items::height or separators: each row's top, then the extent.
     std::vector<std::size_t> separators_;   // The separator rows, in order.
+    // In a tree, each group of rows with the same parent found so far, and the group of each of
+    // its rows; found when a row is first realized, forgotten when the items change.
+    mutable std::vector<std::vector<std::size_t>> peerGroups_;
+    mutable std::unordered_map<std::size_t, std::size_t> peerGroup_;
     Index selected_, current_;
     float rowHeight_;
     bool menu_;

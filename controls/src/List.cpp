@@ -28,6 +28,7 @@ public:
         auto a = *accessibility();
         if (list.selectable(i)) { a.selected = false; }
         a.invoke = [this] { choose(true); };
+        std::tie(a.positionInSet, a.sizeOfSet) = list.place_in_set(i);
         if (list.tree()) {
             a.level = static_cast<int>(std::min<std::size_t>(list.level(i), INT_MAX - 1)) + 1;
             if (const auto open = list.expansion(i)) {
@@ -169,6 +170,8 @@ void List::assign(Items items, Index selected, Index current, bool keepView) {
     items_ = std::move(items);
     tops_ = std::move(tops);
     separators_ = std::move(separators);
+    peerGroups_.clear();
+    peerGroup_.clear();
     if (!menu_) {
         const long role = tree() ? UIA_TreeControlTypeId : UIA_ListControlTypeId;
         if (accessibility()->controlType != role) {
@@ -209,6 +212,32 @@ List::Index List::row_at(double y) const noexcept {
     if (y < 0 || y >= top(items_.count)) { return std::nullopt; }
     if (tops_.empty()) { return std::min(items_.count - 1, static_cast<std::size_t>(y / rowHeight_)); }
     return static_cast<std::size_t>(std::upper_bound(tops_.begin(), tops_.end() - 1, y) - tops_.begin()) - 1;
+}
+
+std::pair<int, int> List::place_in_set(std::size_t index) const {
+    if (separator(index)) { return {0, 0}; }
+    const auto number = [](std::size_t n) { return static_cast<int>(std::min<std::size_t>(n, INT_MAX)); };
+    if (!tree()) {
+        const auto before = static_cast<std::size_t>(std::ranges::lower_bound(separators_, index) - separators_.begin());
+        return {number(index + 1 - before), number(items_.count - separators_.size())};
+    }
+    auto found = peerGroup_.find(index);
+    if (found == peerGroup_.end()) {
+        // Back past the deeper rows of earlier siblings to the first sibling, then on to the end
+        // of the parent's rows, keeping the rows at this depth.
+        const auto depth = level(index);
+        auto first = index;
+        while (first > 0 && level(first - 1) >= depth) { --first; }
+        std::vector<std::size_t> group;
+        for (auto row = first; row < items_.count && level(row) >= depth; ++row) {
+            if (level(row) == depth && !separator(row)) { group.push_back(row); }
+        }
+        for (const auto row : group) { peerGroup_[row] = peerGroups_.size(); }
+        peerGroups_.push_back(std::move(group));
+        found = peerGroup_.find(index);
+    }
+    const auto& group = peerGroups_[found->second];
+    return {number(static_cast<std::size_t>(std::ranges::lower_bound(group, index) - group.begin()) + 1), number(group.size())};
 }
 
 bool List::selectable(std::size_t index) const {
